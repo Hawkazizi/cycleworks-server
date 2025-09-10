@@ -265,6 +265,53 @@ export const reviewPermitRequest = async (
     return updatedPermit;
   });
 };
+export const getPackingUnits = async (status = "Submitted") => {
+  return db("packing_units")
+    .join("users", "packing_units.user_id", "users.id")
+    .select(
+      "packing_units.id",
+      "packing_units.name",
+      "packing_units.address",
+      "packing_units.status",
+      "packing_units.rejection_reason",
+      "packing_units.created_at",
+      "users.name as farmer_name",
+      "users.email as farmer_email"
+    )
+    .where("packing_units.status", status)
+    .orderBy("packing_units.created_at", "desc");
+};
+
+export const reviewPackingUnit = async (
+  id,
+  { status, rejection_reason },
+  reviewerId
+) => {
+  if (!["Approved", "Rejected"].includes(status)) {
+    throw new Error("Invalid status: must be Approved or Rejected");
+  }
+
+  const unit = await db("packing_units").where({ id }).first();
+  if (!unit) throw new Error("Packing unit not found");
+  if (unit.status !== "Submitted")
+    throw new Error("Packing unit is not in Submitted status");
+
+  const updates = {
+    status,
+    reviewed_by: reviewerId,
+    reviewed_at: db.fn.now(),
+  };
+  if (status === "Rejected") {
+    if (!rejection_reason) throw new Error("Rejection reason required");
+    updates.rejection_reason = rejection_reason;
+  }
+
+  const [updated] = await db("packing_units")
+    .where({ id })
+    .update(updates)
+    .returning("*");
+  return updated;
+};
 
 export const getWeeklyLoadingPlans = async (statusFilter = "Submitted") => {
   return db("weekly_loading_plans")

@@ -64,6 +64,196 @@ export const getUserProfile = async (userId) => {
   return { ...user, packingUnits };
 };
 
+// Get all export permit requests for a user
+export const getMyPermitRequests = async (userId) => {
+  return db("export_permit_requests")
+    .join(
+      "packing_units",
+      "export_permit_requests.packing_unit_id",
+      "packing_units.id"
+    )
+    .where("packing_units.user_id", userId)
+    .select(
+      "export_permit_requests.id",
+      "export_permit_requests.destination_country",
+      "export_permit_requests.max_tonnage",
+      "export_permit_requests.status",
+      "export_permit_requests.permit_document",
+      "export_permit_requests.rejection_reason",
+      "export_permit_requests.issued_at",
+      "export_permit_requests.timeline_start",
+      "export_permit_requests.timeline_end",
+      "export_permit_requests.created_at",
+      "export_permit_requests.updated_at",
+      "packing_units.id as packing_unit_id",
+      "packing_units.name as packing_unit_name"
+    )
+    .orderBy("export_permit_requests.created_at", "desc");
+};
+
+// Get a single export permit request by ID (must belong to user)
+export const getMyPermitRequestById = async (userId, id) => {
+  const permit = await db("export_permit_requests")
+    .join(
+      "packing_units",
+      "export_permit_requests.packing_unit_id",
+      "packing_units.id"
+    )
+    .where("export_permit_requests.id", id)
+    .andWhere("packing_units.user_id", userId)
+    .select(
+      "export_permit_requests.id",
+      "export_permit_requests.destination_country",
+      "export_permit_requests.max_tonnage",
+      "export_permit_requests.status",
+      "export_permit_requests.permit_document",
+      "export_permit_requests.rejection_reason",
+      "export_permit_requests.issued_at",
+      "export_permit_requests.timeline_start",
+      "export_permit_requests.timeline_end",
+      "export_permit_requests.created_at",
+      "export_permit_requests.updated_at",
+      "packing_units.id as packing_unit_id",
+      "packing_units.name as packing_unit_name"
+    )
+    .first();
+
+  if (!permit) throw new Error("Permit not found or not owned by this user");
+  return permit;
+};
+
+// Request a new export permit
+export const requestExportPermit = async (
+  userId,
+  { packing_unit_id, destination_country, max_tonnage }
+) => {
+  if (!packing_unit_id || !destination_country || !max_tonnage) {
+    throw new Error(
+      "packing_unit_id, destination_country, and max_tonnage are required"
+    );
+  }
+
+  // Verify the packing unit belongs to this user and is approved
+  const packingUnit = await db("packing_units")
+    .where({ id: packing_unit_id, user_id: userId, status: "Approved" })
+    .first();
+  if (!packingUnit) {
+    throw new Error("Packing unit not found or not approved");
+  }
+
+  // Create permit request
+  const [permit] = await db("export_permit_requests")
+    .insert({
+      packing_unit_id,
+      destination_country,
+      max_tonnage,
+      status: "Requested",
+      created_at: db.fn.now(),
+      updated_at: db.fn.now(),
+    })
+    .returning("*");
+
+  return permit;
+};
+
+// Register a new packing unit
+export const registerPackingUnit = async (
+  userId,
+  { name, address, document_1, document_2 }
+) => {
+  if (!name) throw new Error("Packing unit name is required");
+
+  const [unit] = await db("packing_units")
+    .insert({
+      name,
+      user_id: userId,
+      address: address || null,
+      status: "Submitted",
+      document_1: document_1 || null,
+      document_2: document_2 || null,
+      created_at: db.fn.now(),
+      updated_at: db.fn.now(),
+    })
+    .returning("*");
+
+  return unit;
+};
+
+// Get all packing units owned by this user
+export const getMyPackingUnits = async (userId) => {
+  return db("packing_units")
+    .where({ user_id: userId })
+    .select(
+      "id",
+      "name",
+      "address",
+      "status",
+      "rejection_reason",
+      "created_at",
+      "updated_at"
+    );
+};
+
+// ===================== WEEKLY LOADING PLANS =====================
+export const getMyWeeklyPlans = async (userId) => {
+  return db("weekly_loading_plans")
+    .join(
+      "export_permit_requests",
+      "weekly_loading_plans.export_permit_request_id",
+      "export_permit_requests.id"
+    )
+    .join(
+      "packing_units",
+      "export_permit_requests.packing_unit_id",
+      "packing_units.id"
+    )
+    .where("packing_units.user_id", userId)
+    .select(
+      "weekly_loading_plans.id",
+      "weekly_loading_plans.week_start_date",
+      "weekly_loading_plans.status",
+      "weekly_loading_plans.submitted_at",
+      "weekly_loading_plans.rejection_reason",
+      "export_permit_requests.id as permit_id",
+      "packing_units.name as unit_name"
+    )
+    .orderBy("weekly_loading_plans.submitted_at", "desc");
+};
+
+export const getMyWeeklyPlanById = async (userId, id) => {
+  const plan = await db("weekly_loading_plans")
+    .join(
+      "export_permit_requests",
+      "weekly_loading_plans.export_permit_request_id",
+      "export_permit_requests.id"
+    )
+    .join(
+      "packing_units",
+      "export_permit_requests.packing_unit_id",
+      "packing_units.id"
+    )
+    .where("weekly_loading_plans.id", id)
+    .andWhere("packing_units.user_id", userId)
+    .select(
+      "weekly_loading_plans.id",
+      "weekly_loading_plans.week_start_date",
+      "weekly_loading_plans.status",
+      "weekly_loading_plans.submitted_at",
+      "weekly_loading_plans.rejection_reason",
+      "export_permit_requests.id as permit_id",
+      "packing_units.name as unit_name"
+    )
+    .first();
+
+  if (!plan) throw new Error("Weekly plan not found or not owned by this user");
+
+  const details = await db("loading_plan_details")
+    .where({ weekly_loading_plan_id: id })
+    .select("id", "loading_date", "containers", "amount_tonnage", "notes");
+
+  return { ...plan, details };
+};
+
 export const submitWeeklyLoadingPlan = async (
   userId,
   { export_permit_request_id, week_start_date, details }
@@ -215,6 +405,33 @@ export const submitWeeklyLoadingPlan = async (
   });
 };
 
+// ===================== QC PRE-PRODUCTIONS =====================
+export const getMyQcSubmissions = async (userId) => {
+  return db("qc_pre_productions")
+    .join(
+      "export_permit_requests",
+      "qc_pre_productions.export_permit_request_id",
+      "export_permit_requests.id"
+    )
+    .join(
+      "packing_units",
+      "export_permit_requests.packing_unit_id",
+      "packing_units.id"
+    )
+    .where("packing_units.user_id", userId)
+    .select(
+      "qc_pre_productions.id",
+      "qc_pre_productions.status",
+      "qc_pre_productions.submitted_at",
+      "qc_pre_productions.rejection_reason",
+      "qc_pre_productions.carton_label",
+      "qc_pre_productions.egg_image",
+      "export_permit_requests.id as permit_id",
+      "packing_units.name as unit_name"
+    )
+    .orderBy("qc_pre_productions.submitted_at", "desc");
+};
+
 export const submitQcPreProduction = async (
   userId,
   { export_permit_request_id, carton_label, egg_image }
@@ -248,6 +465,33 @@ export const submitQcPreProduction = async (
     .returning("*");
 
   return qc;
+};
+
+// ===================== EXPORT DOCUMENTS =====================
+export const getMyExportDocs = async (userId) => {
+  return db("export_documents")
+    .join(
+      "export_permit_requests",
+      "export_documents.export_permit_request_id",
+      "export_permit_requests.id"
+    )
+    .join(
+      "packing_units",
+      "export_permit_requests.packing_unit_id",
+      "packing_units.id"
+    )
+    .where("packing_units.user_id", userId)
+    .select(
+      "export_documents.id",
+      "export_documents.status",
+      "export_documents.submitted_at",
+      "export_documents.sent_to_sales_at",
+      "export_documents.forwarded_to_customs_at",
+      "export_documents.import_permit_document",
+      "export_permit_requests.id as permit_id",
+      "packing_units.name as unit_name"
+    )
+    .orderBy("export_documents.submitted_at", "desc");
 };
 
 export const submitExportDocuments = async (
@@ -287,6 +531,33 @@ export const submitExportDocuments = async (
     .returning("*");
 
   return doc;
+};
+
+// ===================== FINAL DOCUMENTS =====================
+export const getMyFinalDocs = async (userId) => {
+  return db("final_documents")
+    .join(
+      "export_permit_requests",
+      "final_documents.export_permit_request_id",
+      "export_permit_requests.id"
+    )
+    .join(
+      "packing_units",
+      "export_permit_requests.packing_unit_id",
+      "packing_units.id"
+    )
+    .where("packing_units.user_id", userId)
+    .select(
+      "final_documents.id",
+      "final_documents.status",
+      "final_documents.submitted_at",
+      "final_documents.rejection_reason",
+      "final_documents.reviewed_at",
+      "final_documents.closed_at",
+      "export_permit_requests.id as permit_id",
+      "packing_units.name as unit_name"
+    )
+    .orderBy("final_documents.submitted_at", "desc");
 };
 
 export const submitFinalDocuments = async (

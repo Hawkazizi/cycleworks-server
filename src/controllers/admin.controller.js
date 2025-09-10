@@ -129,6 +129,32 @@ export const reviewPermitRequest = async (req, res) => {
   }
 };
 
+export const getPackingUnits = async (req, res) => {
+  try {
+    const { status } = req.query;
+    const units = await adminService.getPackingUnits(status || "Submitted");
+    res.json({ units });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+export const reviewPackingUnit = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, rejection_reason } = req.body;
+    const reviewerId = req.user.id;
+    const updated = await adminService.reviewPackingUnit(
+      id,
+      { status, rejection_reason },
+      reviewerId
+    );
+    res.json({ packing_unit: updated });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
 export const getWeeklyLoadingPlans = async (req, res) => {
   try {
     const { status } = req.query; // Optional filter, default 'Submitted'

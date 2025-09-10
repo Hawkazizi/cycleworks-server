@@ -76,6 +76,21 @@ router.post(
   adminController.reviewPermitRequest
 );
 
+// Packing units management
+router.get(
+  "/packing-units",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.getPackingUnits
+);
+
+router.post(
+  "/packing-units/:id/review",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.reviewPackingUnit
+);
+
 // QC pre‑production queue + review (admin/manager)
 router.get(
   "/qc-pre",
