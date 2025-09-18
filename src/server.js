@@ -1,5 +1,6 @@
 import express from "express";
 import dotenv from "dotenv";
+import cors from "cors"; // <-- add this
 import db from "./db/knex.js";
 import userRouter from "./routes/user.routes.js";
 import adminRouter from "./routes/admin.routes.js";
@@ -11,6 +12,14 @@ const PORT = process.env.PORT || 5000;
 
 // Middleware
 app.use(express.json());
+
+// ✅ Enable CORS
+app.use(
+  cors({
+    origin: "http://localhost:5173", // your frontend URL
+    credentials: true, // if you want cookies/auth headers
+  })
+);
 
 // Healthcheck
 app.get("/", (req, res) => {

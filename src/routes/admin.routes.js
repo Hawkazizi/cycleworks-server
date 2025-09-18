@@ -75,7 +75,20 @@ router.post(
   authorize("admin", "manager"),
   adminController.reviewPermitRequest
 );
+// 🆕 Weekly plans management (admin/manager)
+router.get(
+  "/weekly-plans",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.getWeeklyPlans
+);
 
+router.post(
+  "/weekly-plans/:id/review",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.reviewWeeklyPlan
+);
 // Packing units management
 router.get(
   "/packing-units",

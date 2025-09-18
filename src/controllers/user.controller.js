@@ -1,28 +1,83 @@
 import * as userService from "../services/user.service.js";
 
-// Register a new user
+// Register a new user with mobile + password
 export const register = async (req, res) => {
   try {
-    const { name, email, password, reason } = req.body;
+    const { name, mobile, password, reason } = req.body;
+    if (!mobile || !password) {
+      return res
+        .status(400)
+        .json({ error: "شماره موبایل و رمز عبور الزامی است" });
+    }
+
     const result = await userService.registerUser({
       name,
-      email,
+      mobile,
       password,
       reason,
     });
     res.status(201).json(result);
   } catch (err) {
-    console.log(err);
     res.status(400).json({ error: err.message });
   }
 };
 
-// Login user
+// Login user with mobile + password
 export const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
-    const result = await userService.loginUser({ email, password });
+    const { mobile, password } = req.body;
+    if (!mobile || !password) {
+      return res
+        .status(400)
+        .json({ error: "شماره موبایل و رمز عبور الزامی است" });
+    }
+
+    const result = await userService.loginUser({ mobile, password });
     res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
+// Send SMS verification code
+export const sendCode = async (req, res) => {
+  try {
+    const { mobile } = req.body;
+    if (!mobile)
+      return res.status(400).json({ error: "شماره موبایل الزامی است" });
+
+    let user = await db("users").where({ mobile }).first();
+    if (!user) {
+      const [id] = await db("users")
+        .insert({ mobile, status: "pending" })
+        .returning("id");
+      user = { id, mobile };
+    }
+
+    await userService.createCode(mobile, user.id);
+    res.json({ status: 1, message: "کد ارسال شد" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// Verify SMS code and issue JWT
+export const verifyCode = async (req, res) => {
+  try {
+    const { mobile, code } = req.body;
+    if (!mobile || !code)
+      return res.status(400).json({ error: "ورودی ناقص است" });
+
+    const record = await userService.verifyUserCode(mobile, code);
+    const user = await db("users").where({ id: record.user_id }).first();
+
+    const token = jwt.sign(
+      { role: "user", id: user.id },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    res.json({ token, role: "user", user });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

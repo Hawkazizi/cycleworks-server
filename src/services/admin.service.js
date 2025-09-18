@@ -1,9 +1,9 @@
 import db from "../db/knex.js";
 import jwt from "jsonwebtoken";
 
-// Admin Login
-export const loginWithLicense = async (licenseKey) => {
-  // Find active license and its assigned user
+// Admin / Manager Login
+export const loginWithLicense = async (licenseKey, role) => {
+  // 1) Find active license
   const license = await db("admin_license_keys")
     .where({ key: licenseKey, is_active: true })
     .first();
@@ -16,25 +16,38 @@ export const loginWithLicense = async (licenseKey) => {
     throw new Error("License not assigned to any user");
   }
 
-  // Fetch the admin user linked to this license and verify role
-  const adminUser = await db("users")
+  // 2) Look up the role linked to this license
+  const roleRow = await db("roles").where("id", license.role_id).first();
+  if (!roleRow) {
+    throw new Error("Role not found for this license");
+  }
+
+  const licenseRole = roleRow.name; // e.g. 'admin' or 'manager'
+
+  // 3) If role provided from frontend, enforce match
+  if (role && licenseRole.toLowerCase() !== role.toLowerCase()) {
+    throw new Error("Role mismatch for this license");
+  }
+
+  // 4) Fetch the user and verify status + role
+  const user = await db("users")
     .join("user_roles", "users.id", "user_roles.user_id")
     .join("roles", "user_roles.role_id", "roles.id")
     .where("users.id", license.assigned_to)
     .andWhere("users.status", "active")
-    .andWhere("roles.name", "admin")
-    .select("users.id", "users.email")
+    .andWhere("roles.name", licenseRole) // enforce license role
+    .select("users.id", "users.email", "roles.name as role")
     .first();
 
-  if (!adminUser) {
-    throw new Error("No active admin user found for this license");
+  if (!user) {
+    throw new Error(`No active ${licenseRole} user found for this license`);
   }
 
-  // Generate JWT
+  // 5) Generate JWT
   const token = jwt.sign(
     {
-      role: "admin",
-      id: adminUser.id,
+      role: licenseRole,
+      id: user.id,
       licenseId: license.id,
     },
     process.env.JWT_SECRET || "secret",
@@ -44,9 +57,8 @@ export const loginWithLicense = async (licenseKey) => {
   return token;
 };
 
-// Get admin profile
+// Get admin/manager profile
 export const getAdminProfile = async (userId) => {
-  // Fetch user info + role
   const admin = await db("users")
     .leftJoin("user_roles", "users.id", "user_roles.user_id")
     .leftJoin("roles", "user_roles.role_id", "roles.id")
@@ -59,20 +71,18 @@ export const getAdminProfile = async (userId) => {
       "roles.name as role"
     )
     .where("users.id", userId)
-    .andWhere("roles.name", "admin")
+    .andWhere("users.status", "active")
     .first();
 
   if (!admin) {
-    throw new Error("Admin not found");
+    throw new Error("Admin/Manager not found");
   }
 
-  // Fetch the license assigned to this user
   const license = await db("admin_license_keys")
     .where("assigned_to", userId)
     .andWhere("is_active", true)
     .first();
 
-  // Merge license info into admin profile
   return {
     ...admin,
     licenseId: license?.id || null,
@@ -313,30 +323,30 @@ export const reviewPackingUnit = async (
   return updated;
 };
 
-export const getWeeklyLoadingPlans = async (statusFilter = "Submitted") => {
-  return db("weekly_loading_plans")
+export const getWeeklyLoadingPlans = async () => {
+  return db("weekly_loading_plans as wlp")
     .join(
-      "export_permit_requests",
-      "weekly_loading_plans.export_permit_request_id",
-      "export_permit_requests.id"
+      "export_permit_requests as epr",
+      "wlp.export_permit_request_id",
+      "epr.id"
     )
-    .join(
-      "packing_units",
-      "export_permit_requests.packing_unit_id",
-      "packing_units.id"
-    )
-    .join("users", "packing_units.user_id", "users.id")
+    .join("packing_units as pu", "epr.packing_unit_id", "pu.id")
+    .join("users as u", "pu.user_id", "u.id")
     .select(
-      "weekly_loading_plans.id",
-      "weekly_loading_plans.week_start_date",
-      "weekly_loading_plans.status",
-      "weekly_loading_plans.submitted_at",
-      "export_permit_requests.id as permit_id",
-      "packing_units.name as unit_name",
-      "users.name as farmer_name"
+      "wlp.id",
+      "wlp.week_start_date",
+      "wlp.status",
+      "wlp.submitted_at",
+      "wlp.updated_at",
+      "wlp.reviewed_at",
+      "wlp.reviewed_by",
+      "wlp.rejection_reason",
+      "epr.id as permit_id",
+      "epr.destination_country",
+      "pu.name as unit_name",
+      "u.name as farmer_name"
     )
-    .where("weekly_loading_plans.status", statusFilter)
-    .orderBy("weekly_loading_plans.submitted_at", "desc");
+    .orderBy("wlp.submitted_at", "desc");
 };
 
 // Review a weekly loading plan (approve/reject with global tonnage check)
@@ -367,7 +377,9 @@ export const reviewWeeklyLoadingPlan = async (
   let updates = {
     status,
     reviewed_by: reviewerId,
+    reviewed_at: db.fn.now(),
     updated_at: db.fn.now(),
+    rejection_reason: null,
   };
 
   if (status === "Rejected") {
@@ -378,15 +390,16 @@ export const reviewWeeklyLoadingPlan = async (
   } else {
     // Check global weekly tonnage limit
     const weekStartDate = plan.week_start_date;
-    const totalTonnageThisWeek = await db("loading_plan_details")
+
+    const totalTonnageThisWeek = await db("loading_plan_details as lpd")
       .join(
-        "weekly_loading_plans",
-        "loading_plan_details.weekly_loading_plan_id",
-        "weekly_loading_plans.id"
+        "weekly_loading_plans as wlp",
+        "lpd.weekly_loading_plan_id",
+        "wlp.id"
       )
-      .where("weekly_loading_plans.week_start_date", weekStartDate)
-      .where("weekly_loading_plans.status", "Approved") // Only count approved plans
-      .sum("loading_plan_details.amount_tonnage as total")
+      .where("wlp.week_start_date", weekStartDate)
+      .where("wlp.status", "Approved") // Only count approved
+      .sum("lpd.amount_tonnage as total")
       .first();
 
     const currentPlanTonnage = await db("loading_plan_details")
@@ -402,6 +415,7 @@ export const reviewWeeklyLoadingPlan = async (
     const totalProposedTonnage =
       parseFloat(totalTonnageThisWeek.total || 0) +
       parseFloat(currentPlanTonnage.total || 0);
+
     if (totalProposedTonnage > weeklyLimit) {
       throw new Error(
         `Total tonnage (${totalProposedTonnage.toFixed(

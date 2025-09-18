@@ -1,49 +1,88 @@
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import db from "../db/knex.js";
+import { sendVerificationCode } from "./SMS/smsService.js";
+
+const SALT_ROUNDS = 10;
 
 // Register new user + application
-export const registerUser = async ({ name, email, password, reason }) => {
-  // Check if email exists
-  const existing = await db("users").where({ email }).first();
-  if (existing) throw new Error("Email already registered");
+export const registerUser = async ({ name, mobile, password, reason }) => {
+  // Check if mobile exists
+  const existing = await db("users").where({ mobile }).first();
+  if (existing) throw new Error("این شماره موبایل قبلاً ثبت شده است");
 
-  // Hash password
-  const password_hash = await bcrypt.hash(password, 10);
+  const password_hash = await bcrypt.hash(password, SALT_ROUNDS);
 
   // Insert user
   const [user] = await db("users")
-    .insert({ name, email, password_hash, status: "pending" })
+    .insert({ name, mobile, password_hash, status: "pending" })
     .returning("*");
 
-  // Insert application
-  const [application] = await db("user_applications")
-    .insert({ user_id: user.id, reason, status: "pending" })
-    .returning("*");
+  // Insert application (optional)
+  let application = null;
+  if (reason) {
+    [application] = await db("user_applications")
+      .insert({ user_id: user.id, reason, status: "pending" })
+      .returning("*");
+  }
 
-  return { user, application, message: "user requested awaiting for approval" };
+  return { user, application, message: "درخواست ثبت شد، منتظر تأیید مدیر" };
 };
+
 // Login user
-export const loginUser = async ({ email, password }) => {
-  const user = await db("users").where({ email }).first();
-  if (!user) throw new Error("Invalid credentials");
+export const loginUser = async ({ mobile, password }) => {
+  const user = await db("users").where({ mobile }).first();
+  if (!user) throw new Error("کاربری با این شماره یافت نشد");
 
   if (user.status !== "active") {
-    throw new Error("Account is not active yet");
+    throw new Error("حساب کاربری هنوز فعال نشده است");
   }
 
   const isMatch = await bcrypt.compare(password, user.password_hash);
-  if (!isMatch) throw new Error("Invalid credentials");
+  if (!isMatch) throw new Error("شماره موبایل یا رمز عبور نادرست است");
 
-  // Generate JWT
   const token = jwt.sign(
-    { id: user.id, email: user.email, role: "user" },
+    { id: user.id, mobile: user.mobile, role: "user" },
     process.env.JWT_SECRET || "secret",
     { expiresIn: "1d" }
   );
 
   return { user, token };
 };
+
+// Create and send SMS verification code
+export async function createCode(mobile, userId) {
+  const code = Math.floor(10000 + Math.random() * 90000).toString();
+  const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+
+  await db("user_verification_codes").insert({
+    user_id: userId,
+    mobile,
+    code,
+    expires_at: expiresAt,
+  });
+
+  await sendVerificationCode(mobile, code);
+  return { code, expiresAt }; // only return in dev/testing
+}
+
+// Verify SMS code
+export async function verifyUserCode(mobile, inputCode) {
+  const record = await db("user_verification_codes")
+    .where({ mobile, used: false })
+    .andWhere("expires_at", ">", new Date())
+    .orderBy("created_at", "desc")
+    .first();
+
+  if (!record) throw new Error("کدی برای این شماره پیدا نشد یا منقضی شده است.");
+  if (record.code !== inputCode) throw new Error("کد وارد شده نامعتبر است.");
+
+  await db("user_verification_codes")
+    .where({ id: record.id })
+    .update({ used: true });
+
+  return record;
+}
 
 // Get user profile by ID
 export const getUserProfile = async (userId) => {

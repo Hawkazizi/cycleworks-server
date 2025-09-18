@@ -1,21 +1,25 @@
 import * as adminService from "../services/admin.service.js";
-// Admin login
+
+// Admin/Manager login
 export const loginWithLicense = async (req, res) => {
   try {
-    const { licenseKey } = req.body;
-    const token = await adminService.loginWithLicense(licenseKey);
+    const { licenseKey, role } = req.body;
+    if (!licenseKey) {
+      return res.status(400).json({ error: "licenseKey is required" });
+    }
+
+    const token = await adminService.loginWithLicense(licenseKey, role);
     res.json({ token });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 };
 
-// Get admin profile
+// Get profile (admin or manager)
 export const getProfile = async (req, res) => {
   try {
     const adminUserId = req.user.id;
     const admin = await adminService.getAdminProfile(adminUserId);
-
     res.json({ admin });
   } catch (err) {
     res.status(404).json({ error: err.message });
@@ -128,6 +132,37 @@ export const reviewPermitRequest = async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 };
+
+export async function getWeeklyPlans(req, res) {
+  try {
+    // optional query param ?status=Submitted|Approved|Rejected
+    const statusFilter = req.query.status || "Submitted";
+    const plans = await adminService.getWeeklyLoadingPlans(statusFilter);
+    res.json(plans);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
+export async function reviewWeeklyPlan(req, res) {
+  try {
+    const { id } = req.params;
+    const { decision, remarks } = req.body; // decision: "Approved" | "Rejected"
+
+    const updated = await adminService.reviewWeeklyLoadingPlan(
+      id,
+      {
+        status: decision,
+        rejection_reason: decision === "Rejected" ? remarks : null,
+      },
+      req.user.id
+    );
+
+    res.json(updated);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+}
 
 export const getPackingUnits = async (req, res) => {
   try {
