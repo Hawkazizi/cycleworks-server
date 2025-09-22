@@ -1,5 +1,5 @@
 import * as adminService from "../services/admin.service.js";
-
+import * as adminBuyerService from "../services/adminBuyer.service.js";
 // Admin/Manager login
 export const loginWithLicense = async (req, res) => {
   try {
@@ -8,8 +8,12 @@ export const loginWithLicense = async (req, res) => {
       return res.status(400).json({ error: "licenseKey is required" });
     }
 
-    const token = await adminService.loginWithLicense(licenseKey, role);
-    res.json({ token });
+    const { token, user, roles } = await adminService.loginWithLicense(
+      licenseKey,
+      role
+    );
+
+    res.json({ token, roles, user });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -320,3 +324,38 @@ export const reviewFinalDocuments = async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 };
+
+/// buyer part
+
+export async function getBuyerRequests(req, res) {
+  const requests = await adminBuyerService.getBuyerRequests();
+  res.json(requests);
+}
+
+export async function reviewBuyerRequest(req, res) {
+  try {
+    const updated = await adminBuyerService.reviewBuyerRequest(req.params.id, {
+      status: req.body.status,
+      reviewerId: req.user.licenseId,
+    });
+    res.json(updated);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+}
+
+export async function getOffersForRequest(req, res) {
+  const offers = await adminBuyerService.getOffersForRequest(req.params.id);
+  res.json(offers);
+}
+
+export async function reviewOffer(req, res) {
+  try {
+    const updated = await adminBuyerService.reviewOffer(req.params.offerId, {
+      status: req.body.status,
+    });
+    res.json(updated);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+}

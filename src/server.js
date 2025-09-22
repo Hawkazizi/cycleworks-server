@@ -4,7 +4,7 @@ import cors from "cors"; // <-- add this
 import db from "./db/knex.js";
 import userRouter from "./routes/user.routes.js";
 import adminRouter from "./routes/admin.routes.js";
-
+import buyerRouter from "./routes/buyer.routes.js";
 dotenv.config();
 
 const app = express();
@@ -29,7 +29,7 @@ app.get("/", (req, res) => {
 // Routes
 app.use("/api/users", userRouter);
 app.use("/api/admin", adminRouter);
-
+app.use("/api/buyers", buyerRouter);
 // Test DB connection on startup
 db.raw("SELECT 1+1 AS result")
   .then(() => {

@@ -1,60 +1,42 @@
 import db from "../db/knex.js";
 import jwt from "jsonwebtoken";
+import { JWT_SECRET, JWT_EXPIRES_IN } from "../config/jwt.js";
 
-// Admin / Manager Login
 export const loginWithLicense = async (licenseKey, role) => {
-  // 1) Find active license
   const license = await db("admin_license_keys")
     .where({ key: licenseKey, is_active: true })
     .first();
+  if (!license) throw new Error("Invalid or inactive license key");
+  if (!license.assigned_to) throw new Error("License not assigned to any user");
 
-  if (!license) {
-    throw new Error("Invalid or inactive license key");
-  }
-
-  if (!license.assigned_to) {
-    throw new Error("License not assigned to any user");
-  }
-
-  // 2) Look up the role linked to this license
   const roleRow = await db("roles").where("id", license.role_id).first();
-  if (!roleRow) {
-    throw new Error("Role not found for this license");
-  }
+  if (!roleRow) throw new Error("Role not found for this license");
+  const licenseRole = roleRow.name.toLowerCase();
 
-  const licenseRole = roleRow.name; // e.g. 'admin' or 'manager'
-
-  // 3) If role provided from frontend, enforce match
-  if (role && licenseRole.toLowerCase() !== role.toLowerCase()) {
+  if (role && licenseRole !== role.toLowerCase()) {
     throw new Error("Role mismatch for this license");
   }
 
-  // 4) Fetch the user and verify status + role
   const user = await db("users")
-    .join("user_roles", "users.id", "user_roles.user_id")
-    .join("roles", "user_roles.role_id", "roles.id")
-    .where("users.id", license.assigned_to)
-    .andWhere("users.status", "active")
-    .andWhere("roles.name", licenseRole) // enforce license role
-    .select("users.id", "users.email", "roles.name as role")
+    .where("id", license.assigned_to)
+    .andWhere("status", "active")
     .first();
-
-  if (!user) {
+  if (!user)
     throw new Error(`No active ${licenseRole} user found for this license`);
-  }
 
-  // 5) Generate JWT
-  const token = jwt.sign(
-    {
-      role: licenseRole,
-      id: user.id,
-      licenseId: license.id,
-    },
-    process.env.JWT_SECRET || "secret",
-    { expiresIn: "1d" }
-  );
+  const payload = {
+    id: user.id,
+    email: user.email || null,
+    licenseId: license.id,
+    roles: [licenseRole],
+  };
 
-  return token;
+  const token = jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+  return {
+    token,
+    user: { id: user.id, email: user.email },
+    roles: [licenseRole],
+  };
 };
 
 // Get admin/manager profile

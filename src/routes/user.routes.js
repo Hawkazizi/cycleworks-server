@@ -120,4 +120,47 @@ router.post(
   userController.submitFinalDocs
 );
 
+//buyer part
+router.get(
+  "/buyer-requests",
+  authenticate,
+  authorize("user"),
+  userController.listBuyerRequests
+);
+
+router.post(
+  "/buyer-requests/:id/offers",
+  authenticate,
+  authorize("user"),
+  userController.submitOffer
+);
+// Farmer offer management
+router.get(
+  "/offers",
+  authenticate,
+  authorize("user"),
+  userController.getMyOffers
+);
+
+router.get(
+  "/offers/:id",
+  authenticate,
+  authorize("user"),
+  userController.getMyOfferById
+);
+
+router.patch(
+  "/offers/:id",
+  authenticate,
+  authorize("user"),
+  userController.updateOffer
+);
+
+router.delete(
+  "/offers/:id",
+  authenticate,
+  authorize("user"),
+  userController.cancelOffer
+);
+
 export default router;

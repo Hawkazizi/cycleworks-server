@@ -162,5 +162,34 @@ router.post(
   authorize("admin", "manager"),
   adminController.reviewFinalDocuments
 );
+//buyer part
+
+router.get(
+  "/buyer-requests",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.getBuyerRequests
+);
+
+router.post(
+  "/buyer-requests/:id/review",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.reviewBuyerRequest
+);
+
+router.get(
+  "/buyer-requests/:id/offers",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.getOffersForRequest
+);
+
+router.post(
+  "/buyer-requests/offers/:offerId/review",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.reviewOffer
+);
 
 export default router;

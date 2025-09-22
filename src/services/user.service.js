@@ -2,11 +2,17 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import db from "../db/knex.js";
 import { sendVerificationCode } from "./SMS/smsService.js";
-
+import { JWT_SECRET, JWT_EXPIRES_IN } from "../config/jwt.js";
 const SALT_ROUNDS = 10;
 
 // Register new user + application
-export const registerUser = async ({ name, mobile, password, reason }) => {
+export const registerUser = async ({
+  name,
+  mobile,
+  password,
+  reason,
+  role,
+}) => {
   // Check if mobile exists
   const existing = await db("users").where({ mobile }).first();
   if (existing) throw new Error("این شماره موبایل قبلاً ثبت شده است");
@@ -18,7 +24,7 @@ export const registerUser = async ({ name, mobile, password, reason }) => {
     .insert({ name, mobile, password_hash, status: "pending" })
     .returning("*");
 
-  // Insert application (optional)
+  // Insert application
   let application = null;
   if (reason) {
     [application] = await db("user_applications")
@@ -26,28 +32,45 @@ export const registerUser = async ({ name, mobile, password, reason }) => {
       .returning("*");
   }
 
+  // Assign requested role
+  const roleRow = await db("roles").where({ name: role }).first();
+  if (!roleRow) throw new Error("نقش انتخاب شده معتبر نیست");
+
+  await db("user_roles")
+    .insert({ user_id: user.id, role_id: roleRow.id })
+    .onConflict(["user_id", "role_id"])
+    .ignore();
+
   return { user, application, message: "درخواست ثبت شد، منتظر تأیید مدیر" };
 };
 
-// Login user
 export const loginUser = async ({ mobile, password }) => {
   const user = await db("users").where({ mobile }).first();
   if (!user) throw new Error("کاربری با این شماره یافت نشد");
-
-  if (user.status !== "active") {
+  if (user.status !== "active")
     throw new Error("حساب کاربری هنوز فعال نشده است");
-  }
 
   const isMatch = await bcrypt.compare(password, user.password_hash);
   if (!isMatch) throw new Error("شماره موبایل یا رمز عبور نادرست است");
 
-  const token = jwt.sign(
-    { id: user.id, mobile: user.mobile, role: "user" },
-    process.env.JWT_SECRET || "secret",
-    { expiresIn: "1d" }
-  );
+  const roles = await db("user_roles")
+    .join("roles", "roles.id", "user_roles.role_id")
+    .where("user_roles.user_id", user.id)
+    .select("roles.name");
+  const roleNames = roles.map((r) => r.name.toLowerCase());
 
-  return { user, token };
+  const payload = {
+    id: user.id,
+    mobile: user.mobile,
+    roles: roleNames,
+  };
+  const token = jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+
+  return {
+    token,
+    user: { id: user.id, mobile: user.mobile },
+    roles: roleNames,
+  };
 };
 
 // Create and send SMS verification code

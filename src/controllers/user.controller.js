@@ -1,21 +1,27 @@
 import * as userService from "../services/user.service.js";
+import * as farmerOfferService from "../services/farmerOffer.service.js";
 
-// Register a new user with mobile + password
+// Register a new user with mobile + password + role
 export const register = async (req, res) => {
   try {
-    const { name, mobile, password, reason } = req.body;
+    const { name, mobile, password, reason, role } = req.body;
     if (!mobile || !password) {
       return res
         .status(400)
         .json({ error: "شماره موبایل و رمز عبور الزامی است" });
     }
 
+    // Default role → farmer ("user") if none provided
+    const chosenRole = role || "user";
+
     const result = await userService.registerUser({
       name,
       mobile,
       password,
       reason,
+      role: chosenRole,
     });
+
     res.status(201).json(result);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -73,7 +79,7 @@ export const verifyCode = async (req, res) => {
 
     const token = jwt.sign(
       { role: "user", id: user.id },
-      process.env.JWT_SECRET,
+      process.env.JWT_SECRET || "secret",
       { expiresIn: "7d" }
     );
 
@@ -255,3 +261,61 @@ export const submitFinalDocs = async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 };
+
+//buyer part
+
+export async function listBuyerRequests(req, res) {
+  const requests = await farmerOfferService.listBuyerRequestsForFarmers();
+  res.json(requests);
+}
+
+export async function submitOffer(req, res) {
+  try {
+    const offer = await farmerOfferService.submitOffer(
+      req.params.id,
+      req.user.id,
+      req.body.offer_quantity
+    );
+    res.json(offer);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+}
+export async function getMyOffers(req, res) {
+  const offers = await farmerOfferService.getMyOffers(req.user.id);
+  res.json(offers);
+}
+
+export async function getMyOfferById(req, res) {
+  const offer = await farmerOfferService.getMyOfferById(
+    req.user.id,
+    req.params.id
+  );
+  if (!offer) return res.status(404).json({ error: "Not found" });
+  res.json(offer);
+}
+
+export async function updateOffer(req, res) {
+  try {
+    const updated = await farmerOfferService.updateOffer(
+      req.user.id,
+      req.params.id,
+      req.body
+    );
+    res.json(updated);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+}
+
+export async function cancelOffer(req, res) {
+  try {
+    const cancelled = await farmerOfferService.cancelOffer(
+      req.user.id,
+      req.params.id
+    );
+    res.json(cancelled);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+}
