@@ -6,12 +6,14 @@ export const loginWithLicense = async (licenseKey, role) => {
   const license = await db("admin_license_keys")
     .where({ key: licenseKey, is_active: true })
     .first();
+
   if (!license) throw new Error("Invalid or inactive license key");
   if (!license.assigned_to) throw new Error("License not assigned to any user");
 
   const roleRow = await db("roles").where("id", license.role_id).first();
   if (!roleRow) throw new Error("Role not found for this license");
-  const licenseRole = roleRow.name.toLowerCase();
+
+  const licenseRole = roleRow.name.toLowerCase(); // "admin" | "manager" | "buyer"
 
   if (role && licenseRole !== role.toLowerCase()) {
     throw new Error("Role mismatch for this license");
@@ -21,8 +23,10 @@ export const loginWithLicense = async (licenseKey, role) => {
     .where("id", license.assigned_to)
     .andWhere("status", "active")
     .first();
-  if (!user)
+
+  if (!user) {
     throw new Error(`No active ${licenseRole} user found for this license`);
+  }
 
   const payload = {
     id: user.id,
@@ -32,6 +36,7 @@ export const loginWithLicense = async (licenseKey, role) => {
   };
 
   const token = jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+
   return {
     token,
     user: { id: user.id, email: user.email },

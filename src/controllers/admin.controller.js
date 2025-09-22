@@ -1,5 +1,6 @@
 import * as adminService from "../services/admin.service.js";
 import * as adminBuyerService from "../services/adminBuyer.service.js";
+import db from "../db/knex.js";
 // Admin/Manager login
 export const loginWithLicense = async (req, res) => {
   try {
@@ -39,6 +40,24 @@ export const listUsers = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+// get user by id for all
+
+export async function getUserById(req, res) {
+  try {
+    const { id } = req.params;
+    const user = await db("users")
+      .select("id", "name", "email", "status")
+      .where({ id })
+      .first();
+
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    res.json(user);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
 
 // Get pending applications (for admins)
 export const getApplications = async (req, res) => {
@@ -331,6 +350,20 @@ export async function getBuyerRequests(req, res) {
   const requests = await adminBuyerService.getBuyerRequests();
   res.json(requests);
 }
+export async function getBuyerRequestById(req, res) {
+  try {
+    const { id } = req.params;
+    const request = await adminBuyerService.getBuyerRequestById(id);
+
+    if (!request) {
+      return res.status(404).json({ error: "Buyer request not found" });
+    }
+
+    res.json(request);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
 
 export async function reviewBuyerRequest(req, res) {
   try {
@@ -343,7 +376,14 @@ export async function reviewBuyerRequest(req, res) {
     res.status(400).json({ error: err.message });
   }
 }
-
+export async function getAllOffers(req, res) {
+  try {
+    const offers = await adminBuyerService.getAllOffers();
+    res.json(offers);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
 export async function getOffersForRequest(req, res) {
   const offers = await adminBuyerService.getOffersForRequest(req.params.id);
   res.json(offers);

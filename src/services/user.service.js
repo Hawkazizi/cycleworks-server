@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import db from "../db/knex.js";
 import { sendVerificationCode } from "./SMS/smsService.js";
 import { JWT_SECRET, JWT_EXPIRES_IN } from "../config/jwt.js";
+
 const SALT_ROUNDS = 10;
 
 // Register new user + application
@@ -13,18 +14,15 @@ export const registerUser = async ({
   reason,
   role,
 }) => {
-  // Check if mobile exists
   const existing = await db("users").where({ mobile }).first();
   if (existing) throw new Error("این شماره موبایل قبلاً ثبت شده است");
 
   const password_hash = await bcrypt.hash(password, SALT_ROUNDS);
 
-  // Insert user
   const [user] = await db("users")
     .insert({ name, mobile, password_hash, status: "pending" })
     .returning("*");
 
-  // Insert application
   let application = null;
   if (reason) {
     [application] = await db("user_applications")
@@ -32,7 +30,6 @@ export const registerUser = async ({
       .returning("*");
   }
 
-  // Assign requested role
   const roleRow = await db("roles").where({ name: role }).first();
   if (!roleRow) throw new Error("نقش انتخاب شده معتبر نیست");
 
@@ -44,6 +41,7 @@ export const registerUser = async ({
   return { user, application, message: "درخواست ثبت شد، منتظر تأیید مدیر" };
 };
 
+// Farmer login with mobile/password
 export const loginUser = async ({ mobile, password }) => {
   const user = await db("users").where({ mobile }).first();
   if (!user) throw new Error("کاربری با این شماره یافت نشد");
@@ -57,13 +55,17 @@ export const loginUser = async ({ mobile, password }) => {
     .join("roles", "roles.id", "user_roles.role_id")
     .where("user_roles.user_id", user.id)
     .select("roles.name");
+
   const roleNames = roles.map((r) => r.name.toLowerCase());
 
-  const payload = {
-    id: user.id,
-    mobile: user.mobile,
-    roles: roleNames,
-  };
+  // ❌ Prevent buyers from logging in here
+  if (roleNames.includes("buyer")) {
+    throw new Error(
+      "Buyers must login with a license key, not mobile/password"
+    );
+  }
+
+  const payload = { id: user.id, mobile: user.mobile, roles: roleNames };
   const token = jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
 
   return {

@@ -4,16 +4,24 @@ import knex from "../db/knex.js";
 export async function createRequest(userId, data) {
   const [req] = await knex("buyer_requests")
     .insert({
-      buyer_id: userId, // now references users.id
-      product: data.product || "eggs",
-      quantity: data.quantity,
-      destination_country: data.destination_country,
+      buyer_id: userId,
+      product_type: data.product_type || [], // array
+      packaging: data.packaging || [], // array
+      size: data.size || [], // array
+      egg_type: data.egg_type || [], // array
+      expiration_date: data.expiration_date || null,
+      certificates: data.certificates || [], // array
+      quantity: data.quantity, // decimal
+      import_country: data.import_country || null,
+      entry_border: data.entry_border || null,
+      exit_border: data.exit_border || null,
+      preferred_supplier: data.preferred_supplier || null,
       status: "pending",
     })
     .returning("*");
+
   return req;
 }
-
 export async function getMyRequests(userId) {
   return knex("buyer_requests")
     .where({ buyer_id: userId })

@@ -1,32 +1,34 @@
+// seeds/03_license_keys.js
 export async function seed(knex) {
-  // Clear previous keys
   await knex("admin_license_keys").del();
 
-  // Fetch roles
-  const adminRole = await knex("roles").where({ name: "admin" }).first();
-  const managerRole = await knex("roles").where({ name: "manager" }).first();
+  const roles = await knex("roles").select("id", "name");
+  const roleMap = Object.fromEntries(roles.map((r) => [r.name, r.id]));
 
-  // Fetch users
-  const adminUser = await knex("users")
-    .where({ email: "admin@example.com" })
-    .first();
-  const managerUser = await knex("users")
-    .where({ email: "manager@example.com" })
-    .first();
+  const users = await knex("users").select("id", "email");
+  const userMap = Object.fromEntries(users.map((u) => [u.email, u.id]));
 
-  // Insert license keys and assign to users
-  await knex("admin_license_keys").insert([
+  const rows = [
     {
       key: "ADMIN-KEY-123",
-      role_id: adminRole.id,
-      assigned_to: adminUser.id,
+      role_id: roleMap["admin"],
+      assigned_to: userMap["admin@example.com"],
       is_active: true,
     },
     {
       key: "MANAGER-KEY-456",
-      role_id: managerRole.id,
-      assigned_to: managerUser.id,
+      role_id: roleMap["manager"],
+      assigned_to: userMap["manager@example.com"],
       is_active: true,
     },
-  ]);
+    {
+      key: "BUYER-KEY-789",
+      role_id: roleMap["buyer"],
+      assigned_to: userMap["buyer@example.com"],
+      is_active: true,
+    },
+    // Optional: farmers normally don’t use license keys, so no entry for them
+  ];
+
+  await knex("admin_license_keys").insert(rows);
 }

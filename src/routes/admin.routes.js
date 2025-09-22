@@ -25,6 +25,14 @@ router.get(
   adminController.listUsers
 );
 
+//get user by id for all users
+router.get(
+  "/users/:id",
+  authenticate,
+  authorize("admin", "manager", "buyer", "user"),
+  adminController.getUserById
+);
+
 // Protected admin routes
 router.get(
   "/applications",
@@ -162,8 +170,10 @@ router.post(
   authorize("admin", "manager"),
   adminController.reviewFinalDocuments
 );
-//buyer part
 
+// 🛒 Buyer Requests & Offers (Admin/Manager only)
+
+// --- Requests ---
 router.get(
   "/buyer-requests",
   authenticate,
@@ -178,11 +188,13 @@ router.post(
   adminController.reviewBuyerRequest
 );
 
+// --- Offers ---
+// ⚠️ Put these BEFORE ":id" so Express doesn't misinterpret "offers" as an ID
 router.get(
-  "/buyer-requests/:id/offers",
+  "/buyer-requests/offers",
   authenticate,
   authorize("admin", "manager"),
-  adminController.getOffersForRequest
+  adminController.getAllOffers
 );
 
 router.post(
@@ -190,6 +202,21 @@ router.post(
   authenticate,
   authorize("admin", "manager"),
   adminController.reviewOffer
+);
+
+router.get(
+  "/buyer-requests/:id/offers",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.getOffersForRequest
+);
+
+// --- Single Request ---
+router.get(
+  "/buyer-requests/:id",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.getBuyerRequestById
 );
 
 export default router;

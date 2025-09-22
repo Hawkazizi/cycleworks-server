@@ -1,22 +1,15 @@
+// seeds/02_users.js
 export async function seed(knex) {
-  // clear children first
-  // await knex("packing_units").del();
-  // await knex("user_roles").del();
-  // await knex("user_applications").del();
-  // await knex("admin_license_keys").del();
-
-  //Or do this instead :
+  // Clear users table and reset cascade
   await knex.raw("TRUNCATE TABLE users RESTART IDENTITY CASCADE");
-  // then users
-  await knex("users").del();
 
   await knex("users").insert([
     {
       id: 1,
       name: "Admin User",
-      mobile: "09120000001", // new required field
-      email: "admin@example.com", // optional
-      password_hash: "hashedpassword1", // bcrypt hash in real usage
+      mobile: "09120000001",
+      email: "admin@example.com",
+      password_hash: "hashedpassword1",
       status: "active",
     },
     {
@@ -35,5 +28,30 @@ export async function seed(knex) {
       password_hash: "hashedpassword3",
       status: "pending",
     },
+    {
+      id: 4,
+      name: "Buyer User",
+      mobile: "09120000004",
+      email: "buyer@example.com",
+      password_hash: "hashedpassword4",
+      status: "active",
+    },
+    {
+      id: 5,
+      name: "Farmer User",
+      mobile: "09120000005",
+      email: "farmer@example.com",
+      password_hash: "hashedpassword5",
+      status: "active",
+    },
   ]);
+
+  // ✅ Reset the sequence to the max(id)
+  await knex.raw(`
+    SELECT setval(
+      pg_get_serial_sequence('users', 'id'),
+      (SELECT COALESCE(MAX(id), 1) FROM users),
+      true
+    )
+  `);
 }
