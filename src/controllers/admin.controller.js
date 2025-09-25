@@ -1,3 +1,5 @@
+import fs from "fs";
+import path from "path";
 import * as adminService from "../services/admin.service.js";
 import * as adminBuyerService from "../services/adminBuyer.service.js";
 import db from "../db/knex.js";
@@ -41,6 +43,25 @@ export const listUsers = async (req, res) => {
   }
 };
 
+//ban / unban
+
+export const banOrUnbanUser = async (req, res) => {
+  try {
+    const { id } = req.params; // target user id
+    const { action } = req.body; // "ban" or "unban"
+    const adminId = req.user.id; // logged-in admin from JWT
+    const updatedUser = await adminService.toggleUserStatus(
+      Number(id),
+      action,
+      adminId
+    );
+
+    res.json({ user: updatedUser });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
 // get user by id for all
 
 export async function getUserById(req, res) {
@@ -65,7 +86,8 @@ export const getApplications = async (req, res) => {
     const apps = await adminService.getApplications();
     res.json(apps);
   } catch (err) {
-    res.status(500).json({ error: "Failed to fetch applications" });
+    console.error("❌ getApplications error:", err);
+    res.status(500).json({ error: err.message });
   }
 };
 
@@ -80,25 +102,6 @@ export const reviewApplication = async (req, res) => {
 
     const result = await adminService.reviewApplication(id, status, reviewerId);
     res.json(result);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-};
-
-//ban / unban
-
-export const banOrUnbanUser = async (req, res) => {
-  try {
-    const { id } = req.params; // target user id
-    const { action } = req.body; // "ban" or "unban"
-    const adminId = req.user.id; // logged-in admin from JWT
-    const updatedUser = await adminService.toggleUserStatus(
-      Number(id),
-      action,
-      adminId
-    );
-
-    res.json({ user: updatedUser });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -126,41 +129,136 @@ export const updateSetting = async (req, res) => {
   }
 };
 
-// Get permit requests
-export const getPermitRequests = async (req, res) => {
+// List all license keys
+export const getLicenseKeys = async (req, res) => {
   try {
-    const { status } = req.query; // Optional filter, default 'Requested'
-    const requests = await adminService.getPermitRequests(
-      status || "Requested"
-    );
-    res.json({ requests });
+    const keys = await adminService.getAllLicenseKeys();
+    res.json({ keys });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
 
-// Review permit request
+// Create new license key
+export const createLicenseKey = async (req, res) => {
+  try {
+    const { key, role_id, assigned_to } = req.body;
+    const newKey = await adminService.createLicenseKey({
+      key,
+      role_id,
+      assigned_to,
+    });
+    res.status(201).json({ key: newKey });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
+// Toggle active/inactive
+export const toggleLicenseKey = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updated = await adminService.toggleLicenseKey(id);
+    res.json({ key: updated });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
+// Delete license key
+export const deleteLicenseKey = async (req, res) => {
+  try {
+    const { id } = req.params;
+    await adminService.deleteLicenseKey(id);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+}; // List all roles
+export const getRoles = async (req, res) => {
+  try {
+    const roles = await adminService.getAllRoles();
+    res.json({ roles });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+export const getPackingUnits = async (req, res) => {
+  try {
+    const { status } = req.query; // optional
+    const units = await adminService.getPackingUnits(status || null);
+    res.json({ units });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+export const reviewPackingUnit = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, rejection_reason } = req.body;
+    const reviewerId = req.user.id;
+    const updated = await adminService.reviewPackingUnit(
+      id,
+      { status, rejection_reason },
+      reviewerId
+    );
+    res.json({ packing_unit: updated });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
+// Get permit requests
+export const getPermitRequests = async (req, res) => {
+  try {
+    const { status } = req.query; // Optional filter
+    const requests = await adminService.getPermitRequests(status || null);
+    res.json({ requests });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
 export const reviewPermitRequest = async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, max_tonnage, permit_document, rejection_reason } = req.body;
+    const { status, max_tonnage, rejection_reason } = req.body;
     const reviewerId = req.user.id;
+
+    let permitDocumentPath = null;
+
+    // If file uploaded, move it to final dir
+    if (req.file) {
+      const permitDir = path.join("uploads", "permits", String(id));
+      fs.mkdirSync(permitDir, { recursive: true });
+      const newPath = path.join(permitDir, req.file.filename);
+      fs.renameSync(req.file.path, newPath);
+      permitDocumentPath = "/" + newPath.replace(/\\/g, "/");
+    }
+
     const updated = await adminService.reviewPermitRequest(
       id,
-      { status, max_tonnage, permit_document, rejection_reason },
+      {
+        status,
+        max_tonnage,
+        permit_document: permitDocumentPath, // will be null if not provided
+        rejection_reason,
+      },
       reviewerId
     );
+
     res.json({ permit: updated });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 };
 
+// controllers/admin.controller.js
 export async function getWeeklyPlans(req, res) {
   try {
-    // optional query param ?status=Submitted|Approved|Rejected
-    const statusFilter = req.query.status || "Submitted";
-    const plans = await adminService.getWeeklyLoadingPlans(statusFilter);
+    const { status } = req.query; // optional
+    const plans = await adminService.getWeeklyLoadingPlans(status || null);
     res.json(plans);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -186,32 +284,6 @@ export async function reviewWeeklyPlan(req, res) {
     res.status(400).json({ error: err.message });
   }
 }
-
-export const getPackingUnits = async (req, res) => {
-  try {
-    const { status } = req.query;
-    const units = await adminService.getPackingUnits(status || "Submitted");
-    res.json({ units });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};
-
-export const reviewPackingUnit = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { status, rejection_reason } = req.body;
-    const reviewerId = req.user.id;
-    const updated = await adminService.reviewPackingUnit(
-      id,
-      { status, rejection_reason },
-      reviewerId
-    );
-    res.json({ packing_unit: updated });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-};
 
 export const getWeeklyLoadingPlans = async (req, res) => {
   try {
@@ -242,26 +314,29 @@ export const reviewWeeklyLoadingPlan = async (req, res) => {
   }
 };
 
+// List QC pre-production submissions
 export const getQcPreProductions = async (req, res) => {
   try {
     const { status } = req.query;
-    const items = await adminService.getQcQueue(status || "Submitted");
+    const items = await adminService.getQcQueue(status || null);
     res.json({ items });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
-
+// Review QC pre-production
 export const reviewQcPreProduction = async (req, res) => {
   try {
     const { id } = req.params;
     const { status, rejection_reason } = req.body;
     const reviewerId = req.user.id;
+
     const updated = await adminService.reviewQcPre(
       id,
       { status, rejection_reason },
       reviewerId
     );
+
     res.json({ qc: updated });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -321,7 +396,7 @@ export const forwardToCustoms = async (req, res) => {
 export const listFinalDocs = async (req, res) => {
   try {
     const { status } = req.query;
-    const items = await adminService.getFinalDocs(status || "Submitted");
+    const items = await adminService.getFinalDocs(status || null);
     res.json({ items });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -384,9 +459,20 @@ export async function getAllOffers(req, res) {
     res.status(500).json({ error: err.message });
   }
 }
+// controllers/admin.controller.js
 export async function getOffersForRequest(req, res) {
-  const offers = await adminBuyerService.getOffersForRequest(req.params.id);
-  res.json(offers);
+  try {
+    const offerId = req.params.id;
+    const offers = await adminBuyerService.getOffersForRequest(offerId);
+
+    if (!offers || offers.length === 0) {
+      return res.status(404).json({ error: "Offer not found" });
+    }
+
+    res.json(offers[0]); // since now it’s a single offer by ID
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 }
 
 export async function reviewOffer(req, res) {

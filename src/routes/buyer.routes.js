@@ -54,5 +54,12 @@ router.delete(
   authorize("buyer"),
   buyerController.cancelRequest
 );
+// Buyer offers
+router.get(
+  "/offers",
+  authenticate,
+  authorize("buyer"),
+  buyerController.getOffersForBuyer
+);
 
 export default router;

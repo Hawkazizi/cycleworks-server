@@ -128,31 +128,73 @@ export const getUserProfile = async (userId) => {
   return { ...user, packingUnits };
 };
 
+// Register a new packing unit
+
+export const registerPackingUnit = async (userId, { name, address }) => {
+  if (!name) throw new Error("Packing unit name is required");
+
+  const [unit] = await db("packing_units")
+    .insert({
+      name,
+      user_id: userId,
+      address: address || null,
+      status: "Submitted",
+      created_at: db.fn.now(),
+      updated_at: db.fn.now(),
+    })
+    .returning("*");
+
+  return unit;
+};
+
+export const getMyPackingUnits = async (userId) => {
+  const rows = await db("packing_units")
+    .where({ user_id: userId })
+    .select(
+      "id",
+      "name",
+      "address",
+      "status",
+      "rejection_reason",
+      "documents",
+      "created_at",
+      "updated_at"
+    );
+
+  return rows.map((row) => ({
+    ...row,
+    documents: row.documents || [],
+  }));
+};
+
 // Get all export permit requests for a user
 export const getMyPermitRequests = async (userId) => {
-  return db("export_permit_requests")
-    .join(
-      "packing_units",
-      "export_permit_requests.packing_unit_id",
-      "packing_units.id"
-    )
-    .where("packing_units.user_id", userId)
+  return db("export_permit_requests as epr")
+    .join("packing_units as pu", "epr.packing_unit_id", "pu.id")
+    .where("pu.user_id", userId)
+    .leftJoin("buyer_requests as br", "epr.buyer_request_id", "br.id") // ✅ join buyer request
+    .leftJoin("users as bu", "br.buyer_id", "bu.id") // ✅ join buyer info
     .select(
-      "export_permit_requests.id",
-      "export_permit_requests.destination_country",
-      "export_permit_requests.max_tonnage",
-      "export_permit_requests.status",
-      "export_permit_requests.permit_document",
-      "export_permit_requests.rejection_reason",
-      "export_permit_requests.issued_at",
-      "export_permit_requests.timeline_start",
-      "export_permit_requests.timeline_end",
-      "export_permit_requests.created_at",
-      "export_permit_requests.updated_at",
-      "packing_units.id as packing_unit_id",
-      "packing_units.name as packing_unit_name"
+      "epr.id",
+      "epr.destination_country",
+      "epr.max_tonnage",
+      "epr.status",
+      "epr.permit_document",
+      "epr.rejection_reason",
+      "epr.issued_at",
+      "epr.timeline_start",
+      "epr.timeline_end",
+      "epr.created_at",
+      "epr.updated_at",
+      "pu.id as packing_unit_id",
+      "pu.name as packing_unit_name",
+      // ✅ buyer info
+      "br.id as buyer_request_id",
+      "br.quantity as buyer_quantity",
+      "br.import_country as buyer_country",
+      "bu.name as buyer_name"
     )
-    .orderBy("export_permit_requests.created_at", "desc");
+    .orderBy("epr.created_at", "desc");
 };
 
 // Get a single export permit request by ID (must belong to user)
@@ -189,7 +231,7 @@ export const getMyPermitRequestById = async (userId, id) => {
 // Request a new export permit
 export const requestExportPermit = async (
   userId,
-  { packing_unit_id, destination_country, max_tonnage }
+  { packing_unit_id, destination_country, max_tonnage, buyer_request_id }
 ) => {
   if (!packing_unit_id || !destination_country || !max_tonnage) {
     throw new Error(
@@ -197,7 +239,7 @@ export const requestExportPermit = async (
     );
   }
 
-  // Verify the packing unit belongs to this user and is approved
+  // Check packing unit
   const packingUnit = await db("packing_units")
     .where({ id: packing_unit_id, user_id: userId, status: "Approved" })
     .first();
@@ -205,12 +247,22 @@ export const requestExportPermit = async (
     throw new Error("Packing unit not found or not approved");
   }
 
-  // Create permit request
+  // ✅ Optional buyer link
+  if (buyer_request_id) {
+    const buyerReq = await db("buyer_requests")
+      .where({ id: buyer_request_id, status: "accepted" })
+      .first();
+    if (!buyerReq) {
+      throw new Error("Buyer request not found or not accepted");
+    }
+  }
+
   const [permit] = await db("export_permit_requests")
     .insert({
       packing_unit_id,
       destination_country,
       max_tonnage,
+      buyer_request_id: buyer_request_id || null,
       status: "Requested",
       created_at: db.fn.now(),
       updated_at: db.fn.now(),
@@ -218,44 +270,6 @@ export const requestExportPermit = async (
     .returning("*");
 
   return permit;
-};
-
-// Register a new packing unit
-export const registerPackingUnit = async (
-  userId,
-  { name, address, document_1, document_2 }
-) => {
-  if (!name) throw new Error("Packing unit name is required");
-
-  const [unit] = await db("packing_units")
-    .insert({
-      name,
-      user_id: userId,
-      address: address || null,
-      status: "Submitted",
-      document_1: document_1 || null,
-      document_2: document_2 || null,
-      created_at: db.fn.now(),
-      updated_at: db.fn.now(),
-    })
-    .returning("*");
-
-  return unit;
-};
-
-// Get all packing units owned by this user
-export const getMyPackingUnits = async (userId) => {
-  return db("packing_units")
-    .where({ user_id: userId })
-    .select(
-      "id",
-      "name",
-      "address",
-      "status",
-      "rejection_reason",
-      "created_at",
-      "updated_at"
-    );
 };
 
 // ===================== WEEKLY LOADING PLANS =====================
@@ -471,56 +485,58 @@ export const submitWeeklyLoadingPlan = async (
 
 // ===================== QC PRE-PRODUCTIONS =====================
 export const getMyQcSubmissions = async (userId) => {
-  return db("qc_pre_productions")
+  return db("qc_pre_productions as qc")
+    .join("weekly_loading_plans as wlp", "qc.weekly_loading_plan_id", "wlp.id")
     .join(
-      "export_permit_requests",
-      "qc_pre_productions.export_permit_request_id",
-      "export_permit_requests.id"
+      "export_permit_requests as epr",
+      "wlp.export_permit_request_id",
+      "epr.id"
     )
-    .join(
-      "packing_units",
-      "export_permit_requests.packing_unit_id",
-      "packing_units.id"
-    )
-    .where("packing_units.user_id", userId)
+    .join("packing_units as pu", "epr.packing_unit_id", "pu.id")
+    .where("pu.user_id", userId)
     .select(
-      "qc_pre_productions.id",
-      "qc_pre_productions.status",
-      "qc_pre_productions.submitted_at",
-      "qc_pre_productions.rejection_reason",
-      "qc_pre_productions.carton_label",
-      "qc_pre_productions.egg_image",
-      "export_permit_requests.id as permit_id",
-      "packing_units.name as unit_name"
+      "qc.id",
+      "qc.status",
+      "qc.submitted_at",
+      "qc.rejection_reason",
+      "qc.carton_label",
+      "qc.egg_image",
+      "wlp.id as weekly_plan_id",
+      "wlp.week_start_date",
+      "pu.name as unit_name"
     )
-    .orderBy("qc_pre_productions.submitted_at", "desc");
+    .orderBy("qc.submitted_at", "desc");
 };
-
 export const submitQcPreProduction = async (
   userId,
-  { export_permit_request_id, carton_label, egg_image }
+  { weekly_loading_plan_id, carton_label, egg_image }
 ) => {
-  if (!export_permit_request_id || !carton_label || !egg_image) {
+  if (!weekly_loading_plan_id || !carton_label || !egg_image) {
     throw new Error(
-      "Missing required fields: export_permit_request_id, carton_label, egg_image"
+      "Missing required fields: weekly_loading_plan_id, carton_label, egg_image"
     );
   }
 
-  // Ensure permit exists, is active, and belongs to this user
-  const permit = await db("export_permit_requests")
-    .where({ id: export_permit_request_id, status: "Timeline_Active" })
+  // Ensure weekly plan exists, is approved, and belongs to this user
+  const plan = await db("weekly_loading_plans as wlp")
+    .join(
+      "export_permit_requests as epr",
+      "wlp.export_permit_request_id",
+      "epr.id"
+    )
+    .join("packing_units as pu", "epr.packing_unit_id", "pu.id")
+    .where("wlp.id", weekly_loading_plan_id)
+    .andWhere("wlp.status", "Approved")
+    .andWhere("pu.user_id", userId)
+    .select("wlp.id")
     .first();
-  if (!permit) throw new Error("Active permit not found");
 
-  const packingUnit = await db("packing_units")
-    .where({ id: permit.packing_unit_id, user_id: userId })
-    .first();
-  if (!packingUnit)
-    throw new Error("Unauthorized: user does not own this packing unit");
+  if (!plan)
+    throw new Error("Approved weekly plan not found or not owned by this user");
 
   const [qc] = await db("qc_pre_productions")
     .insert({
-      export_permit_request_id,
+      weekly_loading_plan_id,
       carton_label,
       egg_image,
       status: "Submitted",
@@ -569,10 +585,10 @@ export const submitExportDocuments = async (
     !veterinary_certificate
   ) {
     throw new Error(
-      "Missing required fields: export_permit_request_id, packing_list, invoice, veterinary_certificate"
+      "All fields are required: export_permit_request_id, packing_list, invoice, veterinary_certificate"
     );
   }
-  // Ensure permit exists and belongs to this user (it may still be Timeline_Active)
+
   const permit = await db("export_permit_requests")
     .where({ id: export_permit_request_id })
     .first();
@@ -623,7 +639,6 @@ export const getMyFinalDocs = async (userId) => {
     )
     .orderBy("final_documents.submitted_at", "desc");
 };
-
 export const submitFinalDocuments = async (
   userId,
   {
@@ -679,4 +694,109 @@ export const submitFinalDocuments = async (
     .returning("*");
 
   return finalDoc;
+};
+
+const mapStatus = (record, okStatuses = ["Approved", "Timeline_Active"]) => {
+  if (!record) return "NotStarted";
+  if (record.status === "Rejected") return "Rejected";
+  if (okStatuses.includes(record.status)) return "Approved";
+  if (["Submitted", "Requested"].includes(record.status)) return "Submitted";
+  return record.status || "Submitted";
+};
+
+export const getPermitProgress = async (userId, permitId) => {
+  // Verify ownership
+  const permit = await db("export_permit_requests as epr")
+    .join("packing_units as pu", "epr.packing_unit_id", "pu.id")
+    .where("epr.id", permitId)
+    .andWhere("pu.user_id", userId)
+    .select(
+      "epr.id",
+      "epr.status",
+      "pu.name as unit_name",
+      "pu.status as unit_status",
+      "epr.destination_country",
+      "epr.max_tonnage"
+    )
+    .first();
+
+  if (!permit) throw new Error("Permit not found or not owned by this user");
+
+  // Fetch related stages
+  const exportDoc = await db("export_documents")
+    .where({ export_permit_request_id: permitId })
+    .orderBy("submitted_at", "desc")
+    .first();
+
+  const weeklyPlan = await db("weekly_loading_plans")
+    .where({ export_permit_request_id: permitId })
+    .orderBy("submitted_at", "desc")
+    .first();
+
+  let qc = null;
+  if (weeklyPlan) {
+    qc = await db("qc_pre_productions")
+      .where({ weekly_loading_plan_id: weeklyPlan.id })
+      .orderBy("submitted_at", "desc")
+      .first();
+  }
+
+  const finalDoc = await db("final_documents")
+    .where({ export_permit_request_id: permitId })
+    .orderBy("submitted_at", "desc")
+    .first();
+
+  // Map to roadmap stages
+  const stages = [
+    {
+      key: "packing_unit",
+      label: "واحد بسته‌بندی",
+      status: mapStatus({ status: permit.unit_status }),
+    },
+    {
+      key: "permit",
+      label: "درخواست مجوز",
+      status: mapStatus({ status: permit.status }),
+    },
+    {
+      key: "export_docs",
+      label: "اسناد صادرات",
+      status: mapStatus(exportDoc),
+      data: exportDoc,
+    },
+    {
+      key: "weekly_plan",
+      label: "برنامه هفتگی",
+      status: mapStatus(weeklyPlan),
+      data: weeklyPlan,
+    },
+    { key: "qc", label: "کنترل کیفی", status: mapStatus(qc), data: qc },
+    {
+      key: "final_docs",
+      label: "اسناد نهایی",
+      status: mapStatus(finalDoc),
+      data: finalDoc,
+    },
+  ];
+
+  // Current index = first non-approved/rejected stage
+  let currentIndex = 0;
+  for (let i = 0; i < stages.length; i++) {
+    const st = stages[i].status;
+    if (st === "Approved") {
+      currentIndex = i + 1;
+      continue;
+    }
+    if (["Rejected", "Submitted", "Timeline_Active"].includes(st)) {
+      currentIndex = i;
+      break;
+    }
+  }
+  if (currentIndex >= stages.length) currentIndex = stages.length - 1;
+
+  return {
+    permit,
+    stages,
+    current_index: currentIndex,
+  };
 };

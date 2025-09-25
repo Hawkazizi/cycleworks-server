@@ -2,11 +2,11 @@ import { Router } from "express";
 import * as userController from "../controllers/user.controller.js";
 import { authenticate } from "../middleware/authenticate.js";
 import { authorize } from "../middleware/authorize.js";
+import upload from "../middleware/upload.js";
 const router = Router();
 
 // User registration
-router.post("/register", userController.register);
-
+router.post("/register", upload.array("files", 10), userController.register);
 // User login
 router.post("/login", userController.login);
 
@@ -16,7 +16,22 @@ router.get(
   authorize("user"),
   userController.getProfile
 );
+// Register a packing unit
+router.post(
+  "/packing-units",
+  authenticate,
+  authorize("user"),
+  upload.array("documents", 5), // up to 5 files under field "documents"
+  userController.registerPackingUnit
+);
 
+// Get my packing units
+router.get(
+  "/packing-units",
+  authenticate,
+  authorize("user"),
+  userController.getMyPackingUnits
+);
 // Get all my export permit requests
 router.get(
   "/permit-requests",
@@ -39,21 +54,7 @@ router.post(
   authorize("user"),
   userController.requestExportPermit
 );
-// Register a packing unit
-router.post(
-  "/packing-units",
-  authenticate,
-  authorize("user"),
-  userController.registerPackingUnit
-);
 
-// Get my packing units
-router.get(
-  "/packing-units",
-  authenticate,
-  authorize("user"),
-  userController.getMyPackingUnits
-);
 // Weekly plans
 router.get(
   "/weekly-plans",
@@ -82,11 +83,15 @@ router.get(
   authorize("user"),
   userController.getMyQcSubmissions
 );
-// QC pre‑production submission
+
 router.post(
   "/qc-pre",
   authenticate,
   authorize("user"),
+  upload.fields([
+    { name: "carton_label", maxCount: 1 },
+    { name: "egg_image", maxCount: 1 },
+  ]),
   userController.submitQcPre
 );
 
@@ -102,6 +107,11 @@ router.post(
   "/export-docs",
   authenticate,
   authorize("user"),
+  upload.fields([
+    { name: "packing_list", maxCount: 1 },
+    { name: "invoice", maxCount: 1 },
+    { name: "veterinary_certificate", maxCount: 1 },
+  ]),
   userController.submitExportDocs
 );
 
@@ -117,7 +127,24 @@ router.post(
   "/final-docs",
   authenticate,
   authorize("user"),
+  upload.fields([
+    { name: "certificate", maxCount: 1 },
+    { name: "packing_list", maxCount: 1 },
+    { name: "invoice", maxCount: 1 },
+    { name: "customs_declaration", maxCount: 1 },
+    { name: "shipping_license", maxCount: 1 },
+    { name: "certificate_of_origin", maxCount: 1 },
+    { name: "chamber_certificate", maxCount: 1 },
+  ]),
   userController.submitFinalDocs
+);
+
+// routes/users.js
+router.get(
+  "/progress/:permitId",
+  authenticate,
+  authorize("user"),
+  userController.getPermitProgress
 );
 
 //buyer part

@@ -1,6 +1,7 @@
 import db from "../db/knex.js";
 import jwt from "jsonwebtoken";
 import { JWT_SECRET, JWT_EXPIRES_IN } from "../config/jwt.js";
+const BASE_URL = process.env.BASE_URL || "http://localhost:5000";
 
 export const loginWithLicense = async (licenseKey, role) => {
   const license = await db("admin_license_keys")
@@ -88,9 +89,8 @@ export const getAllUsers = async () => {
   return users;
 };
 
-// Get all user applications
 export const getApplications = async () => {
-  return db("user_applications")
+  const rows = await db("user_applications")
     .join("users", "user_applications.user_id", "users.id")
     .select(
       "user_applications.id",
@@ -98,9 +98,18 @@ export const getApplications = async () => {
       "users.email",
       "user_applications.reason",
       "user_applications.status",
+      "user_applications.files",
       "user_applications.created_at"
     )
     .orderBy("user_applications.created_at", "desc");
+
+  return rows.map((row) => ({
+    ...row,
+    files: (row.files || []).map((f) => ({
+      ...f,
+      url: `${BASE_URL}${f.path}`, // prepend server URL
+    })),
+  }));
 };
 
 // Approve/Reject application
@@ -180,25 +189,151 @@ export const updateSetting = async (key, value) => {
   return updated;
 };
 
-// Get all pending export permit requests (for manager/admin)
-export const getPermitRequests = async (statusFilter = "Requested") => {
-  return db("export_permit_requests")
-    .join(
-      "packing_units",
-      "export_permit_requests.packing_unit_id",
-      "packing_units.id"
+// Get all license keys with role + user info
+export const getAllLicenseKeys = async () => {
+  return await db("admin_license_keys as alk")
+    .leftJoin("roles as r", "alk.role_id", "r.id")
+    .leftJoin("users as u", "alk.assigned_to", "u.id")
+    .select(
+      "alk.*",
+      "r.name as role_name",
+      "u.name as assigned_user_name",
+      "u.email as assigned_user_email"
     )
+    .orderBy("alk.created_at", "desc");
+};
+
+// Create license key
+export const createLicenseKey = async ({ key, role_id, assigned_to }) => {
+  const [created] = await db("admin_license_keys")
+    .insert({ key, role_id, assigned_to })
+    .returning("*");
+  return created;
+};
+
+// Toggle active status
+export const toggleLicenseKey = async (id) => {
+  const existing = await db("admin_license_keys").where({ id }).first();
+  if (!existing) throw new Error("License key not found");
+
+  const [updated] = await db("admin_license_keys")
+    .where({ id })
+    .update({ is_active: !existing.is_active })
+    .returning("*");
+
+  return updated;
+};
+
+// Delete license key
+export const deleteLicenseKey = async (id) => {
+  const deleted = await db("admin_license_keys").where({ id }).del();
+  if (!deleted) throw new Error("License key not found");
+  return true;
+};
+
+// Get all roles
+export const getAllRoles = async () => {
+  return await db("roles").select("id", "name").orderBy("id", "asc");
+};
+
+export const getPackingUnits = async (status = null) => {
+  let query = db("packing_units")
     .join("users", "packing_units.user_id", "users.id")
     .select(
-      "export_permit_requests.id",
-      "export_permit_requests.destination_country",
-      "export_permit_requests.status",
-      "export_permit_requests.created_at",
-      "packing_units.name as unit_name",
-      "users.name as farmer_name"
+      "packing_units.id",
+      "packing_units.name",
+      "packing_units.address",
+      "packing_units.status",
+      "packing_units.rejection_reason",
+      "packing_units.documents",
+      "packing_units.created_at",
+      "users.name as farmer_name",
+      "users.email as farmer_email"
     )
-    .where("export_permit_requests.status", statusFilter)
-    .orderBy("export_permit_requests.created_at", "desc");
+    .orderBy("packing_units.created_at", "desc");
+
+  // ✅ only filter if status is explicitly provided
+  if (status) {
+    query = query.where("packing_units.status", status);
+  }
+
+  const rows = await query;
+
+  return rows.map((row) => ({
+    ...row,
+    documents: (row.documents || []).map((doc) => ({
+      ...doc,
+      url: `${BASE_URL}${doc.path}`,
+    })),
+  }));
+};
+
+export const reviewPackingUnit = async (
+  id,
+  { status, rejection_reason },
+  reviewerId
+) => {
+  if (!["Approved", "Rejected"].includes(status)) {
+    throw new Error("Invalid status: must be Approved or Rejected");
+  }
+
+  const unit = await db("packing_units").where({ id }).first();
+  if (!unit) throw new Error("Packing unit not found");
+  if (unit.status !== "Submitted")
+    throw new Error("Packing unit is not in Submitted status");
+
+  const updates = {
+    status,
+    reviewed_by: reviewerId,
+    reviewed_at: db.fn.now(),
+  };
+  if (status === "Rejected") {
+    if (!rejection_reason) throw new Error("Rejection reason required");
+    updates.rejection_reason = rejection_reason;
+  }
+
+  const [updated] = await db("packing_units")
+    .where({ id })
+    .update(updates)
+    .returning("*");
+  return updated;
+};
+
+// services/admin.service.js
+
+export const getPermitRequests = async (statusFilter = null) => {
+  let query = db("export_permit_requests as epr")
+    .join("packing_units as pu", "epr.packing_unit_id", "pu.id")
+    .join("users as u", "pu.user_id", "u.id")
+    .leftJoin("buyer_requests as br", "epr.buyer_request_id", "br.id")
+    .leftJoin("users as bu", "br.buyer_id", "bu.id")
+    .select(
+      "epr.id",
+      "epr.destination_country",
+      "epr.max_tonnage",
+      "epr.status",
+      "epr.rejection_reason",
+      "epr.permit_document",
+      "epr.issued_at",
+      "epr.timeline_start",
+      "epr.timeline_end",
+      "epr.reviewed_by",
+      "epr.created_at",
+      "epr.updated_at",
+      "pu.name as unit_name",
+      "u.name as farmer_name",
+      "br.id as buyer_request_id",
+      "br.quantity as buyer_quantity",
+      "br.import_country",
+      "bu.name as buyer_name"
+    )
+    .orderBy("epr.created_at", "desc");
+
+  if (statusFilter) {
+    query = query.where("epr.status", statusFilter);
+  }
+
+  return query;
 };
 
 // Review export permit request (approve/reject, set tonnage, activate timeline)
@@ -262,56 +397,9 @@ export const reviewPermitRequest = async (
     return updatedPermit;
   });
 };
-export const getPackingUnits = async (status = "Submitted") => {
-  return db("packing_units")
-    .join("users", "packing_units.user_id", "users.id")
-    .select(
-      "packing_units.id",
-      "packing_units.name",
-      "packing_units.address",
-      "packing_units.status",
-      "packing_units.rejection_reason",
-      "packing_units.created_at",
-      "users.name as farmer_name",
-      "users.email as farmer_email"
-    )
-    .where("packing_units.status", status)
-    .orderBy("packing_units.created_at", "desc");
-};
-
-export const reviewPackingUnit = async (
-  id,
-  { status, rejection_reason },
-  reviewerId
-) => {
-  if (!["Approved", "Rejected"].includes(status)) {
-    throw new Error("Invalid status: must be Approved or Rejected");
-  }
-
-  const unit = await db("packing_units").where({ id }).first();
-  if (!unit) throw new Error("Packing unit not found");
-  if (unit.status !== "Submitted")
-    throw new Error("Packing unit is not in Submitted status");
-
-  const updates = {
-    status,
-    reviewed_by: reviewerId,
-    reviewed_at: db.fn.now(),
-  };
-  if (status === "Rejected") {
-    if (!rejection_reason) throw new Error("Rejection reason required");
-    updates.rejection_reason = rejection_reason;
-  }
-
-  const [updated] = await db("packing_units")
-    .where({ id })
-    .update(updates)
-    .returning("*");
-  return updated;
-};
-
-export const getWeeklyLoadingPlans = async () => {
-  return db("weekly_loading_plans as wlp")
+// services/admin.service.js
+export const getWeeklyLoadingPlans = async (statusFilter = null) => {
+  let query = db("weekly_loading_plans as wlp")
     .join(
       "export_permit_requests as epr",
       "wlp.export_permit_request_id",
@@ -334,6 +422,12 @@ export const getWeeklyLoadingPlans = async () => {
       "u.name as farmer_name"
     )
     .orderBy("wlp.submitted_at", "desc");
+
+  if (statusFilter) {
+    query = query.where("wlp.status", statusFilter);
+  }
+
+  return query;
 };
 
 // Review a weekly loading plan (approve/reject with global tonnage check)
@@ -432,31 +526,38 @@ export const reviewWeeklyLoadingPlan = async (
   });
 };
 
-export const getQcQueue = async (status = "Submitted") => {
-  return db("qc_pre_productions")
+// Get QC submissions (queue)
+export const getQcQueue = async (status = null) => {
+  let query = db("qc_pre_productions as qc")
+    .join("weekly_loading_plans as wlp", "qc.weekly_loading_plan_id", "wlp.id")
     .join(
-      "export_permit_requests",
-      "qc_pre_productions.export_permit_request_id",
-      "export_permit_requests.id"
+      "export_permit_requests as epr",
+      "wlp.export_permit_request_id",
+      "epr.id"
     )
-    .join(
-      "packing_units",
-      "export_permit_requests.packing_unit_id",
-      "packing_units.id"
-    )
-    .join("users", "packing_units.user_id", "users.id")
+    .join("packing_units as pu", "epr.packing_unit_id", "pu.id")
+    .join("users as u", "pu.user_id", "u.id")
     .select(
-      "qc_pre_productions.id",
-      "qc_pre_productions.submitted_at",
-      "qc_pre_productions.status",
-      "export_permit_requests.id as permit_id",
-      "packing_units.name as unit_name",
-      "users.name as farmer_name"
+      "qc.id",
+      "qc.submitted_at",
+      "qc.status",
+      "qc.rejection_reason",
+      "qc.carton_label",
+      "qc.egg_image",
+      "wlp.id as weekly_plan_id",
+      "epr.id as permit_id",
+      "pu.name as unit_name",
+      "u.name as farmer_name"
     )
-    .where("qc_pre_productions.status", status)
-    .orderBy("qc_pre_productions.submitted_at", "desc");
-};
+    .orderBy("qc.submitted_at", "desc");
 
+  if (status) {
+    query = query.where("qc.status", status);
+  }
+
+  return query;
+};
+// Review QC submission (approve/reject)
 export const reviewQcPre = async (
   id,
   { status, rejection_reason },
@@ -465,6 +566,7 @@ export const reviewQcPre = async (
   if (!["Approved", "Rejected"].includes(status)) {
     throw new Error("Invalid status: must be Approved or Rejected");
   }
+
   const qc = await db("qc_pre_productions").where({ id }).first();
   if (!qc) throw new Error("QC record not found");
 
@@ -472,7 +574,9 @@ export const reviewQcPre = async (
     status,
     reviewed_by: reviewerId,
     reviewed_at: db.fn.now(),
+    rejection_reason: null,
   };
+
   if (status === "Rejected") {
     if (!rejection_reason) throw new Error("Rejection reason required");
     updates.rejection_reason = rejection_reason;
@@ -482,6 +586,7 @@ export const reviewQcPre = async (
     .where({ id })
     .update(updates)
     .returning("*");
+
   return updated;
 };
 
@@ -563,8 +668,8 @@ export const forwardDocsToCustoms = async (id, reviewerId) => {
 };
 
 // ---- Final Documents review/closure
-export const getFinalDocs = async (status = "Submitted") => {
-  return db("final_documents")
+export const getFinalDocs = async (status = null) => {
+  let query = db("final_documents")
     .join(
       "export_permit_requests",
       "final_documents.export_permit_request_id",
@@ -586,8 +691,13 @@ export const getFinalDocs = async (status = "Submitted") => {
       "packing_units.name as unit_name",
       "users.name as farmer_name"
     )
-    .where("final_documents.status", status)
     .orderBy("final_documents.submitted_at", "desc");
+
+  if (status) {
+    query = query.where("final_documents.status", status);
+  }
+
+  return query;
 };
 
 export const reviewFinalDocs = async (

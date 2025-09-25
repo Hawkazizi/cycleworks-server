@@ -52,3 +52,5 @@ Thumbs.db
 # .vercel/
 # .netlify/
 # out/
+
+/uploads

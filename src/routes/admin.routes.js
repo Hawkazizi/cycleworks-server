@@ -2,7 +2,7 @@ import { Router } from "express";
 import * as adminController from "../controllers/admin.controller.js";
 import { authenticate } from "../middleware/authenticate.js";
 import { authorize } from "../middleware/authorize.js";
-
+import upload from "../middleware/upload.js";
 const router = Router();
 
 //admin login
@@ -23,6 +23,12 @@ router.get(
   authenticate,
   authorize("admin"),
   adminController.listUsers
+);
+router.patch(
+  "/users/:id/status",
+  authenticate,
+  authorize("admin"),
+  adminController.banOrUnbanUser
 );
 
 //get user by id for all users
@@ -48,13 +54,6 @@ router.post(
   adminController.reviewApplication
 );
 
-router.patch(
-  "/users/:id/status",
-  authenticate,
-  authorize("admin"),
-  adminController.banOrUnbanUser
-);
-
 router.get(
   "/settings",
   authenticate,
@@ -69,6 +68,58 @@ router.patch(
   adminController.updateSetting
 );
 
+// routes/adminRoutes.js
+router.get(
+  "/license-keys",
+  authenticate,
+  authorize("admin"),
+  adminController.getLicenseKeys
+);
+
+router.post(
+  "/license-keys",
+  authenticate,
+  authorize("admin"),
+  adminController.createLicenseKey
+);
+
+router.patch(
+  "/license-keys/:id/toggle",
+  authenticate,
+  authorize("admin"),
+  adminController.toggleLicenseKey
+);
+
+router.delete(
+  "/license-keys/:id",
+  authenticate,
+  authorize("admin"),
+  adminController.deleteLicenseKey
+);
+
+// Roles management
+router.get(
+  "/roles",
+  authenticate,
+  authorize("admin"),
+  adminController.getRoles
+);
+
+// Packing units management
+router.get(
+  "/packing-units",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.getPackingUnits
+);
+
+router.post(
+  "/packing-units/:id/review",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.reviewPackingUnit
+);
+
 // Export permit requests (admin/manager)
 router.get(
   "/permit-requests",
@@ -81,6 +132,7 @@ router.post(
   "/permit-requests/:id/review",
   authenticate,
   authorize("admin", "manager"),
+  upload.single("permit_document"),
   adminController.reviewPermitRequest
 );
 // 🆕 Weekly plans management (admin/manager)
@@ -97,22 +149,7 @@ router.post(
   authorize("admin", "manager"),
   adminController.reviewWeeklyPlan
 );
-// Packing units management
-router.get(
-  "/packing-units",
-  authenticate,
-  authorize("admin", "manager"),
-  adminController.getPackingUnits
-);
-
-router.post(
-  "/packing-units/:id/review",
-  authenticate,
-  authorize("admin", "manager"),
-  adminController.reviewPackingUnit
-);
-
-// QC pre‑production queue + review (admin/manager)
+// QC pre-production queue + review (admin/manager)
 router.get(
   "/qc-pre",
   authenticate,

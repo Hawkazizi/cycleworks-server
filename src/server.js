@@ -21,6 +21,9 @@ app.use(
   })
 );
 
+// ✅ serve uploads folder statically
+app.use("/uploads", express.static("uploads"));
+
 // Healthcheck
 app.get("/", (req, res) => {
   res.send("CycleWorks API is running 🚀");

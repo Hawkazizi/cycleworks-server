@@ -55,11 +55,13 @@ export async function getAllOffers() {
     .orderBy("bro.created_at", "desc");
 }
 
-export async function getOffersForRequest(requestId) {
+// services/adminBuyer.service.js
+export async function getOffersForRequest(offerId) {
   return knex("buyer_request_offers as bro")
     .join("buyer_requests as br", "bro.request_id", "br.id")
-    .join("users as u", "bro.farmer_id", "u.id")
-    .leftJoin("user_roles as ur", "u.id", "ur.user_id")
+    .join("users as f", "bro.farmer_id", "f.id") // farmer info
+    .join("users as b", "br.buyer_id", "b.id") // buyer info
+    .leftJoin("user_roles as ur", "f.id", "ur.user_id")
     .leftJoin("roles as r", "ur.role_id", "r.id")
     .select(
       "bro.id",
@@ -67,19 +69,32 @@ export async function getOffersForRequest(requestId) {
       "bro.offer_quantity",
       "bro.status as offer_status",
       "bro.created_at as offer_created_at",
-      "u.id as farmer_id",
-      "u.name as farmer_name",
-      "u.mobile as farmer_mobile",
-      "u.email as farmer_email",
+
+      // farmer
+      "f.id as farmer_id",
+      "f.name as farmer_name",
+      "f.mobile as farmer_mobile",
+      "f.email as farmer_email",
+
+      // buyer
+      "b.id as buyer_id",
+      "b.name as buyer_name",
+      "b.mobile as buyer_mobile",
+      "b.email as buyer_email",
+      "b.status as buyer_status",
+
+      // request info
       knex.raw("array_to_string(br.product_type, ',') as product_types"),
       "br.quantity as requested_quantity",
       "br.import_country",
       "br.entry_border",
       "br.exit_border",
+
+      // roles of farmer
       knex.raw("string_agg(r.name, ',') as roles")
     )
-    .where("bro.request_id", requestId)
-    .groupBy("bro.id", "u.id", "br.id")
+    .where("bro.id", offerId) // filter by OFFER ID
+    .groupBy("bro.id", "f.id", "b.id", "br.id")
     .orderBy("bro.created_at", "desc");
 }
 

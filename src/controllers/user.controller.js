@@ -1,20 +1,23 @@
+import fs from "fs";
+import path from "path";
+import db from "../db/knex.js";
 import * as userService from "../services/user.service.js";
 import * as farmerOfferService from "../services/farmerOffer.service.js";
 
-// Register a new user with mobile + password + role
 export const register = async (req, res) => {
   try {
     const { name, mobile, password, reason, role } = req.body;
+
     if (!mobile || !password) {
       return res
         .status(400)
         .json({ error: "شماره موبایل و رمز عبور الزامی است" });
     }
 
-    // Default role → farmer ("user") if none provided
     const chosenRole = role || "user";
 
-    const result = await userService.registerUser({
+    // register user + application
+    const { user, application } = await userService.registerUser({
       name,
       mobile,
       password,
@@ -22,7 +25,38 @@ export const register = async (req, res) => {
       role: chosenRole,
     });
 
-    res.status(201).json(result);
+    // === handle uploaded files ===
+    let fileInfos = [];
+    if (req.files && req.files.length > 0) {
+      const userDir = path.join(
+        "uploads",
+        "users",
+        String(user.id),
+        "registration"
+      );
+      fs.mkdirSync(userDir, { recursive: true });
+
+      fileInfos = req.files.map((file) => {
+        const newPath = path.join(userDir, file.filename);
+        fs.renameSync(file.path, newPath); // move from temp to user folder
+
+        return {
+          filename: file.filename,
+          path: "/" + newPath.replace(/\\/g, "/"), // normalize slashes
+          mimetype: file.mimetype,
+        };
+      });
+      // update application with files JSON
+      await db("user_applications")
+        .where({ id: application.id })
+        .update({ files: JSON.stringify(fileInfos) });
+    }
+
+    res.status(201).json({
+      user,
+      application: { ...application, files: fileInfos },
+      message: "درخواست ثبت شد، منتظر تأیید مدیر",
+    });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -100,6 +134,86 @@ export const getProfile = async (req, res) => {
   }
 };
 
+export const registerPackingUnit = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { name, address } = req.body;
+
+    // create unit first (without documents)
+    const unit = await userService.registerPackingUnit(userId, {
+      name,
+      address,
+    });
+
+    // handle documents
+    let fileInfos = [];
+    if (req.files && req.files.length > 0) {
+      const unitDir = path.join(
+        "uploads",
+        "users",
+        String(userId),
+        "packing-units",
+        String(unit.id)
+      );
+      fs.mkdirSync(unitDir, { recursive: true });
+
+      fileInfos = req.files.map((file) => {
+        const newPath = path.join(unitDir, file.filename);
+        fs.renameSync(file.path, newPath);
+
+        return {
+          filename: file.filename,
+          path: "/" + newPath.replace(/\\/g, "/"),
+          mimetype: file.mimetype,
+        };
+      });
+
+      // update unit with documents
+      await db("packing_units")
+        .where({ id: unit.id })
+        .update({ documents: JSON.stringify(fileInfos) });
+      unit.documents = fileInfos;
+    }
+
+    res.status(201).json({ message: "Packing unit registered", unit });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
+export const getMyPackingUnits = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const units = await userService.getMyPackingUnits(userId);
+    res.json({ units });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+export const requestExportPermit = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const {
+      packing_unit_id,
+      destination_country,
+      max_tonnage,
+      buyer_request_id,
+    } = req.body;
+
+    const permit = await userService.requestExportPermit(userId, {
+      packing_unit_id,
+      destination_country,
+      max_tonnage,
+      buyer_request_id,
+    });
+
+    res.status(201).json({ message: "Export permit requested", permit });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
 export const getMyPermitRequests = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -118,47 +232,6 @@ export const getMyPermitRequestById = async (req, res) => {
     res.json({ permit });
   } catch (err) {
     res.status(404).json({ error: err.message });
-  }
-};
-
-export const requestExportPermit = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const { packing_unit_id, destination_country, max_tonnage } = req.body;
-    const permit = await userService.requestExportPermit(userId, {
-      packing_unit_id,
-      destination_country,
-      max_tonnage,
-    });
-    res.status(201).json({ message: "Export permit requested", permit });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-};
-
-export const registerPackingUnit = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const { name, address, document_1, document_2 } = req.body;
-    const unit = await userService.registerPackingUnit(userId, {
-      name,
-      address,
-      document_1,
-      document_2,
-    });
-    res.status(201).json({ message: "Packing unit registered", unit });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-};
-
-export const getMyPackingUnits = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const units = await userService.getMyPackingUnits(userId);
-    res.json({ units });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
   }
 };
 
@@ -215,7 +288,35 @@ export const getMyQcSubmissions = async (req, res) => {
 export const submitQcPre = async (req, res) => {
   try {
     const userId = req.user.id;
-    const qc = await userService.submitQcPreProduction(userId, req.body);
+    const { weekly_loading_plan_id } = req.body;
+
+    let cartonLabelPath = null;
+    let eggImagePath = null;
+
+    if (req.files?.carton_label) {
+      const file = req.files.carton_label[0];
+      const qcDir = path.join("uploads", "qc", String(weekly_loading_plan_id));
+      fs.mkdirSync(qcDir, { recursive: true });
+      const newPath = path.join(qcDir, file.filename);
+      fs.renameSync(file.path, newPath);
+      cartonLabelPath = "/" + newPath.replace(/\\/g, "/");
+    }
+
+    if (req.files?.egg_image) {
+      const file = req.files.egg_image[0];
+      const qcDir = path.join("uploads", "qc", String(weekly_loading_plan_id));
+      fs.mkdirSync(qcDir, { recursive: true });
+      const newPath = path.join(qcDir, file.filename);
+      fs.renameSync(file.path, newPath);
+      eggImagePath = "/" + newPath.replace(/\\/g, "/");
+    }
+
+    const qc = await userService.submitQcPreProduction(userId, {
+      weekly_loading_plan_id,
+      carton_label: cartonLabelPath,
+      egg_image: eggImagePath,
+    });
+
     res.status(201).json({ message: "QC submitted", qc });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -232,16 +333,55 @@ export const getMyExportDocs = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
 export const submitExportDocs = async (req, res) => {
   try {
     const userId = req.user.id;
-    const doc = await userService.submitExportDocuments(userId, req.body);
+    const { export_permit_request_id } = req.body;
+
+    if (!export_permit_request_id) {
+      return res
+        .status(400)
+        .json({ error: "export_permit_request_id is required" });
+    }
+
+    const docDir = path.join(
+      "uploads",
+      "export-docs",
+      String(export_permit_request_id)
+    );
+    fs.mkdirSync(docDir, { recursive: true });
+
+    let filePaths = {};
+    if (req.files?.packing_list) {
+      const file = req.files.packing_list[0];
+      const newPath = path.join(docDir, file.filename);
+      fs.renameSync(file.path, newPath);
+      filePaths.packing_list = "/" + newPath.replace(/\\/g, "/");
+    }
+    if (req.files?.invoice) {
+      const file = req.files.invoice[0];
+      const newPath = path.join(docDir, file.filename);
+      fs.renameSync(file.path, newPath);
+      filePaths.invoice = "/" + newPath.replace(/\\/g, "/");
+    }
+    if (req.files?.veterinary_certificate) {
+      const file = req.files.veterinary_certificate[0];
+      const newPath = path.join(docDir, file.filename);
+      fs.renameSync(file.path, newPath);
+      filePaths.veterinary_certificate = "/" + newPath.replace(/\\/g, "/");
+    }
+
+    const doc = await userService.submitExportDocuments(userId, {
+      export_permit_request_id,
+      ...filePaths,
+    });
+
     res.status(201).json({ message: "Export documents submitted", doc });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 };
-
 // Final documents
 export const getMyFinalDocs = async (req, res) => {
   try {
@@ -252,16 +392,68 @@ export const getMyFinalDocs = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
 export const submitFinalDocs = async (req, res) => {
   try {
     const userId = req.user.id;
-    const finalDoc = await userService.submitFinalDocuments(userId, req.body);
+    const { export_permit_request_id } = req.body;
+
+    if (!export_permit_request_id) {
+      return res
+        .status(400)
+        .json({ error: "export_permit_request_id is required" });
+    }
+
+    const finalDir = path.join(
+      "uploads",
+      "final-docs",
+      String(export_permit_request_id)
+    );
+    fs.mkdirSync(finalDir, { recursive: true });
+
+    // Collect file paths
+    const fields = [
+      "certificate",
+      "packing_list",
+      "invoice",
+      "customs_declaration",
+      "shipping_license",
+      "certificate_of_origin",
+      "chamber_certificate",
+    ];
+
+    let filePaths = {};
+    for (const field of fields) {
+      if (req.files?.[field]) {
+        const file = req.files[field][0];
+        const newPath = path.join(finalDir, file.filename);
+        fs.renameSync(file.path, newPath);
+        filePaths[field] = "/" + newPath.replace(/\\/g, "/");
+      }
+    }
+
+    const finalDoc = await userService.submitFinalDocuments(userId, {
+      export_permit_request_id,
+      ...filePaths,
+    });
+
     res.status(201).json({ message: "Final documents submitted", finalDoc });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 };
 
+export const getPermitProgress = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { permitId } = req.params;
+
+    const data = await userService.getPermitProgress(userId, permitId);
+    res.json({ progress: data });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
 //buyer part
 
 export async function listBuyerRequests(req, res) {
