@@ -2,6 +2,7 @@ import express from "express";
 import dotenv from "dotenv";
 import cors from "cors"; // <-- add this
 import db from "./db/knex.js";
+import path from "path";
 import userRouter from "./routes/user.routes.js";
 import adminRouter from "./routes/admin.routes.js";
 import buyerRouter from "./routes/buyer.routes.js";
@@ -9,7 +10,7 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-
+const __dirname = path.resolve();
 // Middleware
 app.use(express.json());
 
@@ -22,8 +23,7 @@ app.use(
 );
 
 // ✅ serve uploads folder statically
-app.use("/uploads", express.static("uploads"));
-
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 // Healthcheck
 app.get("/", (req, res) => {
   res.send("CycleWorks API is running 🚀");

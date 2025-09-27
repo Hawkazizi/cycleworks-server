@@ -324,6 +324,7 @@ export const submitQcPre = async (req, res) => {
 };
 
 // Export documents
+// Export documents
 export const getMyExportDocs = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -337,13 +338,15 @@ export const getMyExportDocs = async (req, res) => {
 export const submitExportDocs = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { export_permit_request_id } = req.body;
+    let { export_permit_request_id } = req.body;
 
     if (!export_permit_request_id) {
       return res
         .status(400)
         .json({ error: "export_permit_request_id is required" });
     }
+
+    export_permit_request_id = Number(export_permit_request_id);
 
     const docDir = path.join(
       "uploads",
@@ -382,6 +385,7 @@ export const submitExportDocs = async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 };
+
 // Final documents
 export const getMyFinalDocs = async (req, res) => {
   try {
@@ -457,8 +461,14 @@ export const getPermitProgress = async (req, res) => {
 //buyer part
 
 export async function listBuyerRequests(req, res) {
-  const requests = await farmerOfferService.listBuyerRequestsForFarmers();
-  res.json(requests);
+  try {
+    const requests = await farmerOfferService.listBuyerRequestsForFarmers(
+      req.user.id
+    );
+    res.json(requests);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 }
 
 export async function submitOffer(req, res) {

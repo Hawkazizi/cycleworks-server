@@ -66,3 +66,13 @@ export const getOffersForBuyer = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+export const getMinimalUsers = async (req, res) => {
+  try {
+    const users = await buyerService.getMinimalUsers();
+    res.json(users);
+  } catch (err) {
+    console.error("Error fetching minimal users:", err);
+    res.status(500).json({ error: "Failed to fetch users" });
+  }
+};

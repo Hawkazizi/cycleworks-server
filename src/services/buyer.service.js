@@ -17,3 +17,6 @@ export const getOffersForBuyer = async (buyerId) => {
     .where("br.buyer_id", buyerId)
     .orderBy("o.created_at", "desc");
 };
+export const getMinimalUsers = async () => {
+  return db("users").select("id", "name", "mobile").where("status", "active");
+};

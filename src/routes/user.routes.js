@@ -3,6 +3,7 @@ import * as userController from "../controllers/user.controller.js";
 import { authenticate } from "../middleware/authenticate.js";
 import { authorize } from "../middleware/authorize.js";
 import upload from "../middleware/upload.js";
+import db from "../db/knex.js";
 const router = Router();
 
 // User registration
@@ -76,6 +77,17 @@ router.post(
   userController.submitWeeklyLoadingPlan
 );
 
+router.get("/settings", authenticate, authorize("user"), async (req, res) => {
+  try {
+    const settings = await db("settings").whereIn("key", [
+      "submission_day",
+      "weekly_tonnage_limit",
+    ]);
+    res.json({ settings });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 // QC submissions
 router.get(
   "/qc-pre",
@@ -111,6 +123,7 @@ router.post(
     { name: "packing_list", maxCount: 1 },
     { name: "invoice", maxCount: 1 },
     { name: "veterinary_certificate", maxCount: 1 },
+    { name: "export_permit_request_id", maxCount: 1 }, // 👈 add this so multer keeps it
   ]),
   userController.submitExportDocs
 );

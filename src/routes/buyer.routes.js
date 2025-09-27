@@ -62,4 +62,6 @@ router.get(
   buyerController.getOffersForBuyer
 );
 
+router.get("/users/minimal", buyerController.getMinimalUsers);
+
 export default router;

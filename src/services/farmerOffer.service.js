@@ -1,8 +1,12 @@
 import knex from "../db/knex.js";
 
-export async function listBuyerRequestsForFarmers() {
+export async function listBuyerRequestsForFarmers(farmerId) {
   return knex("buyer_requests")
     .where({ status: "accepted" })
+    .andWhere((qb) => {
+      qb.whereNull("preferred_supplier_id") // open for all farmers
+        .orWhere("preferred_supplier_id", farmerId); // targeted to specific farmer
+    })
     .orderBy("created_at", "desc");
 }
 

@@ -591,81 +591,51 @@ export const reviewQcPre = async (
 };
 
 // ---- Export Documents workflow
-export const getExportDocs = async (status = "Submitted") => {
-  return db("export_documents")
+
+export const getExportDocs = async () => {
+  return db("export_documents as ed")
     .join(
-      "export_permit_requests",
-      "export_documents.export_permit_request_id",
-      "export_permit_requests.id"
+      "export_permit_requests as epr",
+      "ed.export_permit_request_id",
+      "epr.id"
     )
-    .join(
-      "packing_units",
-      "export_permit_requests.packing_unit_id",
-      "packing_units.id"
-    )
-    .join("users", "packing_units.user_id", "users.id")
+    .join("packing_units as pu", "epr.packing_unit_id", "pu.id")
+    .join("users as u", "pu.user_id", "u.id") // farmer
     .select(
-      "export_documents.id",
-      "export_documents.status",
-      "export_documents.submitted_at",
-      "export_documents.sent_to_sales_at",
-      "export_documents.forwarded_to_customs_at",
-      "export_documents.import_permit_document",
-      "export_permit_requests.id as permit_id",
-      "packing_units.name as unit_name",
-      "users.name as farmer_name"
+      "ed.id",
+      "ed.status",
+      "ed.submitted_at",
+      "ed.packing_list",
+      "ed.invoice",
+      "ed.veterinary_certificate",
+      "epr.id as permit_id",
+      "pu.name as unit_name",
+      "u.name as farmer_name"
     )
-    .where("export_documents.status", status)
-    .orderBy("export_documents.submitted_at", "desc");
+    .orderBy("ed.submitted_at", "desc");
 };
 
-export const sendExportDocsToSales = async (id, reviewerId) => {
-  const doc = await db("export_documents").where({ id }).first();
-  if (!doc) throw new Error("Export documents not found");
-  const [updated] = await db("export_documents")
-    .where({ id })
-    .update({
-      status: "Sent_To_Sales",
-      sent_to_sales_at: db.fn.now(),
-      reviewed_by: reviewerId,
-    })
-    .returning("*");
-  return updated;
-};
-
-export const recordImportPermit = async (
+// services/adminExportDocs.service.js
+export async function reviewExportDoc(
   id,
-  import_permit_document,
-  reviewerId
-) => {
-  if (!import_permit_document)
-    throw new Error("import_permit_document required");
-  const doc = await db("export_documents").where({ id }).first();
-  if (!doc) throw new Error("Export documents not found");
-  const [updated] = await db("export_documents")
-    .where({ id })
-    .update({
-      status: "Import_Permit_Received",
-      import_permit_document,
-      reviewed_by: reviewerId,
-    })
-    .returning("*");
-  return updated;
-};
+  { status, rejection_reason, reviewerId }
+) {
+  if (!["Approved", "Rejected"].includes(status)) {
+    throw new Error("Invalid status");
+  }
 
-export const forwardDocsToCustoms = async (id, reviewerId) => {
-  const doc = await db("export_documents").where({ id }).first();
-  if (!doc) throw new Error("Export documents not found");
   const [updated] = await db("export_documents")
     .where({ id })
     .update({
-      status: "Forwarded_To_Customs",
-      forwarded_to_customs_at: db.fn.now(),
+      status,
+      rejection_reason: status === "Rejected" ? rejection_reason : null,
       reviewed_by: reviewerId,
+      reviewed_at: db.fn.now(),
     })
     .returning("*");
+
   return updated;
-};
+}
 
 // ---- Final Documents review/closure
 export const getFinalDocs = async (status = null) => {

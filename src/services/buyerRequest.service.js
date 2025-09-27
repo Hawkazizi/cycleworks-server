@@ -15,13 +15,15 @@ export async function createRequest(userId, data) {
       import_country: data.import_country || null,
       entry_border: data.entry_border || null,
       exit_border: data.exit_border || null,
-      preferred_supplier: data.preferred_supplier || null,
+      preferred_supplier_name: data.preferred_supplier_name || null, // ✅ new
+      preferred_supplier_id: data.preferred_supplier_id || null, // ✅ new
       status: "pending",
     })
     .returning("*");
 
   return req;
 }
+
 export async function getMyRequests(userId) {
   return knex("buyer_requests")
     .where({ buyer_id: userId })

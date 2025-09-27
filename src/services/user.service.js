@@ -565,9 +565,6 @@ export const getMyExportDocs = async (userId) => {
       "export_documents.id",
       "export_documents.status",
       "export_documents.submitted_at",
-      "export_documents.sent_to_sales_at",
-      "export_documents.forwarded_to_customs_at",
-      "export_documents.import_permit_document",
       "export_permit_requests.id as permit_id",
       "packing_units.name as unit_name"
     )

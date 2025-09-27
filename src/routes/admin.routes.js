@@ -172,25 +172,12 @@ router.get(
   adminController.listExportDocs
 );
 
+// Export docs review (admin)
 router.post(
-  "/export-docs/:id/send-to-sales",
+  "/export-docs/:id/review",
   authenticate,
   authorize("admin", "manager"),
-  adminController.sendDocsToSales
-);
-
-router.post(
-  "/export-docs/:id/import-permit",
-  authenticate,
-  authorize("admin", "manager"),
-  adminController.recordImportPermitDoc
-);
-
-router.post(
-  "/export-docs/:id/forward-to-customs",
-  authenticate,
-  authorize("admin", "manager"),
-  adminController.forwardToCustoms
+  adminController.reviewExportDoc
 );
 
 // Final docs review & closure (admin/manager)

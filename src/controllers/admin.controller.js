@@ -354,43 +354,18 @@ export const listExportDocs = async (req, res) => {
   }
 };
 
-export const sendDocsToSales = async (req, res) => {
+export async function reviewExportDoc(req, res) {
   try {
-    const { id } = req.params;
-    const reviewerId = req.user.id;
-    const updated = await adminService.sendExportDocsToSales(id, reviewerId);
-    res.json({ export_docs: updated });
+    const updated = await adminService.reviewExportDoc(req.params.id, {
+      status: req.body.status,
+      rejection_reason: req.body.rejection_reason,
+      reviewerId: req.user.licenseId,
+    });
+    res.json(updated);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
-};
-
-export const recordImportPermitDoc = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { import_permit_document } = req.body;
-    const reviewerId = req.user.id;
-    const updated = await adminService.recordImportPermit(
-      id,
-      import_permit_document,
-      reviewerId
-    );
-    res.json({ export_docs: updated });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-};
-
-export const forwardToCustoms = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const reviewerId = req.user.id;
-    const updated = await adminService.forwardDocsToCustoms(id, reviewerId);
-    res.json({ export_docs: updated });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-};
+}
 
 // Final docs
 export const listFinalDocs = async (req, res) => {
