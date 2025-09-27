@@ -1,13 +1,11 @@
-// src/middleware/upload.js
 import multer from "multer";
 import fs from "fs";
 import path from "path";
 
-// dynamic storage: organize by user later (for now, just "registration")
+// dynamic storage: for now, all go under uploads/temp
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    // fallback folder until we know userId
-    const uploadPath = path.join("uploads", "temp");
+    const uploadPath = path.join(process.cwd(), "uploads", "temp");
     fs.mkdirSync(uploadPath, { recursive: true });
     cb(null, uploadPath);
   },
@@ -17,7 +15,6 @@ const storage = multer.diskStorage({
   },
 });
 
-// accept multiple files
 const upload = multer({ storage });
 
 export default upload;
