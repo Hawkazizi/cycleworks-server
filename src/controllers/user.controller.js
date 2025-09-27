@@ -235,11 +235,12 @@ export const getMyPermitRequestById = async (req, res) => {
   }
 };
 
-// Weekly plans
+// ===================== WEEKLY LOADING PLANS =====================
 export const getMyWeeklyPlans = async (req, res) => {
   try {
     const userId = req.user.id;
-    const plans = await userService.getMyWeeklyPlans(userId);
+    const { permitId } = req.query; // optional filter
+    const plans = await userService.getMyWeeklyPlans(userId, permitId || null);
     res.json({ plans });
   } catch (err) {
     res.status(500).json({ error: err.message });

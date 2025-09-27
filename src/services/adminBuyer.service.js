@@ -15,6 +15,7 @@ export async function getBuyerRequestById(id) {
     .where("buyer_requests.id", id)
     .first();
 }
+
 export async function reviewBuyerRequest(id, { status, reviewerId }) {
   const [updated] = await knex("buyer_requests")
     .where({ id })
@@ -24,9 +25,33 @@ export async function reviewBuyerRequest(id, { status, reviewerId }) {
       reviewed_at: knex.fn.now(),
     })
     .returning("*");
+
+  if (updated && status === "accepted") {
+    const now = new Date();
+
+    // 🔎 Find an approved packing unit for the preferred supplier (farmer)
+    const packingUnit = await knex("packing_units")
+      .where({ user_id: updated.preferred_supplier_id, status: "Approved" })
+      .first();
+
+    if (!packingUnit) {
+      throw new Error("No approved packing unit found for this supplier");
+    }
+
+    // ✅ Insert export permit request with real packing_unit_id
+    await knex("export_permit_requests").insert({
+      packing_unit_id: packingUnit.id,
+      destination_country: updated.import_country,
+      max_tonnage: updated.quantity,
+      buyer_request_id: updated.id,
+      status: "Requested", // not active yet, admin must review permit separately
+      created_at: now,
+      updated_at: now,
+    });
+  }
+
   return updated;
 }
-
 export async function getAllOffers() {
   return knex("buyer_request_offers as bro")
     .join("buyer_requests as br", "bro.request_id", "br.id")

@@ -273,8 +273,8 @@ export const requestExportPermit = async (
 };
 
 // ===================== WEEKLY LOADING PLANS =====================
-export const getMyWeeklyPlans = async (userId) => {
-  return db("weekly_loading_plans")
+export const getMyWeeklyPlans = async (userId, permitId = null) => {
+  const query = db("weekly_loading_plans")
     .join(
       "export_permit_requests",
       "weekly_loading_plans.export_permit_request_id",
@@ -293,9 +293,16 @@ export const getMyWeeklyPlans = async (userId) => {
       "weekly_loading_plans.submitted_at",
       "weekly_loading_plans.rejection_reason",
       "export_permit_requests.id as permit_id",
+      "weekly_loading_plans.export_permit_request_id",
       "packing_units.name as unit_name"
     )
     .orderBy("weekly_loading_plans.submitted_at", "desc");
+
+  if (permitId) {
+    query.andWhere("export_permit_requests.id", permitId);
+  }
+
+  return query;
 };
 
 export const getMyWeeklyPlanById = async (userId, id) => {
@@ -319,6 +326,7 @@ export const getMyWeeklyPlanById = async (userId, id) => {
       "weekly_loading_plans.submitted_at",
       "weekly_loading_plans.rejection_reason",
       "export_permit_requests.id as permit_id",
+      "weekly_loading_plans.export_permit_request_id",
       "packing_units.name as unit_name"
     )
     .first();
@@ -371,10 +379,6 @@ export const submitWeeklyLoadingPlan = async (
 
   // Validate week_start_date is a Monday (or matches submission_day)
   const weekStart = new Date(week_start_date);
-  if (daysOfWeek[weekStart.getDay()] !== submissionDay.value) {
-    throw new Error(`week_start_date must be a ${submissionDay.value}`);
-  }
-
   // Check permit exists and is active
   const permit = await db("export_permit_requests")
     .where({ id: export_permit_request_id, status: "Timeline_Active" })
