@@ -2,8 +2,9 @@ import fs from "fs";
 import path from "path";
 import db from "../db/knex.js";
 import * as userService from "../services/user.service.js";
-import * as farmerOfferService from "../services/farmerOffer.service.js";
+import jwt from "jsonwebtoken";
 
+/* -------------------- Auth -------------------- */
 export const register = async (req, res) => {
   try {
     const { name, mobile, password, reason, role } = req.body;
@@ -15,8 +16,6 @@ export const register = async (req, res) => {
     }
 
     const chosenRole = role || "user";
-
-    // register user + application
     const { user, application } = await userService.registerUser({
       name,
       mobile,
@@ -25,9 +24,9 @@ export const register = async (req, res) => {
       role: chosenRole,
     });
 
-    // === handle uploaded files ===
+    // save registration files if uploaded
     let fileInfos = [];
-    if (req.files && req.files.length > 0) {
+    if (req.files?.length > 0) {
       const userDir = path.join(
         "uploads",
         "users",
@@ -38,15 +37,14 @@ export const register = async (req, res) => {
 
       fileInfos = req.files.map((file) => {
         const newPath = path.join(userDir, file.filename);
-        fs.renameSync(file.path, newPath); // move from temp to user folder
-
+        fs.renameSync(file.path, newPath);
         return {
           filename: file.filename,
-          path: "/" + newPath.replace(/\\/g, "/"), // normalize slashes
+          path: "/" + newPath.replace(/\\/g, "/"),
           mimetype: file.mimetype,
         };
       });
-      // update application with files JSON
+
       await db("user_applications")
         .where({ id: application.id })
         .update({ files: JSON.stringify(fileInfos) });
@@ -62,7 +60,6 @@ export const register = async (req, res) => {
   }
 };
 
-// Login user with mobile + password
 export const login = async (req, res) => {
   try {
     const { mobile, password } = req.body;
@@ -79,54 +76,9 @@ export const login = async (req, res) => {
   }
 };
 
-// Send SMS verification code
-export const sendCode = async (req, res) => {
-  try {
-    const { mobile } = req.body;
-    if (!mobile)
-      return res.status(400).json({ error: "شماره موبایل الزامی است" });
-
-    let user = await db("users").where({ mobile }).first();
-    if (!user) {
-      const [id] = await db("users")
-        .insert({ mobile, status: "pending" })
-        .returning("id");
-      user = { id, mobile };
-    }
-
-    await userService.createCode(mobile, user.id);
-    res.json({ status: 1, message: "کد ارسال شد" });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};
-
-// Verify SMS code and issue JWT
-export const verifyCode = async (req, res) => {
-  try {
-    const { mobile, code } = req.body;
-    if (!mobile || !code)
-      return res.status(400).json({ error: "ورودی ناقص است" });
-
-    const record = await userService.verifyUserCode(mobile, code);
-    const user = await db("users").where({ id: record.user_id }).first();
-
-    const token = jwt.sign(
-      { role: "user", id: user.id },
-      process.env.JWT_SECRET || "secret",
-      { expiresIn: "7d" }
-    );
-
-    res.json({ token, role: "user", user });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-};
-
-// Get user profile
 export const getProfile = async (req, res) => {
   try {
-    const userId = req.user.id; // from JWT
+    const userId = req.user.id;
     const profile = await userService.getUserProfile(userId);
     res.json({ profile });
   } catch (err) {
@@ -134,391 +86,105 @@ export const getProfile = async (req, res) => {
   }
 };
 
-export const registerPackingUnit = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const { name, address } = req.body;
+/* -------------------- Buyer Requests (Farmer flow) -------------------- */
 
-    // create unit first (without documents)
-    const unit = await userService.registerPackingUnit(userId, {
-      name,
-      address,
-    });
-
-    // handle documents
-    let fileInfos = [];
-    if (req.files && req.files.length > 0) {
-      const unitDir = path.join(
-        "uploads",
-        "users",
-        String(userId),
-        "packing-units",
-        String(unit.id)
-      );
-      fs.mkdirSync(unitDir, { recursive: true });
-
-      fileInfos = req.files.map((file) => {
-        const newPath = path.join(unitDir, file.filename);
-        fs.renameSync(file.path, newPath);
-
-        return {
-          filename: file.filename,
-          path: "/" + newPath.replace(/\\/g, "/"),
-          mimetype: file.mimetype,
-        };
-      });
-
-      // update unit with documents
-      await db("packing_units")
-        .where({ id: unit.id })
-        .update({ documents: JSON.stringify(fileInfos) });
-      unit.documents = fileInfos;
-    }
-
-    res.status(201).json({ message: "Packing unit registered", unit });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-};
-
-export const getMyPackingUnits = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const units = await userService.getMyPackingUnits(userId);
-    res.json({ units });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};
-
-export const requestExportPermit = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const {
-      packing_unit_id,
-      destination_country,
-      max_tonnage,
-      buyer_request_id,
-    } = req.body;
-
-    const permit = await userService.requestExportPermit(userId, {
-      packing_unit_id,
-      destination_country,
-      max_tonnage,
-      buyer_request_id,
-    });
-
-    res.status(201).json({ message: "Export permit requested", permit });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-};
-
-export const getMyPermitRequests = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const permits = await userService.getMyPermitRequests(userId);
-    res.json({ permits });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};
-
-export const getMyPermitRequestById = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const { id } = req.params;
-    const permit = await userService.getMyPermitRequestById(userId, id);
-    res.json({ permit });
-  } catch (err) {
-    res.status(404).json({ error: err.message });
-  }
-};
-
-// ===================== WEEKLY LOADING PLANS =====================
-export const getMyWeeklyPlans = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const { permitId } = req.query; // optional filter
-    const plans = await userService.getMyWeeklyPlans(userId, permitId || null);
-    res.json({ plans });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};
-
-export const getMyWeeklyPlanById = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const { id } = req.params;
-    const plan = await userService.getMyWeeklyPlanById(userId, id);
-    res.json({ plan });
-  } catch (err) {
-    res.status(404).json({ error: err.message });
-  }
-};
-
-// Submit weekly loading plan
-export const submitWeeklyLoadingPlan = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const { export_permit_request_id, week_start_date, details } = req.body;
-    const result = await userService.submitWeeklyLoadingPlan(userId, {
-      export_permit_request_id,
-      week_start_date,
-      details,
-    });
-    res
-      .status(201)
-      .json({ message: "Weekly loading plan submitted", ...result });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-};
-
-// QC submissions
-export const getMyQcSubmissions = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const qc = await userService.getMyQcSubmissions(userId);
-    res.json({ qc });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};
-export const submitQcPre = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const { weekly_loading_plan_id } = req.body;
-
-    let cartonLabelPath = null;
-    let eggImagePath = null;
-
-    if (req.files?.carton_label) {
-      const file = req.files.carton_label[0];
-      const qcDir = path.join("uploads", "qc", String(weekly_loading_plan_id));
-      fs.mkdirSync(qcDir, { recursive: true });
-      const newPath = path.join(qcDir, file.filename);
-      fs.renameSync(file.path, newPath);
-      cartonLabelPath = "/" + newPath.replace(/\\/g, "/");
-    }
-
-    if (req.files?.egg_image) {
-      const file = req.files.egg_image[0];
-      const qcDir = path.join("uploads", "qc", String(weekly_loading_plan_id));
-      fs.mkdirSync(qcDir, { recursive: true });
-      const newPath = path.join(qcDir, file.filename);
-      fs.renameSync(file.path, newPath);
-      eggImagePath = "/" + newPath.replace(/\\/g, "/");
-    }
-
-    const qc = await userService.submitQcPreProduction(userId, {
-      weekly_loading_plan_id,
-      carton_label: cartonLabelPath,
-      egg_image: eggImagePath,
-    });
-
-    res.status(201).json({ message: "QC submitted", qc });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-};
-
-// Export documents
-// Export documents
-export const getMyExportDocs = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const docs = await userService.getMyExportDocs(userId);
-    res.json({ docs });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};
-
-export const submitExportDocs = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    let { export_permit_request_id } = req.body;
-
-    if (!export_permit_request_id) {
-      return res
-        .status(400)
-        .json({ error: "export_permit_request_id is required" });
-    }
-
-    export_permit_request_id = Number(export_permit_request_id);
-
-    const docDir = path.join(
-      "uploads",
-      "export-docs",
-      String(export_permit_request_id)
-    );
-    fs.mkdirSync(docDir, { recursive: true });
-
-    let filePaths = {};
-    if (req.files?.packing_list) {
-      const file = req.files.packing_list[0];
-      const newPath = path.join(docDir, file.filename);
-      fs.renameSync(file.path, newPath);
-      filePaths.packing_list = "/" + newPath.replace(/\\/g, "/");
-    }
-    if (req.files?.invoice) {
-      const file = req.files.invoice[0];
-      const newPath = path.join(docDir, file.filename);
-      fs.renameSync(file.path, newPath);
-      filePaths.invoice = "/" + newPath.replace(/\\/g, "/");
-    }
-    if (req.files?.veterinary_certificate) {
-      const file = req.files.veterinary_certificate[0];
-      const newPath = path.join(docDir, file.filename);
-      fs.renameSync(file.path, newPath);
-      filePaths.veterinary_certificate = "/" + newPath.replace(/\\/g, "/");
-    }
-
-    const doc = await userService.submitExportDocuments(userId, {
-      export_permit_request_id,
-      ...filePaths,
-    });
-
-    res.status(201).json({ message: "Export documents submitted", doc });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-};
-
-// Final documents
-export const getMyFinalDocs = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const docs = await userService.getMyFinalDocs(userId);
-    res.json({ docs });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};
-
-export const submitFinalDocs = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const { export_permit_request_id } = req.body;
-
-    if (!export_permit_request_id) {
-      return res
-        .status(400)
-        .json({ error: "export_permit_request_id is required" });
-    }
-
-    const finalDir = path.join(
-      "uploads",
-      "final-docs",
-      String(export_permit_request_id)
-    );
-    fs.mkdirSync(finalDir, { recursive: true });
-
-    // Collect file paths
-    const fields = [
-      "certificate",
-      "packing_list",
-      "invoice",
-      "customs_declaration",
-      "shipping_license",
-      "certificate_of_origin",
-      "chamber_certificate",
-    ];
-
-    let filePaths = {};
-    for (const field of fields) {
-      if (req.files?.[field]) {
-        const file = req.files[field][0];
-        const newPath = path.join(finalDir, file.filename);
-        fs.renameSync(file.path, newPath);
-        filePaths[field] = "/" + newPath.replace(/\\/g, "/");
-      }
-    }
-
-    const finalDoc = await userService.submitFinalDocuments(userId, {
-      export_permit_request_id,
-      ...filePaths,
-    });
-
-    res.status(201).json({ message: "Final documents submitted", finalDoc });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-};
-
-export const getPermitProgress = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const { permitId } = req.params;
-
-    const data = await userService.getPermitProgress(userId, permitId);
-    res.json({ progress: data });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-};
-//buyer part
-
+// List buyer requests available for this farmer
 export async function listBuyerRequests(req, res) {
   try {
-    const requests = await farmerOfferService.listBuyerRequestsForFarmers(
-      req.user.id
-    );
+    const requests = await userService.listBuyerRequestsForFarmer(req.user.id);
     res.json(requests);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 }
 
-export async function submitOffer(req, res) {
+export async function reviewBuyerRequest(req, res) {
   try {
-    const offer = await farmerOfferService.submitOffer(
-      req.params.id,
-      req.user.id,
-      req.body.offer_quantity
-    );
-    res.json(offer);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-}
-export async function getMyOffers(req, res) {
-  const offers = await farmerOfferService.getMyOffers(req.user.id);
-  res.json(offers);
-}
+    const { id } = req.params;
+    const { decision, start_date } = req.body;
+    const userId = req.user.id;
 
-export async function getMyOfferById(req, res) {
-  const offer = await farmerOfferService.getMyOfferById(
-    req.user.id,
-    req.params.id
-  );
-  if (!offer) return res.status(404).json({ error: "Not found" });
-  res.json(offer);
-}
+    if (decision === "accepted" && !start_date) {
+      return res
+        .status(400)
+        .json({ error: "start_date is required when accepting" });
+    }
 
-export async function updateOffer(req, res) {
-  try {
-    const updated = await farmerOfferService.updateOffer(
-      req.user.id,
-      req.params.id,
-      req.body
-    );
+    const updateData = {
+      farmer_status: decision,
+      updated_at: db.fn.now(),
+    };
+
+    if (decision === "accepted") {
+      // 🔹 compute end_date (7 days after start_date)
+      const start = new Date(start_date);
+      const end = new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000);
+      const end_date = end.toISOString().split("T")[0]; // YYYY-MM-DD
+
+      updateData.farmer_plan = { start_date, end_date }; // ✅ store both
+      updateData.preferred_supplier_id = userId; // ✅ assign supplier
+    } else {
+      updateData.farmer_plan = null; // clear plan if rejected
+    }
+
+    const [updated] = await db("buyer_requests")
+      .where({ id })
+      .update(updateData)
+      .returning("*");
+
+    if (!updated) return res.status(404).json({ error: "Request not found" });
+
     res.json(updated);
   } catch (err) {
+    console.error("reviewBuyerRequest error:", err);
     res.status(400).json({ error: err.message });
   }
 }
 
-export async function cancelOffer(req, res) {
+// Farmer submits all final docs after acceptance
+
+export const submitPlanAndDocs = async (req, res) => {
   try {
-    const cancelled = await farmerOfferService.cancelOffer(
-      req.user.id,
-      req.params.id
+    const userId = req.user.id;
+    const requestId = req.params.id;
+
+    const BASE_URL = process.env.BASE_URL || "http://localhost:5000";
+    const destDir = path.join(
+      "uploads",
+      "users",
+      String(userId),
+      "buyer-requests",
+      String(requestId),
+      "final-docs"
     );
-    res.json(cancelled);
+    fs.mkdirSync(destDir, { recursive: true });
+
+    const docs = [];
+
+    // Loop over known fields
+    Object.keys(req.files || {}).forEach((field) => {
+      const file = req.files[field][0];
+      if (file) {
+        const newPath = path.join(destDir, file.filename);
+        fs.renameSync(file.path, newPath);
+
+        docs.push({
+          type: field, // e.g. invoice, packing_list
+          filename: file.originalname,
+          path: `${BASE_URL}/${newPath.replace(/\\/g, "/")}`,
+        });
+      }
+    });
+
+    const updated = await userService.submitPlanAndDocs(
+      userId,
+      requestId,
+      docs
+    );
+
+    res.json(updated);
   } catch (err) {
+    console.error("submitPlanAndDocs error:", err);
     res.status(400).json({ error: err.message });
   }
-}
+};

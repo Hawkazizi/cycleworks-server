@@ -1,8 +1,10 @@
-import fs from "fs";
-import path from "path";
+// controllers/admin.controller.js
 import * as adminService from "../services/admin.service.js";
 import * as adminBuyerService from "../services/adminBuyer.service.js";
 import db from "../db/knex.js";
+import path from "path";
+import fs from "fs";
+/* -------------------- Auth -------------------- */
 // Admin/Manager login
 export const loginWithLicense = async (req, res) => {
   try {
@@ -33,7 +35,28 @@ export const getProfile = async (req, res) => {
   }
 };
 
-//get all users
+/* -------------------- Users -------------------- */
+export const createUser = async (req, res) => {
+  try {
+    const { name, email, password, role_id } = req.body;
+
+    if (!name || !email || !password || !role_id) {
+      return res.status(400).json({ error: "اطلاعات کاربر ناقص است." });
+    }
+
+    const user = await adminService.createUserWithRole({
+      name,
+      email,
+      password,
+      role_id,
+    });
+
+    res.status(201).json({ user });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+// Get all users
 export const listUsers = async (req, res) => {
   try {
     const users = await adminService.getAllUsers();
@@ -43,8 +66,7 @@ export const listUsers = async (req, res) => {
   }
 };
 
-//ban / unban
-
+// Ban / unban user
 export const banOrUnbanUser = async (req, res) => {
   try {
     const { id } = req.params; // target user id
@@ -62,8 +84,7 @@ export const banOrUnbanUser = async (req, res) => {
   }
 };
 
-// get user by id for all
-
+// Get user by id
 export async function getUserById(req, res) {
   try {
     const { id } = req.params;
@@ -79,14 +100,22 @@ export async function getUserById(req, res) {
     res.status(500).json({ error: err.message });
   }
 }
-
-// Get pending applications (for admins)
+export const deleteUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+    await adminService.deleteUser(Number(id));
+    res.json({ success: true, message: "User and related data deleted" });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+/* -------------------- Applications -------------------- */
+// Get pending applications
 export const getApplications = async (req, res) => {
   try {
     const apps = await adminService.getApplications();
     res.json(apps);
   } catch (err) {
-    console.error("❌ getApplications error:", err);
     res.status(500).json({ error: err.message });
   }
 };
@@ -96,8 +125,6 @@ export const reviewApplication = async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
-
-    // Use the logged-in user as reviewer
     const reviewerId = req.user.id;
 
     const result = await adminService.reviewApplication(id, status, reviewerId);
@@ -107,7 +134,7 @@ export const reviewApplication = async (req, res) => {
   }
 };
 
-// Get all settings
+/* -------------------- Settings -------------------- */
 export const getSettings = async (req, res) => {
   try {
     const settings = await adminService.getAllSettings();
@@ -117,7 +144,6 @@ export const getSettings = async (req, res) => {
   }
 };
 
-// Update a setting
 export const updateSetting = async (req, res) => {
   try {
     const { key } = req.params;
@@ -129,7 +155,7 @@ export const updateSetting = async (req, res) => {
   }
 };
 
-// List all license keys
+/* -------------------- License Keys -------------------- */
 export const getLicenseKeys = async (req, res) => {
   try {
     const keys = await adminService.getAllLicenseKeys();
@@ -139,7 +165,6 @@ export const getLicenseKeys = async (req, res) => {
   }
 };
 
-// Create new license key
 export const createLicenseKey = async (req, res) => {
   try {
     const { key, role_id, assigned_to } = req.body;
@@ -154,7 +179,24 @@ export const createLicenseKey = async (req, res) => {
   }
 };
 
-// Toggle active/inactive
+export const updateLicenseKey = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { key, role_id, assigned_to } = req.body;
+
+    const updated = await adminService.updateLicenseKey({
+      id,
+      key,
+      role_id,
+      assigned_to,
+    });
+
+    res.json({ key: updated });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
 export const toggleLicenseKey = async (req, res) => {
   try {
     const { id } = req.params;
@@ -165,7 +207,6 @@ export const toggleLicenseKey = async (req, res) => {
   }
 };
 
-// Delete license key
 export const deleteLicenseKey = async (req, res) => {
   try {
     const { id } = req.params;
@@ -174,7 +215,9 @@ export const deleteLicenseKey = async (req, res) => {
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
-}; // List all roles
+};
+
+/* -------------------- Roles -------------------- */
 export const getRoles = async (req, res) => {
   try {
     const roles = await adminService.getAllRoles();
@@ -184,222 +227,16 @@ export const getRoles = async (req, res) => {
   }
 };
 
-export const getPackingUnits = async (req, res) => {
-  try {
-    const { status } = req.query; // optional
-    const units = await adminService.getPackingUnits(status || null);
-    res.json({ units });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};
-
-export const reviewPackingUnit = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { status, rejection_reason } = req.body;
-    const reviewerId = req.user.id;
-    const updated = await adminService.reviewPackingUnit(
-      id,
-      { status, rejection_reason },
-      reviewerId
-    );
-    res.json({ packing_unit: updated });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-};
-
-// Get permit requests
-export const getPermitRequests = async (req, res) => {
-  try {
-    const { status } = req.query; // Optional filter
-    const requests = await adminService.getPermitRequests(status || null);
-    res.json({ requests });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};
-export const reviewPermitRequest = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { status, max_tonnage, rejection_reason } = req.body;
-    const reviewerId = req.user.id;
-
-    let permitDocumentPath = null;
-
-    // If file uploaded, move it to final dir
-    if (req.file) {
-      const permitDir = path.join("uploads", "permits", String(id));
-      fs.mkdirSync(permitDir, { recursive: true });
-      const newPath = path.join(permitDir, req.file.filename);
-      fs.renameSync(req.file.path, newPath);
-      permitDocumentPath = "/" + newPath.replace(/\\/g, "/");
-    }
-
-    const updated = await adminService.reviewPermitRequest(
-      id,
-      {
-        status,
-        max_tonnage,
-        permit_document: permitDocumentPath, // will be null if not provided
-        rejection_reason,
-      },
-      reviewerId
-    );
-
-    res.json({ permit: updated });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-};
-
-// controllers/admin.controller.js
-export async function getWeeklyPlans(req, res) {
-  try {
-    const { status } = req.query; // optional
-    const plans = await adminService.getWeeklyLoadingPlans(status || null);
-    res.json(plans);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-}
-
-export async function reviewWeeklyPlan(req, res) {
-  try {
-    const { id } = req.params;
-    const { decision, remarks } = req.body; // decision: "Approved" | "Rejected"
-
-    const updated = await adminService.reviewWeeklyLoadingPlan(
-      id,
-      {
-        status: decision,
-        rejection_reason: decision === "Rejected" ? remarks : null,
-      },
-      req.user.id
-    );
-
-    res.json(updated);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-}
-
-export const getWeeklyLoadingPlans = async (req, res) => {
-  try {
-    const { status } = req.query; // Optional filter, default 'Submitted'
-    const plans = await adminService.getWeeklyLoadingPlans(
-      status || "Submitted"
-    );
-    res.json({ plans });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};
-
-// Review weekly loading plan
-export const reviewWeeklyLoadingPlan = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { status, rejection_reason } = req.body;
-    const reviewerId = req.user.id;
-    const updated = await adminService.reviewWeeklyLoadingPlan(
-      id,
-      { status, rejection_reason },
-      reviewerId
-    );
-    res.json({ plan: updated });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-};
-
-// List QC pre-production submissions
-export const getQcPreProductions = async (req, res) => {
-  try {
-    const { status } = req.query;
-    const items = await adminService.getQcQueue(status || null);
-    res.json({ items });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};
-// Review QC pre-production
-export const reviewQcPreProduction = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { status, rejection_reason } = req.body;
-    const reviewerId = req.user.id;
-
-    const updated = await adminService.reviewQcPre(
-      id,
-      { status, rejection_reason },
-      reviewerId
-    );
-
-    res.json({ qc: updated });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-};
-
-// Export docs flow
-export const listExportDocs = async (req, res) => {
-  try {
-    const { status } = req.query;
-    const items = await adminService.getExportDocs(status || "Submitted");
-    res.json({ items });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};
-
-export async function reviewExportDoc(req, res) {
-  try {
-    const updated = await adminService.reviewExportDoc(req.params.id, {
-      status: req.body.status,
-      rejection_reason: req.body.rejection_reason,
-      reviewerId: req.user.licenseId,
-    });
-    res.json(updated);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-}
-
-// Final docs
-export const listFinalDocs = async (req, res) => {
-  try {
-    const { status } = req.query;
-    const items = await adminService.getFinalDocs(status || null);
-    res.json({ items });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};
-
-export const reviewFinalDocuments = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { status, rejection_reason } = req.body;
-    const reviewerId = req.user.id;
-    const updated = await adminService.reviewFinalDocs(
-      id,
-      { status, rejection_reason },
-      reviewerId
-    );
-    res.json({ final_docs: updated });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-};
-
-/// buyer part
-
+/* -------------------- Buyer Requests (new flow) -------------------- */
 export async function getBuyerRequests(req, res) {
-  const requests = await adminBuyerService.getBuyerRequests();
-  res.json(requests);
+  try {
+    const requests = await adminBuyerService.getBuyerRequests();
+    res.json(requests);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 }
+
 export async function getBuyerRequestById(req, res) {
   try {
     const { id } = req.params;
@@ -426,36 +263,71 @@ export async function reviewBuyerRequest(req, res) {
     res.status(400).json({ error: err.message });
   }
 }
-export async function getAllOffers(req, res) {
-  try {
-    const offers = await adminBuyerService.getAllOffers();
-    res.json(offers);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-}
-// controllers/admin.controller.js
-export async function getOffersForRequest(req, res) {
-  try {
-    const offerId = req.params.id;
-    const offers = await adminBuyerService.getOffersForRequest(offerId);
 
-    if (!offers || offers.length === 0) {
-      return res.status(404).json({ error: "Offer not found" });
-    }
-
-    res.json(offers[0]); // since now it’s a single offer by ID
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-}
-
-export async function reviewOffer(req, res) {
+export async function addAdminDocs(req, res) {
   try {
-    const updated = await adminBuyerService.reviewOffer(req.params.offerId, {
-      status: req.body.status,
+    const { id } = req.params;
+    const destDir = path.join("uploads", "admin", "buyer-requests", String(id));
+    fs.mkdirSync(destDir, { recursive: true });
+
+    const newFiles = (req.files || []).map((f) => {
+      const newPath = path.join(destDir, f.filename);
+      fs.renameSync(f.path, newPath);
+
+      return {
+        type: req.body.type || null, // frontend may send doc type
+        filename: f.originalname,
+        // 🔥 store only relative path
+        path: "/" + newPath.replace(/\\/g, "/"),
+      };
     });
+
+    const existing = await db("buyer_requests").where({ id }).first();
+    const currentDocs = Array.isArray(existing.admin_docs)
+      ? existing.admin_docs
+      : existing.admin_docs
+      ? JSON.parse(existing.admin_docs)
+      : [];
+
+    const updatedDocs = [...currentDocs];
+    newFiles.forEach((file) => {
+      if (file.type) {
+        const idx = updatedDocs.findIndex((d) => d.type === file.type);
+        if (idx >= 0) {
+          updatedDocs[idx] = file;
+        } else {
+          updatedDocs.push(file);
+        }
+      } else {
+        updatedDocs.push(file);
+      }
+    });
+
+    const [updated] = await db("buyer_requests")
+      .where({ id })
+      .update({
+        admin_docs: JSON.stringify(updatedDocs),
+        updated_at: db.fn.now(),
+      })
+      .returning("*");
+
     res.json(updated);
+  } catch (err) {
+    console.error("addAdminDocs error:", err);
+    res.status(400).json({ error: err.message });
+  }
+}
+
+export async function completeRequest(req, res) {
+  try {
+    const { id } = req.params;
+
+    const [updated] = await db("buyer_requests")
+      .where({ id })
+      .update({ final_status: "completed", updated_at: db.fn.now() })
+      .returning("*");
+
+    res.json({ message: "Request completed and sent to buyer", updated });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

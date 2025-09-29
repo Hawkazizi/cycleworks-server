@@ -1,7 +1,11 @@
 // seeds/02_users.js
+import bcrypt from "bcrypt";
+
 export async function seed(knex) {
   // Clear users table and reset cascade
   await knex.raw("TRUNCATE TABLE users RESTART IDENTITY CASCADE");
+
+  const hash = await bcrypt.hash("Password123!", 10);
 
   await knex("users").insert([
     {
@@ -9,7 +13,7 @@ export async function seed(knex) {
       name: "Admin User",
       mobile: "09120000001",
       email: "admin@example.com",
-      password_hash: "hashedpassword1",
+      password_hash: hash,
       status: "active",
     },
     {
@@ -17,7 +21,7 @@ export async function seed(knex) {
       name: "Manager User",
       mobile: "09120000002",
       email: "manager@example.com",
-      password_hash: "hashedpassword2",
+      password_hash: hash,
       status: "active",
     },
     {
@@ -25,7 +29,7 @@ export async function seed(knex) {
       name: "Regular User",
       mobile: "09120000003",
       email: "user@example.com",
-      password_hash: "hashedpassword3",
+      password_hash: hash,
       status: "pending",
     },
     {
@@ -33,7 +37,7 @@ export async function seed(knex) {
       name: "Buyer User",
       mobile: "09120000004",
       email: "buyer@example.com",
-      password_hash: "hashedpassword4",
+      password_hash: hash,
       status: "active",
     },
     {
@@ -41,7 +45,7 @@ export async function seed(knex) {
       name: "Farmer User",
       mobile: "09120000005",
       email: "farmer@example.com",
-      password_hash: "hashedpassword5",
+      password_hash: hash,
       status: "active",
     },
   ]);

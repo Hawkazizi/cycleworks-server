@@ -1,14 +1,17 @@
+// routes/admin.routes.js
 import { Router } from "express";
 import * as adminController from "../controllers/admin.controller.js";
 import { authenticate } from "../middleware/authenticate.js";
 import { authorize } from "../middleware/authorize.js";
 import upload from "../middleware/upload.js";
+
 const router = Router();
 
-//admin login
+/* -------------------- Auth -------------------- */
+// Admin login
 router.post("/login", adminController.loginWithLicense);
 
-// admin profile
+// Admin profile
 router.get(
   "/profile",
   authenticate,
@@ -16,14 +19,24 @@ router.get(
   adminController.getProfile
 );
 
-//get all users
+/* -------------------- Users -------------------- */
+// Create new user
+router.post(
+  "/users",
+  authenticate,
+  authorize("admin"),
+  adminController.createUser
+);
 
+// List all users
 router.get(
   "/users",
   authenticate,
   authorize("admin"),
   adminController.listUsers
 );
+
+// Ban/unban user
 router.patch(
   "/users/:id/status",
   authenticate,
@@ -31,15 +44,21 @@ router.patch(
   adminController.banOrUnbanUser
 );
 
-//get user by id for all users
+// Get user by id
 router.get(
   "/users/:id",
   authenticate,
   authorize("admin", "manager", "buyer", "user"),
   adminController.getUserById
 );
+router.delete(
+  "/users/:id",
+  authenticate,
+  authorize("admin"),
+  adminController.deleteUser
+);
 
-// Protected admin routes
+/* -------------------- Applications -------------------- */
 router.get(
   "/applications",
   authenticate,
@@ -54,6 +73,7 @@ router.post(
   adminController.reviewApplication
 );
 
+/* -------------------- Settings -------------------- */
 router.get(
   "/settings",
   authenticate,
@@ -68,7 +88,7 @@ router.patch(
   adminController.updateSetting
 );
 
-// routes/adminRoutes.js
+/* -------------------- License Keys -------------------- */
 router.get(
   "/license-keys",
   authenticate,
@@ -81,6 +101,13 @@ router.post(
   authenticate,
   authorize("admin"),
   adminController.createLicenseKey
+);
+
+router.patch(
+  "/license-keys/:id",
+  authenticate,
+  authorize("admin"),
+  adminController.updateLicenseKey
 );
 
 router.patch(
@@ -97,7 +124,7 @@ router.delete(
   adminController.deleteLicenseKey
 );
 
-// Roles management
+/* -------------------- Roles -------------------- */
 router.get(
   "/roles",
   authenticate,
@@ -105,141 +132,45 @@ router.get(
   adminController.getRoles
 );
 
-// Packing units management
-router.get(
-  "/packing-units",
-  authenticate,
-  authorize("admin", "manager"),
-  adminController.getPackingUnits
-);
-
-router.post(
-  "/packing-units/:id/review",
-  authenticate,
-  authorize("admin", "manager"),
-  adminController.reviewPackingUnit
-);
-
-// Export permit requests (admin/manager)
-router.get(
-  "/permit-requests",
-  authenticate,
-  authorize("admin", "manager"),
-  adminController.getPermitRequests
-);
-
-router.post(
-  "/permit-requests/:id/review",
-  authenticate,
-  authorize("admin", "manager"),
-  upload.single("permit_document"),
-  adminController.reviewPermitRequest
-);
-// 🆕 Weekly plans management (admin/manager)
-router.get(
-  "/weekly-plans",
-  authenticate,
-  authorize("admin", "manager"),
-  adminController.getWeeklyPlans
-);
-
-router.post(
-  "/weekly-plans/:id/review",
-  authenticate,
-  authorize("admin", "manager"),
-  adminController.reviewWeeklyPlan
-);
-// QC pre-production queue + review (admin/manager)
-router.get(
-  "/qc-pre",
-  authenticate,
-  authorize("admin", "manager"),
-  adminController.getQcPreProductions
-);
-
-router.post(
-  "/qc-pre/:id/review",
-  authenticate,
-  authorize("admin", "manager"),
-  adminController.reviewQcPreProduction
-);
-
-// Export docs workflow (admin/manager)
-router.get(
-  "/export-docs",
-  authenticate,
-  authorize("admin", "manager"),
-  adminController.listExportDocs
-);
-
-// Export docs review (admin)
-router.post(
-  "/export-docs/:id/review",
-  authenticate,
-  authorize("admin", "manager"),
-  adminController.reviewExportDoc
-);
-
-// Final docs review & closure (admin/manager)
-router.get(
-  "/final-docs",
-  authenticate,
-  authorize("admin", "manager"),
-  adminController.listFinalDocs
-);
-
-router.post(
-  "/final-docs/:id/review",
-  authenticate,
-  authorize("admin", "manager"),
-  adminController.reviewFinalDocuments
-);
-
-// 🛒 Buyer Requests & Offers (Admin/Manager only)
-
-// --- Requests ---
+/* -------------------- Buyer Requests (new flow) -------------------- */
+// Step 1: List all buyer requests
 router.get(
   "/buyer-requests",
   authenticate,
-  authorize("admin", "manager"),
+  authorize("admin"),
   adminController.getBuyerRequests
 );
 
+// Step 2: Admin accepts/rejects buyer request
 router.post(
   "/buyer-requests/:id/review",
   authenticate,
-  authorize("admin", "manager"),
+  authorize("admin"),
   adminController.reviewBuyerRequest
 );
 
-// --- Offers ---
-// ⚠️ Put these BEFORE ":id" so Express doesn't misinterpret "offers" as an ID
-router.get(
-  "/buyer-requests/offers",
-  authenticate,
-  authorize("admin", "manager"),
-  adminController.getAllOffers
-);
-
+// Step 3: Admin attaches documents
 router.post(
-  "/buyer-requests/offers/:offerId/review",
+  "/buyer-requests/:id/admin-docs",
   authenticate,
-  authorize("admin", "manager"),
-  adminController.reviewOffer
+  authorize("admin"),
+  upload.array("files"),
+  adminController.addAdminDocs
 );
 
-router.get(
-  "/buyer-requests/:id/offers",
+// Step 4: Mark request as completed → notify buyer
+router.post(
+  "/buyer-requests/:id/complete",
   authenticate,
-  authorize("admin", "manager"),
-  adminController.getOffersForRequest
+  authorize("admin"),
+  adminController.completeRequest
 );
 
-// --- Single Request ---
+// Get single buyer request
 router.get(
   "/buyer-requests/:id",
   authenticate,
-  authorize("admin", "manager"),
+  authorize("admin"),
   adminController.getBuyerRequestById
 );
 

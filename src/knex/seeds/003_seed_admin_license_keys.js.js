@@ -27,7 +27,7 @@ export async function seed(knex) {
       assigned_to: userMap["buyer@example.com"],
       is_active: true,
     },
-    // Optional: farmers normally don’t use license keys, so no entry for them
+    // Farmers don't need license keys
   ];
 
   await knex("admin_license_keys").insert(rows);

@@ -17,11 +17,15 @@ export async function seed(knex) {
   const buyer = await knex("users")
     .where({ email: "buyer@example.com" })
     .first();
+  const farmer = await knex("users")
+    .where({ email: "farmer@example.com" })
+    .first();
 
   await knex("user_roles").insert([
     { user_id: admin.id, role_id: adminRole.id },
     { user_id: manager.id, role_id: managerRole.id },
     { user_id: user.id, role_id: userRole.id },
     { user_id: buyer.id, role_id: buyerRole.id },
+    { user_id: farmer.id, role_id: userRole.id }, // farmer is a "user" role
   ]);
 }

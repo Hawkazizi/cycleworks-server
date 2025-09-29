@@ -1,5 +1,5 @@
 import * as buyerReqService from "../services/buyerRequest.service.js";
-import * as buyerService from "../services/buyer.service.js";
+import * as adminService from "../services/admin.service.js";
 import knex from "../db/knex.js";
 
 export async function getProfile(req, res) {
@@ -57,19 +57,9 @@ export async function getMyRequestHistory(req, res) {
   res.json(list);
 }
 
-// Get offers
-export const getOffersForBuyer = async (req, res) => {
-  try {
-    const offers = await buyerService.getOffersForBuyer(req.user.id);
-    res.json({ offers });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};
-
 export const getMinimalUsers = async (req, res) => {
   try {
-    const users = await buyerService.getMinimalUsers();
+    const users = await adminService.getAllUsers();
     res.json(users);
   } catch (err) {
     console.error("Error fetching minimal users:", err);

@@ -6,6 +6,6 @@ export async function seed(knex) {
     { name: "admin" },
     { name: "manager" },
     { name: "user" }, // farmers
-    { name: "buyer" }, // new buyer role
+    { name: "buyer" }, // buyers
   ]);
 }

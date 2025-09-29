@@ -20,18 +20,23 @@ router.get(
   buyerController.getMyRequestHistory
 );
 
+// Create request
 router.post(
   "/requests",
   authenticate,
   authorize("buyer"),
   buyerController.createRequest
 );
+
+// List my requests
 router.get(
   "/requests",
   authenticate,
   authorize("buyer"),
   buyerController.getMyRequests
 );
+
+// Get single request
 router.get(
   "/requests/:id",
   authenticate,
@@ -54,14 +59,13 @@ router.delete(
   authorize("buyer"),
   buyerController.cancelRequest
 );
-// Buyer offers
+
+// Minimal users (for buyer to select farmer)
 router.get(
-  "/offers",
+  "/users/minimal",
   authenticate,
   authorize("buyer"),
-  buyerController.getOffersForBuyer
+  buyerController.getMinimalUsers
 );
-
-router.get("/users/minimal", buyerController.getMinimalUsers);
 
 export default router;

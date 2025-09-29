@@ -1,3 +1,4 @@
+// seeds/04_user_applications.js
 export async function seed(knex) {
   await knex("user_applications").del();
 
