@@ -317,7 +317,42 @@ export async function addAdminDocs(req, res) {
     res.status(400).json({ error: err.message });
   }
 }
+export async function updateBuyerRequest(req, res) {
+  const { id } = req.params;
+  const { preferred_supplier_id } = req.body;
 
+  try {
+    const existing = await db("buyer_requests").where({ id }).first();
+    if (!existing) {
+      return res.status(404).json({ error: "درخواست یافت نشد." });
+    }
+
+    // optional: validate supplier exists and is a farmer
+    if (preferred_supplier_id) {
+      const supplier = await db("users")
+        .where({ id: preferred_supplier_id })
+        .first();
+      if (!supplier) {
+        return res.status(400).json({ error: "تامین‌کننده معتبر نیست." });
+      }
+    }
+
+    const updated = await db("buyer_requests")
+      .where({ id })
+      .update(
+        {
+          preferred_supplier_id: preferred_supplier_id || null,
+          updated_at: db.fn.now(),
+        },
+        "*"
+      );
+
+    return res.json(updated[0]);
+  } catch (err) {
+    console.error("updateBuyerRequest error:", err);
+    return res.status(500).json({ error: "خطا در بروزرسانی درخواست." });
+  }
+}
 export async function completeRequest(req, res) {
   try {
     const { id } = req.params;

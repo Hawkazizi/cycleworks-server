@@ -157,7 +157,12 @@ router.post(
   upload.array("files"),
   adminController.addAdminDocs
 );
-
+router.patch(
+  "/buyer-requests/:id",
+  authenticate,
+  authorize("admin"),
+  adminController.updateBuyerRequest
+);
 // Step 4: Mark request as completed → notify buyer
 router.post(
   "/buyer-requests/:id/complete",
