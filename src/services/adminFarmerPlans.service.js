@@ -3,7 +3,8 @@ import db from "../db/knex.js";
 
 /* -------------------- Review File -------------------- */
 export async function reviewFile(fileId, status, note, reviewerId) {
-  if (!["accepted", "rejected"].includes(status)) {
+  // ✅ align with DB constraint (submitted | approved | rejected)
+  if (!["approved", "rejected"].includes(status)) {
     throw new Error("Invalid status");
   }
 

@@ -235,6 +235,7 @@ export async function uploadFile(req, res) {
       mimetype: file.mimetype,
       size: file.size,
       path: "/" + newPath.replace(/\\/g, "/"),
+      type: req.body.type || null,
     });
 
     res.status(201).json(saved);
