@@ -3,6 +3,7 @@ import db from "../db/knex.js";
 import jwt from "jsonwebtoken";
 import { JWT_SECRET, JWT_EXPIRES_IN } from "../config/jwt.js";
 import bcrypt from "bcrypt";
+import crypto from "crypto";
 const BASE_URL = process.env.BASE_URL || "http://localhost:5000";
 
 /* -------------------- Auth -------------------- */
@@ -81,6 +82,16 @@ export const getAdminProfile = async (userId) => {
     licenseActive: license?.is_active || false,
     licenseCreatedAt: license?.created_at || null,
   };
+};
+export const updateAdminProfile = async (userId, data) => {
+  const [updated] = await db("users")
+    .where("id", userId)
+    .update({ ...data, updated_at: db.fn.now() })
+    .returning(["id", "name", "email", "status", "created_at"]);
+
+  if (!updated) throw new Error("Profile update failed");
+
+  return updated;
 };
 
 /* -------------------- Users -------------------- */
@@ -191,18 +202,44 @@ export const getApplications = async () => {
       "users.email",
       "user_applications.reason",
       "user_applications.status",
-      "user_applications.files",
+      "user_applications.biosecurity",
+      "user_applications.vaccination",
+      "user_applications.emergency",
+      "user_applications.food_safety",
+      "user_applications.description",
+      "user_applications.farm_biosecurity",
       "user_applications.created_at"
     )
     .orderBy("user_applications.created_at", "desc");
 
-  return rows.map((row) => ({
-    ...row,
-    files: (row.files || []).map((f) => ({
-      ...f,
-      url: `${BASE_URL}${f.path}`,
-    })),
-  }));
+  return rows.map((row) => {
+    const fileFields = [
+      "biosecurity",
+      "vaccination",
+      "emergency",
+      "food_safety",
+      "description",
+      "farm_biosecurity",
+    ];
+
+    // Attach full URLs to each file object if it exists
+    const files = {};
+    fileFields.forEach((field) => {
+      if (row[field]) {
+        files[field] = {
+          ...row[field],
+          url: `${BASE_URL}${row[field].path}`,
+        };
+      } else {
+        files[field] = null;
+      }
+    });
+
+    return {
+      ...row,
+      files, // structured object with all six docs
+    };
+  });
 };
 
 export const reviewApplication = async (id, status, reviewerId) => {
@@ -258,19 +295,37 @@ export const getAllLicenseKeys = async () => {
     .orderBy("alk.created_at", "desc");
 };
 
-export const createLicenseKey = async ({ key, role_id, assigned_to }) => {
-  const [created] = await db("admin_license_keys")
-    .insert({ key, role_id, assigned_to })
-    .returning("*");
+export const createLicenseKey = async ({ key, role_id, assigned_to, user }) => {
+  let userId = assigned_to;
 
-  if (assigned_to && role_id) {
-    // enforce single role per user
-    await db("user_roles").where({ user_id: assigned_to }).del();
-    await db("user_roles").insert({
-      user_id: assigned_to,
-      role_id,
-    });
+  if (user && user.name) {
+    // Generate random safe values for required columns
+    const random = Math.floor(Math.random() * 1000000);
+    const fakeEmail = `admin_${random}@system.local`;
+    const fakeMobile = `09${random}`.padEnd(11, "0");
+    const fakePassword = crypto.randomBytes(8).toString("hex");
+    const passwordHash = await bcrypt.hash(fakePassword, 10);
+
+    const [newUser] = await db("users")
+      .insert({
+        name: user.name,
+        email: fakeEmail,
+        mobile: fakeMobile,
+        password_hash: passwordHash,
+        status: "active",
+      })
+      .returning("*");
+
+    userId = newUser.id;
+
+    // enforce role
+    await db("user_roles").where({ user_id: userId }).del();
+    await db("user_roles").insert({ user_id: userId, role_id });
   }
+
+  const [created] = await db("admin_license_keys")
+    .insert({ key, role_id, assigned_to: userId })
+    .returning("*");
 
   return created;
 };
@@ -278,13 +333,12 @@ export const createLicenseKey = async ({ key, role_id, assigned_to }) => {
 export const updateLicenseKey = async ({ id, key, role_id, assigned_to }) => {
   const [updated] = await db("admin_license_keys")
     .where({ id })
-    .update({ key, role_id, assigned_to }) // ✅ removed updated_at
+    .update({ key, role_id, assigned_to })
     .returning("*");
 
   if (!updated) throw new Error("License key not found");
 
   if (assigned_to && role_id) {
-    // enforce single role per user
     await db("user_roles").where({ user_id: assigned_to }).del();
     await db("user_roles").insert({
       user_id: assigned_to,

@@ -70,6 +70,81 @@ export const loginUser = async ({ mobile, password }) => {
   };
 };
 
+export async function getProfileById(userId) {
+  return db("users").where({ id: userId }).first();
+}
+
+export async function updateProfileById(userId, data) {
+  const update = {};
+  if (data.name) update.name = data.name;
+  if (data.email) update.email = data.email;
+  if (data.password) {
+    update.password_hash = await bcrypt.hash(data.password, 10);
+  }
+
+  await db("users").where({ id: userId }).update(update);
+  return getProfileById(userId);
+}
+
+export async function deleteProfileById(userId) {
+  return db("users").where({ id: userId }).del();
+}
+
+/* -------------------- email Verification -------------------- */
+
+export async function requestEmailVerification(userId, email) {
+  try {
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const expires = new Date(Date.now() + 15 * 60 * 1000);
+
+    await db("users").where({ id: userId }).update({
+      email,
+      email_verified: false,
+      email_verification_code: code,
+      email_verification_expires: expires,
+    });
+
+    return { code, email, expires };
+  } catch (err) {
+    if (err.message.includes("users_email_unique")) {
+      throw new Error("این ایمیل قبلاً ثبت شده است.");
+    }
+    throw err;
+  }
+}
+
+export async function verifyEmailCode(userId, code) {
+  const user = await db("users").where({ id: userId }).first();
+  if (!user) throw new Error("User not found");
+  if (!user.email_verification_code || !user.email_verification_expires)
+    throw new Error("Verification not requested");
+  if (user.email_verification_expires < new Date())
+    throw new Error("Code expired");
+  if (user.email_verification_code !== code) throw new Error("Invalid code");
+
+  await db("users").where({ id: userId }).update({
+    email_verified: true,
+    email_verification_code: null,
+    email_verification_expires: null,
+  });
+
+  return db("users").where({ id: userId }).first();
+}
+/* -------------------- Change Password -------------------- */
+
+export async function changePassword(userId, currentPassword, newPassword) {
+  const user = await db("users").where({ id: userId }).first();
+  if (!user) throw new Error("کاربر یافت نشد");
+
+  const match = await bcrypt.compare(currentPassword, user.password_hash);
+  if (!match) throw new Error("رمز عبور فعلی صحیح نیست");
+
+  const newHash = await bcrypt.hash(newPassword, 10);
+  await db("users").where({ id: userId }).update({ password_hash: newHash });
+
+  return true;
+}
+
 /* -------------------- SMS Verification -------------------- */
 export async function createCode(mobile, userId) {
   const code = Math.floor(10000 + Math.random() * 90000).toString();
@@ -112,37 +187,151 @@ export const getUserProfile = async (userId) => {
   if (!user) throw new Error("کاربر یافت نشد");
   return user;
 };
-
 /* -------------------- Buyer Requests (Farmer flow) -------------------- */
 export const listBuyerRequestsForFarmer = async (farmerId) => {
-  return db("buyer_requests")
-    .where({ status: "accepted" }) // only admin-accepted requests
+  return db("buyer_requests as br")
+    .leftJoin("users as u", "u.id", "br.buyer_id")
+    .select(
+      "br.id",
+      "br.import_country",
+      "br.container_amount",
+      "br.egg_type",
+      "br.product_type",
+      "br.transport_type",
+      "br.status",
+      "br.farmer_status",
+      "br.final_status",
+      "br.farmer_plan",
+      "br.farmer_docs",
+      "br.admin_docs",
+      "br.deadline_date", // ✅ now included
+      "br.created_at",
+      "u.name as buyer_name"
+    )
+    .where("br.status", "accepted")
     .andWhere((qb) => {
-      qb.whereNull("preferred_supplier_id").orWhere(
-        "preferred_supplier_id",
+      qb.whereNull("br.preferred_supplier_id").orWhere(
+        "br.preferred_supplier_id",
         farmerId
       );
     })
-    .orderBy("created_at", "desc");
+    .orderBy("br.created_at", "desc");
 };
 
-export async function submitPlanAndDocs(userId, requestId, docs) {
-  const reqRow = await db("buyer_requests")
-    .where({ id: requestId, preferred_supplier_id: userId })
-    .first();
+/**
+ * Farmer submits daily plan → also accepts the request if not yet accepted
+ */
+export async function upsertDailyPlan(farmerId, requestId, planDays) {
+  const reqRow = await db("buyer_requests").where({ id: requestId }).first();
+  if (!reqRow) throw new Error("Request not found");
 
-  if (!reqRow) throw new Error("Request not found or not assigned to you");
-  if (reqRow.farmer_status !== "accepted")
-    throw new Error("Request must be accepted before submitting docs");
-
-  const [updated] = await db("buyer_requests")
-    .where({ id: requestId })
-    .update({
-      farmer_docs: JSON.stringify(docs),
-      final_status: "submitted",
+  // Assign this farmer if not already assigned
+  if (!reqRow.preferred_supplier_id) {
+    await db("buyer_requests").where({ id: requestId }).update({
+      preferred_supplier_id: farmerId,
+      farmer_status: "accepted",
       updated_at: db.fn.now(),
+    });
+  }
+
+  if (
+    reqRow.preferred_supplier_id &&
+    reqRow.preferred_supplier_id !== farmerId
+  ) {
+    throw new Error("Request already assigned to another supplier");
+  }
+
+  // Wipe existing plans for this request
+  await db("farmer_plans").where({ request_id: requestId }).del();
+
+  // Insert daily plans
+  const inserts = planDays.map((p) => ({
+    request_id: requestId,
+    farmer_id: farmerId,
+    plan_date: p.date, // 🔑 must be YYYY-MM-DD
+    container_amount: p.amount,
+    created_at: db.fn.now(),
+  }));
+
+  if (inserts.length) {
+    await db("farmer_plans").insert(inserts);
+  }
+
+  return { message: "Plan submitted and request accepted", plan: inserts };
+}
+
+/**
+ * Get all plan rows with files for a request
+ */
+export async function getPlanByRequestForFarmer(farmerId, requestId) {
+  const plans = await db("farmer_plans")
+    .where({ request_id: requestId, farmer_id: farmerId })
+    .select("*");
+
+  const withFiles = await Promise.all(
+    plans.map(async (plan) => {
+      const files = await db("farmer_plan_files")
+        .where({ plan_id: plan.id })
+        .select("*");
+      return { ...plan, files };
+    })
+  );
+
+  return withFiles;
+}
+
+/**
+ * Add file to a specific day plan
+ */
+export async function addFileToPlan(farmerId, planId, file) {
+  const plan = await db("farmer_plans").where({ id: planId }).first();
+  if (!plan) throw new Error("Plan not found");
+  if (plan.farmer_id !== farmerId)
+    throw new Error("You cannot upload for this plan");
+
+  const [created] = await db("farmer_plan_files")
+    .insert({
+      plan_id: planId,
+      file_key: file.file_key,
+      original_name: file.original_name,
+      mime_type: file.mime_type,
+      size_bytes: file.size_bytes,
+      path: file.path,
+      status: "submitted",
+      created_at: db.fn.now(),
     })
     .returning("*");
+
+  return created;
+}
+
+/**
+ * Replace a rejected file
+ */
+export async function replacePlanFile(farmerId, fileId, file) {
+  const old = await db("farmer_plan_files as f")
+    .join("farmer_plans as p", "p.id", "f.plan_id")
+    .where("f.id", fileId)
+    .select("f.*", "p.farmer_id")
+    .first();
+
+  if (!old) throw new Error("File not found");
+  if (old.farmer_id !== farmerId)
+    throw new Error("You cannot update this file");
+  if (old.status !== "rejected")
+    throw new Error("Only rejected files can be replaced");
+
+  const [updated] = await db("farmer_plan_files").where({ id: fileId }).update(
+    {
+      original_name: file.original_name,
+      mime_type: file.mime_type,
+      size_bytes: file.size_bytes,
+      path: file.path,
+      status: "submitted",
+      updated_at: db.fn.now(),
+    },
+    "*"
+  );
 
   return updated;
 }

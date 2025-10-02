@@ -1,4 +1,3 @@
-// routes/admin.routes.js
 import { Router } from "express";
 import * as adminController from "../controllers/admin.controller.js";
 import { authenticate } from "../middleware/authenticate.js";
@@ -8,43 +7,42 @@ import upload from "../middleware/upload.js";
 const router = Router();
 
 /* -------------------- Auth -------------------- */
-// Admin login
+// Admin (Manager) login
 router.post("/login", adminController.loginWithLicense);
 
-// Admin profile
+// Admin (Manager) profile
 router.get(
   "/profile",
   authenticate,
-  authorize("admin"),
+  authorize("admin", "manager"),
   adminController.getProfile
+);
+router.patch(
+  "/profile",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.updateProfile
 );
 
 /* -------------------- Users -------------------- */
-// Create new user
 router.post(
   "/users",
   authenticate,
-  authorize("admin"),
+  authorize("admin", "manager"),
   adminController.createUser
 );
-
-// List all users
 router.get(
   "/users",
   authenticate,
-  authorize("admin"),
+  authorize("admin", "manager"),
   adminController.listUsers
 );
-
-// Ban/unban user
 router.patch(
   "/users/:id/status",
   authenticate,
-  authorize("admin"),
+  authorize("admin", "manager"),
   adminController.banOrUnbanUser
 );
-
-// Get user by id
 router.get(
   "/users/:id",
   authenticate,
@@ -54,8 +52,16 @@ router.get(
 router.delete(
   "/users/:id",
   authenticate,
-  authorize("admin"),
+  authorize("admin", "manager"),
   adminController.deleteUser
+);
+
+/* -------------------- Reports -------------------- */
+router.get(
+  "/reports/export-csv",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.exportReportsCSV
 );
 
 /* -------------------- Applications -------------------- */
@@ -65,7 +71,6 @@ router.get(
   authorize("admin", "manager"),
   adminController.getApplications
 );
-
 router.post(
   "/applications/:id/review",
   authenticate,
@@ -77,14 +82,13 @@ router.post(
 router.get(
   "/settings",
   authenticate,
-  authorize("admin"),
+  authorize("admin", "manager"),
   adminController.getSettings
 );
-
 router.patch(
   "/settings/:key",
   authenticate,
-  authorize("admin"),
+  authorize("admin", "manager"),
   adminController.updateSetting
 );
 
@@ -92,35 +96,31 @@ router.patch(
 router.get(
   "/license-keys",
   authenticate,
-  authorize("admin"),
+  authorize("admin", "manager"),
   adminController.getLicenseKeys
 );
-
 router.post(
   "/license-keys",
   authenticate,
-  authorize("admin"),
+  authorize("admin", "manager"),
   adminController.createLicenseKey
 );
-
 router.patch(
   "/license-keys/:id",
   authenticate,
-  authorize("admin"),
+  authorize("admin", "manager"),
   adminController.updateLicenseKey
 );
-
 router.patch(
   "/license-keys/:id/toggle",
   authenticate,
-  authorize("admin"),
+  authorize("admin", "manager"),
   adminController.toggleLicenseKey
 );
-
 router.delete(
   "/license-keys/:id",
   authenticate,
-  authorize("admin"),
+  authorize("admin", "manager"),
   adminController.deleteLicenseKey
 );
 
@@ -128,55 +128,55 @@ router.delete(
 router.get(
   "/roles",
   authenticate,
-  authorize("admin"),
+  authorize("admin", "manager"),
   adminController.getRoles
 );
 
-/* -------------------- Buyer Requests (new flow) -------------------- */
-// Step 1: List all buyer requests
+/* -------------------- Buyer Requests -------------------- */
 router.get(
   "/buyer-requests",
   authenticate,
-  authorize("admin"),
+  authorize("admin", "manager"),
   adminController.getBuyerRequests
 );
-
-// Step 2: Admin accepts/rejects buyer request
 router.post(
   "/buyer-requests/:id/review",
   authenticate,
-  authorize("admin"),
+  authorize("admin", "manager"),
   adminController.reviewBuyerRequest
 );
-
-// Step 3: Admin attaches documents
 router.post(
   "/buyer-requests/:id/admin-docs",
   authenticate,
-  authorize("admin"),
+  authorize("admin", "manager"),
   upload.array("files"),
   adminController.addAdminDocs
 );
 router.patch(
   "/buyer-requests/:id",
   authenticate,
-  authorize("admin"),
+  authorize("admin", "manager"),
   adminController.updateBuyerRequest
 );
-// Step 4: Mark request as completed → notify buyer
 router.post(
   "/buyer-requests/:id/complete",
   authenticate,
-  authorize("admin"),
+  authorize("admin", "manager"),
   adminController.completeRequest
 );
-
-// Get single buyer request
 router.get(
   "/buyer-requests/:id",
   authenticate,
-  authorize("admin"),
+  authorize("admin", "manager"),
   adminController.getBuyerRequestById
+);
+
+// Review farmer files
+router.post(
+  "/farmer-files/:fileId/review",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.reviewFarmerFile
 );
 
 export default router;

@@ -1,6 +1,9 @@
 // controllers/admin.controller.js
 import * as adminService from "../services/admin.service.js";
 import * as adminBuyerService from "../services/adminBuyer.service.js";
+import * as adminReportService from "../services/adminReport.service.js";
+import * as adminFarmerPlansService from "../services/adminFarmerPlans.service.js";
+
 import db from "../db/knex.js";
 import path from "path";
 import fs from "fs";
@@ -32,6 +35,21 @@ export const getProfile = async (req, res) => {
     res.json({ admin });
   } catch (err) {
     res.status(404).json({ error: err.message });
+  }
+};
+
+export const updateProfile = async (req, res) => {
+  try {
+    const adminUserId = req.user.id;
+    const { name } = req.body;
+    if (!name) return res.status(400).json({ error: "Name is required" });
+
+    const updated = await adminService.updateAdminProfile(adminUserId, {
+      name,
+    });
+    res.json({ admin: updated });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
   }
 };
 
@@ -109,6 +127,19 @@ export const deleteUser = async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 };
+/* -------------------- Reports -------------------- */
+
+export const exportReportsCSV = async (req, res) => {
+  try {
+    const csvData = await adminReportService.generateReportsCSV();
+    res.header("Content-Type", "text/csv");
+    res.attachment("reports.csv");
+    return res.send(csvData);
+  } catch (err) {
+    console.error("CSV export failed:", err);
+    res.status(500).json({ error: "Failed to export reports" });
+  }
+};
 /* -------------------- Applications -------------------- */
 // Get pending applications
 export const getApplications = async (req, res) => {
@@ -167,11 +198,12 @@ export const getLicenseKeys = async (req, res) => {
 
 export const createLicenseKey = async (req, res) => {
   try {
-    const { key, role_id, assigned_to } = req.body;
+    const { key, role_id, assigned_to, user } = req.body;
     const newKey = await adminService.createLicenseKey({
       key,
       role_id,
       assigned_to,
+      user,
     });
     res.status(201).json({ key: newKey });
   } catch (err) {
@@ -363,6 +395,23 @@ export async function completeRequest(req, res) {
       .returning("*");
 
     res.json({ message: "Request completed and sent to buyer", updated });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+}
+
+export async function reviewFarmerFile(req, res) {
+  try {
+    const { fileId } = req.params;
+    const { status, note } = req.body;
+    const reviewerId = req.user.licenseId;
+    const result = await adminFarmerPlansService.reviewFile(
+      fileId,
+      status,
+      note,
+      reviewerId
+    );
+    res.json(result);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

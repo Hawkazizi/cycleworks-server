@@ -1,66 +1,50 @@
-// services/adminBuyer.service.js
+// services/farmerBuyer.service.js
 import db from "../db/knex.js";
 
 const BASE_URL = process.env.BASE_URL || "http://localhost:5000";
 
-/* -------------------- Buyer Requests -------------------- */
-export async function getBuyerRequests() {
+/* -------------------- Get Farmer's Buyer Requests -------------------- */
+export async function getFarmerRequests(farmerId) {
+  // requests where farmer is assigned as preferred_supplier
   const rows = await db("buyer_requests as br")
     .leftJoin("users as u", "br.buyer_id", "u.id")
-    .leftJoin("users as s", "br.preferred_supplier_id", "s.id")
     .select(
-      "br.*", // includes deadline_date already
+      "br.*",
       "u.name as buyer_name",
-      "u.email as buyer_email",
       "u.mobile as buyer_mobile",
-      "s.name as supplier_name",
-      "s.mobile as supplier_mobile"
+      "u.email as buyer_email"
     )
+    .where("br.preferred_supplier_id", farmerId)
     .orderBy("br.created_at", "desc");
 
   const results = [];
   for (const row of rows) {
     const normalized = normalizeRequest(row);
-    normalized.farmer_plans = await getPlansWithContainers(row.id);
+    normalized.farmer_plans = await getPlansWithContainers(row.id, farmerId);
     results.push(normalized);
   }
-
   return results;
 }
 
-export async function getBuyerRequestById(id) {
+/* -------------------- Get Single Buyer Request -------------------- */
+export async function getFarmerRequestById(farmerId, requestId) {
   const row = await db("buyer_requests as br")
     .leftJoin("users as u", "br.buyer_id", "u.id")
-    .leftJoin("users as s", "br.preferred_supplier_id", "s.id")
     .select(
-      "br.*", // includes deadline_date already
+      "br.*",
       "u.name as buyer_name",
-      "u.email as buyer_email",
       "u.mobile as buyer_mobile",
-      "s.name as supplier_name",
-      "s.mobile as supplier_mobile"
+      "u.email as buyer_email"
     )
-    .where("br.id", id)
+    .where("br.id", requestId)
+    .andWhere("br.preferred_supplier_id", farmerId) // ensure farmer owns this
     .first();
 
   if (!row) return null;
 
   const normalized = normalizeRequest(row);
-  normalized.farmer_plans = await getPlansWithContainers(row.id);
+  normalized.farmer_plans = await getPlansWithContainers(requestId, farmerId);
   return normalized;
-}
-
-export async function reviewBuyerRequest(id, { status, reviewerId }) {
-  const [updated] = await db("buyer_requests")
-    .where({ id })
-    .update({
-      status,
-      reviewed_by: reviewerId,
-      reviewed_at: db.fn.now(),
-    })
-    .returning("*");
-
-  return updated ? normalizeRequest(updated) : null;
 }
 
 /* -------------------- Helpers -------------------- */
@@ -95,20 +79,17 @@ function normalizeRequest(row) {
 }
 
 /* -------------------- Hydration: Plans → Containers → Files -------------------- */
-async function getPlansWithContainers(requestId) {
+async function getPlansWithContainers(requestId, farmerId) {
   const plans = await db("farmer_plans as fp")
-    .leftJoin("users as f", "fp.farmer_id", "f.id")
-    .select("fp.*", "f.name as farmer_name", "f.mobile as farmer_mobile")
-    .where("fp.request_id", requestId)
+    .select("fp.*")
+    .where({ request_id: requestId, farmer_id: farmerId })
     .orderBy("fp.plan_date", "asc");
 
   for (const plan of plans) {
-    // load containers
     plan.containers = await db("farmer_plan_containers as c")
       .where("c.plan_id", plan.id)
       .orderBy("c.container_no", "asc");
 
-    // load files for each container
     for (const container of plan.containers) {
       const files = await db("farmer_plan_files")
         .where({ container_id: container.id })
