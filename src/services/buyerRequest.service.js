@@ -1,6 +1,66 @@
 // services/buyerRequest.service.js
 import knex from "../db/knex.js";
 
+const BASE_URL = process.env.BASE_URL || "http://localhost:5000";
+
+/* -------------------- Helpers -------------------- */
+function safeParseJSON(value, fallback) {
+  if (!value) return fallback;
+  if (Array.isArray(value)) return value;
+  if (typeof value === "object") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
+function normalizeRequest(row) {
+  return {
+    ...row,
+    farmer_docs: safeParseJSON(row.farmer_docs, []).map((doc) => ({
+      ...doc,
+      filename: doc.filename || doc.original_name || "-", // ensure filename
+      path: doc.path?.startsWith("http") ? doc.path : `${BASE_URL}${doc.path}`,
+    })),
+    admin_docs: safeParseJSON(row.admin_docs, []).map((doc) => ({
+      ...doc,
+      filename: doc.filename || doc.original_name || "-", // ensure filename
+      path: doc.path?.startsWith("http") ? doc.path : `${BASE_URL}${doc.path}`,
+    })),
+    farmer_plan: safeParseJSON(row.farmer_plan, {}),
+  };
+}
+
+async function hydratePlans(requestId) {
+  const plans = await knex("farmer_plans as fp")
+    .select("fp.*")
+    .where("fp.request_id", requestId)
+    .orderBy("fp.plan_date", "asc");
+
+  for (const plan of plans) {
+    plan.containers = await knex("farmer_plan_containers as c")
+      .select("c.*")
+      .where("c.plan_id", plan.id)
+      .orderBy("c.container_no", "asc");
+
+    for (const container of plan.containers) {
+      const files = await knex("farmer_plan_files")
+        .where({ container_id: container.id })
+        .orderBy("created_at", "asc");
+
+      container.files = files.map((f) => ({
+        ...f,
+        filename: f.original_name || f.file_key || "-", // add filename explicitly
+        path: f.path?.startsWith("http") ? f.path : `${BASE_URL}${f.path}`,
+      }));
+    }
+  }
+
+  return plans;
+}
+
+/* -------------------- CRUD -------------------- */
 export async function createRequest(userId, data) {
   const [req] = await knex("buyer_requests")
     .insert({
@@ -23,17 +83,33 @@ export async function createRequest(userId, data) {
     })
     .returning("*");
 
-  return req;
+  return normalizeRequest(req);
 }
 
 export async function getMyRequests(userId) {
-  return knex("buyer_requests")
+  const rows = await knex("buyer_requests")
     .where({ buyer_id: userId })
     .orderBy("created_at", "desc");
+
+  return Promise.all(
+    rows.map(async (row) => {
+      const normalized = normalizeRequest(row);
+      normalized.farmer_plans = await hydratePlans(row.id);
+      return normalized;
+    })
+  );
 }
 
 export async function getRequestById(userId, id) {
-  return knex("buyer_requests").where({ id, buyer_id: userId }).first();
+  const row = await knex("buyer_requests")
+    .where({ id, buyer_id: userId })
+    .first();
+
+  if (!row) return null;
+
+  const normalized = normalizeRequest(row);
+  normalized.farmer_plans = await hydratePlans(row.id);
+  return normalized;
 }
 
 export async function updateRequest(userId, requestId, data) {
@@ -66,7 +142,9 @@ export async function updateRequest(userId, requestId, data) {
     })
     .returning("*");
 
-  return updated;
+  const normalized = normalizeRequest(updated);
+  normalized.farmer_plans = await hydratePlans(updated.id);
+  return normalized;
 }
 
 export async function cancelRequest(userId, requestId) {
@@ -85,11 +163,21 @@ export async function cancelRequest(userId, requestId) {
     })
     .returning("*");
 
-  return updated;
+  const normalized = normalizeRequest(updated);
+  normalized.farmer_plans = await hydratePlans(updated.id);
+  return normalized;
 }
 
 export async function getMyRequestHistory(userId) {
-  return knex("buyer_requests")
+  const rows = await knex("buyer_requests")
     .where({ buyer_id: userId })
     .orderBy("created_at", "desc");
+
+  return Promise.all(
+    rows.map(async (row) => {
+      const normalized = normalizeRequest(row);
+      normalized.farmer_plans = await hydratePlans(row.id);
+      return normalized;
+    })
+  );
 }
