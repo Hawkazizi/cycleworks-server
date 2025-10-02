@@ -54,29 +54,34 @@ router.post(
   authenticate,
   userController.changePassword
 );
+/* -------------------- Reqs -------------------- */
 
-// Plans
-router.post(
-  "/buyer-requests/:requestId/plans",
-  authenticate,
-  authorize("user"),
-  userController.createPlan
-);
+// Buyer Request Plans
+router
+  .route("/buyer-requests/:requestId/plans")
+  .post(authenticate, authorize("user"), userController.createPlan)
+  .get(authenticate, authorize("user"), userController.listPlans);
+
+// Plan Containers (list containers of a plan)
 router.get(
-  "/buyer-requests/:requestId/plans",
+  "/plans/:planId/containers",
   authenticate,
   authorize("user"),
-  userController.listPlans
+  userController.listContainers
 );
 
-// File upload for a container
-router.post(
-  "/containers/:containerId/files",
-  authenticate,
-  authorize("user"),
-  upload.single("file"),
-  userController.uploadFile
-);
+// Container Files (upload & list)
+router
+  .route("/containers/:containerId/files")
+  .post(
+    authenticate,
+    authorize("user"),
+    upload.single("file"),
+    userController.uploadFile
+  )
+  .get(authenticate, authorize("user"), userController.listFiles);
+
+// Farmer Requests
 router.get(
   "/farmer/requests",
   authenticate,
@@ -84,11 +89,11 @@ router.get(
   userController.listFarmerRequests
 );
 
-// Farmer → get single buyer request (with plans, containers, files)
 router.get(
   "/farmer/requests/:id",
   authenticate,
   authorize("user"),
   userController.getFarmerRequest
 );
+
 export default router;

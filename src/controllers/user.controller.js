@@ -169,10 +169,11 @@ export async function changePassword(req, res) {
     res.status(400).json({ error: err.message });
   }
 }
+/* -------------------- Reqs -------------------- */
 
 export async function createPlan(req, res) {
   try {
-    const { requestId } = req.params; // ✅ not "id"
+    const { requestId } = req.params;
     const { planDate, containerAmount } = req.body;
     const farmerId = req.user.id;
 
@@ -193,23 +194,36 @@ export async function listPlans(req, res) {
   try {
     const { requestId } = req.params;
     const farmerId = req.user.id;
-    const plans = await farmerPlansService.listPlansByRequest(
+
+    const result = await farmerPlansService.listPlansWithContainers(
       requestId,
       farmerId
     );
-    res.json(plans);
+
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 }
 
+/* ---------- Containers ---------- */
+export async function listContainers(req, res) {
+  try {
+    const { planId } = req.params;
+    const containers = await farmerPlansService.getContainersByPlan(planId);
+    res.json(containers);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
+/* ---------- Files ---------- */
 export async function uploadFile(req, res) {
   try {
     const { containerId } = req.params;
     const file = req.file;
     if (!file) return res.status(400).json({ error: "File is required" });
 
-    // Move to permanent dir
     const destDir = path.join("uploads", "containers", String(containerId));
     fs.mkdirSync(destDir, { recursive: true });
     const newPath = path.join(destDir, file.originalname);
@@ -229,6 +243,17 @@ export async function uploadFile(req, res) {
   }
 }
 
+export async function listFiles(req, res) {
+  try {
+    const { containerId } = req.params;
+    const files = await farmerPlansService.listFiles(containerId);
+    res.json(files);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
+/* ---------- Farmer Requests ---------- */
 export async function listFarmerRequests(req, res) {
   try {
     const farmerId = req.user.id;
