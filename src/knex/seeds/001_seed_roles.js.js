@@ -5,7 +5,7 @@ export async function seed(knex) {
   await knex("roles").insert([
     { name: "admin" },
     { name: "manager" },
-    { name: "user" }, // farmers
-    { name: "buyer" }, // buyers
+    { name: "user" }, // "user" = farmer
+    { name: "buyer" },
   ]);
 }

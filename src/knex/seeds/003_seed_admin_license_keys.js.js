@@ -27,8 +27,15 @@ export async function seed(knex) {
       assigned_to: userMap["buyer@example.com"],
       is_active: true,
     },
-    // Farmers don't need license keys
+    // Farmers use the "user" role, but they don’t need license keys
   ];
 
   await knex("admin_license_keys").insert(rows);
+
+  await knex.raw(`
+    SELECT setval(
+      pg_get_serial_sequence('admin_license_keys','id'),
+      (SELECT MAX(id) FROM admin_license_keys)
+    )
+  `);
 }

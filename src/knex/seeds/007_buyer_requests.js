@@ -20,10 +20,10 @@ export async function seed(knex) {
     reviewed_at: now,
     product_type: "eggs",
     packaging: "tray",
-    size: ["small"], // ✅ array column
+    size: ["small"],
     egg_type: "organic",
     expiration_date: "2025-10-31",
-    certificates: ["ISO22000"], // ✅ array column
+    certificates: ["ISO22000"],
     import_country: "Qatar",
     entry_border: "Bushehr Port",
     exit_border: "Doha",
@@ -35,14 +35,14 @@ export async function seed(knex) {
       delivery_start: "2025-10-05",
       delivery_end: "2025-11-30",
       notes: "Health certificate to be included",
-    }), // ✅ JSONB
+    }),
     farmer_docs: JSON.stringify([
       {
         filename: "health-cert.pdf",
         path: "/uploads/demo/health-cert.pdf",
         mimetype: "application/pdf",
       },
-    ]), // ✅ JSONB
+    ]),
     final_status: "pending",
     container_amount: 3,
     transport_type: "truck",
@@ -57,10 +57,10 @@ export async function seed(knex) {
     reviewed_at: now,
     product_type: "eggs",
     packaging: "carton",
-    size: ["mixed"], // ✅ array column
+    size: ["mixed"],
     egg_type: "standard",
     expiration_date: "2025-12-15",
-    certificates: ["ISO9001", "HALAL"], // ✅ array column
+    certificates: ["ISO9001", "HALAL"],
     import_country: "Oman",
     entry_border: "Bandar Abbas",
     exit_border: "Sohar",
@@ -72,21 +72,21 @@ export async function seed(knex) {
       delivery_start: "2025-10-10",
       delivery_end: "2025-12-10",
       notes: "All pallets shrink-wrapped",
-    }), // ✅ JSONB
+    }),
     farmer_docs: JSON.stringify([
       {
         filename: "farm-registration.jpg",
         path: "/uploads/demo/farm-registration.jpg",
         mimetype: "image/jpeg",
       },
-    ]), // ✅ JSONB
+    ]),
     admin_docs: JSON.stringify([
       {
         filename: "final-checklist.pdf",
         path: "/uploads/demo/final-checklist.pdf",
         mimetype: "application/pdf",
       },
-    ]), // ✅ JSONB
+    ]),
     final_status: "completed",
     container_amount: 6,
     transport_type: "ship",
@@ -96,7 +96,6 @@ export async function seed(knex) {
 
   await knex("buyer_requests").insert([r1, r2]);
 
-  // ✅ Reset sequence
   await knex.raw(`
     SELECT setval(
       pg_get_serial_sequence('buyer_requests', 'id'),

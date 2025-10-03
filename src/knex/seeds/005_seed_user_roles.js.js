@@ -26,6 +26,6 @@ export async function seed(knex) {
     { user_id: manager.id, role_id: managerRole.id },
     { user_id: user.id, role_id: userRole.id },
     { user_id: buyer.id, role_id: buyerRole.id },
-    { user_id: farmer.id, role_id: userRole.id }, // farmer is a "user" role
+    { user_id: farmer.id, role_id: userRole.id }, // ✅ farmers are "user" role
   ]);
 }

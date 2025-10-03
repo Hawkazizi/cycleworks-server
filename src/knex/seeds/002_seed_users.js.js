@@ -2,7 +2,6 @@
 import bcrypt from "bcrypt";
 
 export async function seed(knex) {
-  // Clear users table and reset cascade
   await knex.raw("TRUNCATE TABLE users RESTART IDENTITY CASCADE");
 
   const hash = await bcrypt.hash("Password123!", 10);
@@ -50,7 +49,6 @@ export async function seed(knex) {
     },
   ]);
 
-  // ✅ Reset the sequence to the max(id)
   await knex.raw(`
     SELECT setval(
       pg_get_serial_sequence('users', 'id'),
