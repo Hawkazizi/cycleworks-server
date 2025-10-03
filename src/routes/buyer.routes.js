@@ -12,6 +12,13 @@ router.get(
   buyerController.getProfile
 );
 
+router.put(
+  "/profile",
+  authenticate,
+  authorize("buyer"),
+  buyerController.updateProfile
+);
+
 // Buyer history (all requests with any status)
 router.get(
   "/requests/history",

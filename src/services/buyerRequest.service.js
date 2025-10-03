@@ -69,7 +69,9 @@ export async function createRequest(userId, data) {
       packaging: data.packaging || null,
       size: Array.isArray(data.size) ? data.size : [],
       egg_type: data.egg_type || null,
-      expiration_days: data.expiration_days || null,
+      expiration_days: data.expiration_days
+        ? parseInt(data.expiration_days, 10)
+        : null,
       certificates: Array.isArray(data.certificates) ? data.certificates : [],
       container_amount: data.container_amount || null,
       deadline_date: data.deadline_date || null,

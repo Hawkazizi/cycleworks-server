@@ -1,11 +1,23 @@
 import * as buyerReqService from "../services/buyerRequest.service.js";
 import * as adminService from "../services/admin.service.js";
+import * as buyerService from "../services/buyer.service.js";
 import knex from "../db/knex.js";
 
 export async function getProfile(req, res) {
   const me = await knex("users").where({ id: req.user.id }).first();
   res.json(me);
 }
+
+export async function updateProfile(req, res) {
+  try {
+    const updated = await buyerService.updateProfile(req.user.id, req.body);
+    res.json(updated);
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+}
+
+//////////////////////////// Reqs ///////////////////////////////////
 
 export async function createRequest(req, res) {
   try {
