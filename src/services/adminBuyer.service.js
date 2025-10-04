@@ -22,6 +22,7 @@ export async function getBuyerRequests() {
   for (const row of rows) {
     const normalized = normalizeRequest(row);
     normalized.farmer_plans = await getPlansWithContainers(row.id);
+    normalized.assigned_suppliers = await getAssignedSuppliers(row.id);
     results.push(normalized);
   }
 
@@ -47,6 +48,7 @@ export async function getBuyerRequestById(id) {
 
   const normalized = normalizeRequest(row);
   normalized.farmer_plans = await getPlansWithContainers(row.id);
+  normalized.assigned_suppliers = await getAssignedSuppliers(row.id);
   return normalized;
 }
 
@@ -122,4 +124,68 @@ async function getPlansWithContainers(requestId) {
   }
 
   return plans;
+}
+
+/* -------------------- Assign Suppliers -------------------- */
+export async function assignSuppliersToRequest(
+  requestId,
+  supplierIds,
+  reviewerId
+) {
+  if (!Array.isArray(supplierIds) || supplierIds.length === 0) {
+    throw new Error("لیست تامین‌کنندگان الزامی است.");
+  }
+
+  // ✅ validate request exists
+  const request = await db("buyer_requests").where({ id: requestId }).first();
+  if (!request) throw new Error("درخواست یافت نشد.");
+
+  // ✅ validate suppliers
+  const validSuppliers = await db("users")
+    .whereIn("id", supplierIds)
+    .andWhere("status", "active");
+
+  if (validSuppliers.length !== supplierIds.length) {
+    throw new Error("برخی از تامین‌کنندگان معتبر یا فعال نیستند.");
+  }
+
+  // ✅ clear old mappings
+  await db("buyer_request_suppliers")
+    .where({ buyer_request_id: requestId })
+    .del();
+
+  // ✅ insert new mappings
+  const inserted = await db("buyer_request_suppliers")
+    .insert(
+      supplierIds.map((sid) => ({
+        buyer_request_id: requestId,
+        supplier_id: sid,
+        assigned_by: reviewerId,
+      }))
+    )
+    .returning("*");
+
+  // ✅ update preferred supplier as first in list (for backward compatibility)
+  await db("buyer_requests").where({ id: requestId }).update({
+    preferred_supplier_id: supplierIds[0],
+    updated_at: db.fn.now(),
+  });
+
+  return inserted;
+}
+
+/* -------------------- Fetch Assigned Suppliers -------------------- */
+export async function getAssignedSuppliers(requestId) {
+  const rows = await db("buyer_request_suppliers as brs")
+    .leftJoin("users as u", "brs.supplier_id", "u.id")
+    .select(
+      "brs.*",
+      "u.name as supplier_name",
+      "u.email as supplier_email",
+      "u.mobile as supplier_mobile"
+    )
+    .where("brs.buyer_request_id", requestId)
+    .orderBy("brs.id", "asc");
+
+  return rows;
 }

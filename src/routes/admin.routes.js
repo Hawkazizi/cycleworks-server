@@ -178,5 +178,11 @@ router.post(
   authorize("admin", "manager"),
   adminController.reviewFarmerFile
 );
+router.post(
+  "/buyer-requests/:id/assign-suppliers",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.assignSuppliers
+);
 
 export default router;

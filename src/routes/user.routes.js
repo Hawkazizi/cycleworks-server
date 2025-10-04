@@ -95,5 +95,12 @@ router.get(
   authorize("user"),
   userController.getFarmerRequest
 );
+// ✅ Update farmer status (accept/reject)
+router.patch(
+  "/farmer/requests/:id",
+  authenticate,
+  authorize("user"),
+  userController.updateFarmerRequestStatus
+);
 
 export default router;

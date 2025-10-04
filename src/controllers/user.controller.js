@@ -276,3 +276,22 @@ export async function getFarmerRequest(req, res) {
     res.status(500).json({ error: err.message });
   }
 }
+
+export async function updateFarmerRequestStatus(req, res) {
+  try {
+    const updated = await farmerBuyerService.updateFarmerRequestStatus(
+      req.user.id,
+      req.params.id,
+      req.body.farmer_status
+    );
+    res.json({
+      message:
+        req.body.farmer_status === "rejected"
+          ? "درخواست با موفقیت رد شد."
+          : "درخواست تایید شد.",
+      request: updated,
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+}

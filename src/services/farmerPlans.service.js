@@ -91,6 +91,16 @@ export async function createPlan({
     }
     plan.containers = containers;
 
+    const [{ count }] = await trx("farmer_plans")
+      .where({ request_id: requestId, farmer_id: farmerId })
+      .count("* as count");
+    if (Number(count) === 1) {
+      await trx("buyer_requests").where({ id: requestId }).update({
+        farmer_status: "accepted",
+        updated_at: db.fn.now(),
+      });
+    }
+
     return plan;
   });
 }

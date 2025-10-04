@@ -5,7 +5,6 @@ const BASE_URL = process.env.BASE_URL || "http://localhost:5000";
 
 /* -------------------- Get Farmer's Buyer Requests -------------------- */
 export async function getFarmerRequests(farmerId) {
-  // requests where farmer is assigned as preferred_supplier
   const rows = await db("buyer_requests as br")
     .leftJoin("users as u", "br.buyer_id", "u.id")
     .select(
@@ -15,6 +14,12 @@ export async function getFarmerRequests(farmerId) {
       "u.email as buyer_email"
     )
     .where("br.preferred_supplier_id", farmerId)
+    .orWhereIn(
+      "br.id",
+      db("buyer_request_suppliers")
+        .select("buyer_request_id")
+        .where("supplier_id", farmerId)
+    )
     .orderBy("br.created_at", "desc");
 
   const results = [];
@@ -37,7 +42,14 @@ export async function getFarmerRequestById(farmerId, requestId) {
       "u.email as buyer_email"
     )
     .where("br.id", requestId)
-    .andWhere("br.preferred_supplier_id", farmerId) // ensure farmer owns this
+    .andWhere(function () {
+      this.where("br.preferred_supplier_id", farmerId).orWhereIn(
+        "br.id",
+        db("buyer_request_suppliers")
+          .select("buyer_request_id")
+          .where("supplier_id", farmerId)
+      );
+    })
     .first();
 
   if (!row) return null;
@@ -103,4 +115,47 @@ async function getPlansWithContainers(requestId, farmerId) {
   }
 
   return plans;
+}
+
+export async function updateFarmerRequestStatus(farmerId, requestId, status) {
+  const valid = ["accepted", "rejected"];
+  if (!valid.includes(status)) throw new Error("Invalid status.");
+
+  const req = await db("buyer_requests").where({ id: requestId }).first();
+  if (!req) throw new Error("Request not found.");
+
+  // ✅ Ownership check (preferred OR assigned)
+  const isAssigned = await db("buyer_request_suppliers")
+    .where({ buyer_request_id: requestId, supplier_id: farmerId })
+    .first();
+  if (req.preferred_supplier_id !== farmerId && !isAssigned)
+    throw new Error("Not authorized to update this request.");
+
+  // ✅ Must be approved by admin
+  if (req.status !== "accepted")
+    throw new Error("Request not yet approved by admin.");
+
+  // ✅ Final status check
+  if (req.final_status === "completed")
+    throw new Error("Request already completed.");
+
+  // ✅ Prevent multiple responses
+  if (["accepted", "rejected"].includes(req.farmer_status))
+    throw new Error("Farmer has already responded to this request.");
+
+  const updateData = {
+    farmer_status: status,
+    updated_at: db.fn.now(),
+  };
+
+  if (status === "rejected") {
+    updateData.final_status = "rejected";
+  }
+
+  const [updated] = await db("buyer_requests")
+    .where({ id: requestId })
+    .update(updateData)
+    .returning("*");
+
+  return updated;
 }

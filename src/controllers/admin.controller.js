@@ -416,3 +416,23 @@ export async function reviewFarmerFile(req, res) {
     res.status(400).json({ error: err.message });
   }
 }
+export async function assignSuppliers(req, res) {
+  try {
+    const { id } = req.params;
+    const { supplier_ids } = req.body; // array of supplier IDs
+    const reviewerId = req.user.licenseId;
+
+    const result = await adminBuyerService.assignSuppliersToRequest(
+      id,
+      supplier_ids,
+      reviewerId
+    );
+
+    res.json({
+      message: "تامین‌کنندگان با موفقیت تخصیص یافتند.",
+      assigned: result,
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+}
