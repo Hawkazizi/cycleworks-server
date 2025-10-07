@@ -3,7 +3,7 @@ import * as adminService from "../services/admin.service.js";
 import * as adminBuyerService from "../services/adminBuyer.service.js";
 import * as adminReportService from "../services/adminReport.service.js";
 import * as adminFarmerPlansService from "../services/adminFarmerPlans.service.js";
-
+import * as adminTicketService from "../services/adminTicket.service.js";
 import db from "../db/knex.js";
 import path from "path";
 import fs from "fs";
@@ -436,3 +436,127 @@ export async function assignSuppliers(req, res) {
     res.status(400).json({ error: err.message });
   }
 }
+
+/* -------------------- Tickets -------------------- */
+/* -------------------- List Tickets -------------------- */
+export const listTickets = async (req, res) => {
+  try {
+    const { status } = req.query;
+    const tickets = await adminTicketService.listTickets({ status });
+    res.json(tickets);
+  } catch (err) {
+    console.error("LIST TICKETS ERROR:", err);
+    res.status(400).json({ error: err.message });
+  }
+};
+
+/* -------------------- Get Ticket Details -------------------- */
+export const getTicket = async (req, res) => {
+  try {
+    const ticketId = req.params.id;
+    const data = await adminTicketService.getTicketWithReplies(ticketId);
+    res.json(data);
+  } catch (err) {
+    console.error("GET TICKET ERROR:", err);
+    res.status(400).json({ error: err.message });
+  }
+};
+
+/* -------------------- Reply to Ticket -------------------- */
+export const replyToTicket = async (req, res) => {
+  try {
+    const ticketId = req.params.id;
+    const adminId = req.user.id; // from authenticate
+    const { message } = req.body;
+
+    if (!message) return res.status(400).json({ error: "متن پاسخ الزامی است" });
+
+    let fileInfo = null;
+    if (req.file) {
+      const adminDir = path.join(
+        "uploads",
+        "admins",
+        String(adminId),
+        "ticket_replies"
+      );
+      fs.mkdirSync(adminDir, { recursive: true });
+
+      const filePath = path.join(adminDir, req.file.originalname);
+      fs.renameSync(req.file.path, filePath);
+
+      fileInfo = {
+        path: "/" + filePath.replace(/\\/g, "/"),
+        originalname: req.file.originalname,
+        mimetype: req.file.mimetype,
+      };
+    }
+
+    const reply = await adminTicketService.replyToTicket({
+      ticketId,
+      adminId,
+      message,
+      file: fileInfo,
+    });
+
+    res.status(201).json({
+      message: "پاسخ با موفقیت ثبت شد",
+      reply,
+    });
+  } catch (err) {
+    console.error("REPLY TICKET ERROR:", err);
+    res.status(400).json({ error: err.message });
+  }
+};
+
+/* -------------------- Close Ticket -------------------- */
+export const closeTicket = async (req, res) => {
+  try {
+    const ticketId = req.params.id;
+    const ticket = await adminTicketService.closeTicket(ticketId);
+    res.json({ message: "تیکت بسته شد", ticket });
+  } catch (err) {
+    console.error("CLOSE TICKET ERROR:", err);
+    res.status(400).json({ error: err.message });
+  }
+};
+
+/* -------------------- Delete Ticket (Admin) -------------------- */
+export const deleteTicket = async (req, res) => {
+  try {
+    const ticketId = req.params.id;
+
+    // find ticket
+    const ticket = await db("tickets").where({ id: ticketId }).first();
+    if (!ticket) {
+      return res.status(404).json({ error: "تیکت یافت نشد" });
+    }
+
+    // get replies (to remove attachments)
+    const replies = await db("ticket_replies").where({ ticket_id: ticketId });
+
+    // delete files (if any)
+    const deleteFile = (filePath) => {
+      if (!filePath) return;
+      const fullPath = path.join(process.cwd(), filePath.replace(/^\//, ""));
+      if (fs.existsSync(fullPath)) {
+        try {
+          fs.unlinkSync(fullPath);
+        } catch (err) {
+          console.warn("Failed to delete file:", fullPath);
+        }
+      }
+    };
+
+    deleteFile(ticket.attachment_path);
+    replies.forEach((r) => deleteFile(r.attachment_path));
+
+    // delete records (replies first)
+    await db("ticket_replies").where({ ticket_id: ticketId }).del();
+    await db("tickets").where({ id: ticketId }).del();
+
+    res.json({ message: "تیکت و تمام پاسخ‌های آن با موفقیت حذف شدند." });
+  } catch (err) {
+    console.error("DELETE TICKET ERROR:", err);
+    res.status(500).json({ error: "خطا در حذف تیکت" });
+  }
+};

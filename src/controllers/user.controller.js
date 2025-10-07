@@ -6,6 +6,7 @@ import jwt from "jsonwebtoken";
 import { sendMail } from "../config/mailer.js";
 import * as farmerPlansService from "../services/farmerPlans.service.js";
 import * as farmerBuyerService from "../services/farmerBuyer.service.js";
+import * as ticketService from "../services/ticket.service.js";
 /* -------------------- Auth -------------------- */
 export const register = async (req, res) => {
   try {
@@ -295,3 +296,101 @@ export async function updateFarmerRequestStatus(req, res) {
     res.status(400).json({ error: err.message });
   }
 }
+
+/* -------------------- Tickets -------------------------- */
+
+/* -------------------- Create Ticket -------------------- */
+export const createTicket = async (req, res) => {
+  try {
+    const { subject, message } = req.body;
+    const userId = req.user.id; // from authenticate middleware
+    const role = req.user.role || "user";
+
+    if (!message) {
+      return res.status(400).json({ error: "متن تیکت الزامی است" });
+    }
+
+    // handle file upload (if exists)
+    let fileInfo = null;
+    if (req.file) {
+      const userDir = path.join("uploads", "users", String(userId), "tickets");
+      fs.mkdirSync(userDir, { recursive: true });
+
+      const filePath = path.join(userDir, req.file.originalname);
+      fs.renameSync(req.file.path, filePath);
+
+      fileInfo = {
+        path: "/" + filePath.replace(/\\/g, "/"),
+        originalname: req.file.originalname,
+        mimetype: req.file.mimetype,
+      };
+    }
+
+    const ticket = await ticketService.createTicket({
+      userId,
+      role,
+      subject,
+      message,
+      file: fileInfo,
+    });
+
+    res.status(201).json({
+      message: "تیکت با موفقیت ارسال شد",
+      ticket,
+    });
+  } catch (err) {
+    console.error("CREATE TICKET ERROR:", err);
+    res.status(400).json({ error: err.message });
+  }
+};
+
+/* -------------------- List User Tickets -------------------- */
+export const getMyTickets = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const tickets = await ticketService.getUserTickets(userId);
+    res.json(tickets);
+  } catch (err) {
+    console.error("GET TICKETS ERROR:", err);
+    res.status(400).json({ error: err.message });
+  }
+};
+
+/* -------------------- Update User Tickets -------------------- */
+export const updateTicket = async (req, res) => {
+  try {
+    const ticketId = req.params.id;
+    const userId = req.user.id;
+    const { subject, message } = req.body;
+
+    let fileInfo = null;
+    if (req.file) {
+      const userDir = path.join("uploads", "users", String(userId), "tickets");
+      fs.mkdirSync(userDir, { recursive: true });
+      const filePath = path.join(userDir, req.file.originalname);
+      fs.renameSync(req.file.path, filePath);
+
+      fileInfo = {
+        path: "/" + filePath.replace(/\\/g, "/"),
+        originalname: req.file.originalname,
+        mimetype: req.file.mimetype,
+      };
+    }
+
+    const updated = await ticketService.updateTicket({
+      ticketId,
+      userId,
+      subject,
+      message,
+      file: fileInfo,
+    });
+
+    res.json({
+      message: "تیکت با موفقیت به‌روزرسانی شد",
+      ticket: updated,
+    });
+  } catch (err) {
+    console.error("UPDATE TICKET ERROR:", err);
+    res.status(400).json({ error: err.message });
+  }
+};

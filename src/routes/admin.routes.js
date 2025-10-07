@@ -185,4 +185,38 @@ router.post(
   adminController.assignSuppliers
 );
 
+/* -------------------- Tickets -------------------- */
+router.get(
+  "/tickets",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.listTickets
+);
+router.get(
+  "/tickets/:id",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.getTicket
+);
+router.post(
+  "/tickets/:id/reply",
+  authenticate,
+  authorize("admin", "manager"),
+  upload.single("attachment"),
+  adminController.replyToTicket
+);
+router.post(
+  "/tickets/:id/close",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.closeTicket
+);
+
+router.delete(
+  "/tickets/:id",
+  authenticate,
+  authorize("admin", "manager"),
+
+  adminController.deleteTicket
+);
 export default router;

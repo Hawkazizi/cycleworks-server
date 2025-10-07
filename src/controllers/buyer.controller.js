@@ -1,6 +1,10 @@
+import path from "path";
+import fs from "fs";
 import * as buyerReqService from "../services/buyerRequest.service.js";
 import * as adminService from "../services/admin.service.js";
 import * as buyerService from "../services/buyer.service.js";
+import * as ticketService from "../services/ticket.service.js";
+
 import knex from "../db/knex.js";
 
 export async function getProfile(req, res) {
@@ -76,5 +80,114 @@ export const getMinimalUsers = async (req, res) => {
   } catch (err) {
     console.error("Error fetching minimal users:", err);
     res.status(500).json({ error: "Failed to fetch users" });
+  }
+};
+
+/* -------------------- Buyer Tickets -------------------------- */
+
+/* -------------------- Create Buyer Ticket -------------------- */
+export const createBuyerTicket = async (req, res) => {
+  try {
+    const { subject, message } = req.body;
+    const buyerId = req.user.id; // from authenticate middleware
+    const role = "buyer";
+
+    if (!message) {
+      return res.status(400).json({ error: "متن تیکت الزامی است" });
+    }
+
+    // handle file upload (if exists)
+    let fileInfo = null;
+    if (req.file) {
+      const buyerDir = path.join(
+        "uploads",
+        "buyers",
+        String(buyerId),
+        "tickets"
+      );
+      fs.mkdirSync(buyerDir, { recursive: true });
+
+      const filePath = path.join(buyerDir, req.file.originalname);
+      fs.renameSync(req.file.path, filePath);
+
+      fileInfo = {
+        path: "/" + filePath.replace(/\\/g, "/"),
+        originalname: req.file.originalname,
+        mimetype: req.file.mimetype,
+      };
+    }
+
+    const ticket = await ticketService.createTicket({
+      userId: buyerId,
+      role,
+      subject,
+      message,
+      file: fileInfo,
+    });
+
+    res.status(201).json({
+      message: "تیکت با موفقیت ارسال شد",
+      ticket,
+    });
+  } catch (err) {
+    console.error("CREATE BUYER TICKET ERROR:", err);
+    res.status(400).json({ error: err.message });
+  }
+};
+
+/* -------------------- List Buyer Tickets -------------------- */
+export const getMyBuyerTickets = async (req, res) => {
+  try {
+    const buyerId = req.user.id;
+    const tickets = await ticketService.getUserTickets(buyerId);
+    res.json(tickets);
+  } catch (err) {
+    console.error("GET BUYER TICKETS ERROR:", err);
+    res.status(400).json({ error: err.message });
+  }
+};
+
+/* -------------------- Update Buyer Ticket -------------------- */
+export const updateBuyerTicket = async (req, res) => {
+  try {
+    const ticketId = req.params.id;
+    const buyerId = req.user.id;
+    const { subject, message } = req.body;
+
+    let fileInfo = null;
+    if (req.file) {
+      const buyerDir = path.join(
+        "uploads",
+        "buyers",
+        String(buyerId),
+        "tickets"
+      );
+      fs.mkdirSync(buyerDir, { recursive: true });
+
+      const filePath = path.join(buyerDir, req.file.originalname);
+      fs.renameSync(req.file.path, filePath);
+
+      fileInfo = {
+        path: "/" + filePath.replace(/\\/g, "/"),
+        originalname: req.file.originalname,
+        mimetype: req.file.mimetype,
+      };
+    }
+
+    const updated = await ticketService.updateTicket({
+      ticketId,
+      userId: buyerId,
+      subject,
+      message,
+      file: fileInfo,
+    });
+
+    res.json({
+      message: "تیکت با موفقیت به‌روزرسانی شد",
+      ticket: updated,
+    });
+  } catch (err) {
+    console.error("UPDATE BUYER TICKET ERROR:", err);
+    res.status(400).json({ error: err.message });
   }
 };

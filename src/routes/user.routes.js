@@ -103,4 +103,27 @@ router.patch(
   userController.updateFarmerRequestStatus
 );
 
+/* -------------------- Tickets -------------------- */
+router.post(
+  "/tickets",
+  authenticate,
+  authorize("user"),
+  upload.single("attachment"),
+  userController.createTicket
+);
+
+router.get(
+  "/tickets",
+  authenticate,
+  authorize("user"),
+  userController.getMyTickets
+);
+router.patch(
+  "/tickets/:id",
+  authenticate,
+  authorize("user"),
+  upload.single("attachment"),
+  userController.updateTicket
+);
+
 export default router;

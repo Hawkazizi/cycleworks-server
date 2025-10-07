@@ -2,7 +2,7 @@ import { Router } from "express";
 import * as buyerController from "../controllers/buyer.controller.js";
 import { authenticate } from "../middleware/authenticate.js";
 import { authorize } from "../middleware/authorize.js";
-
+import upload from "../middleware/upload.js";
 const router = Router();
 
 router.get(
@@ -73,6 +73,27 @@ router.get(
   authenticate,
   authorize("buyer"),
   buyerController.getMinimalUsers
+);
+/* -------------------- Tickets -------------------- */
+router.post(
+  "/tickets",
+  authenticate,
+  upload.single("attachment"),
+  authorize("buyer"),
+  buyerController.createBuyerTicket
+);
+
+router.get(
+  "/tickets",
+  authenticate,
+  authorize("buyer"),
+  buyerController.getMyBuyerTickets
+);
+router.patch(
+  "/tickets/:id",
+  authenticate,
+  upload.single("attachment"),
+  buyerController.updateBuyerTicket
 );
 
 export default router;
