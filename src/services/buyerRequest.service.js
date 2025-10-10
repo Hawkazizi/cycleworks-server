@@ -74,6 +74,7 @@ export async function createRequest(userId, data) {
         : null,
       certificates: Array.isArray(data.certificates) ? data.certificates : [],
       container_amount: data.container_amount || null,
+      cartons: data.cartons ? parseInt(data.cartons, 10) : null,
       deadline_date: data.deadline_date || null,
       transport_type: data.transport_type || null,
       import_country: data.import_country || null,
