@@ -19,8 +19,8 @@ app.use(
   cors({
     origin: [
       "http://localhost:5173", // local dev
-      "http://103.75.199.152", // VPS frontend
-      // later: "https://yourdomain.com"
+      "https://digipoultry.com", // production
+      "https://www.digipoultry.com", // optional www
     ],
     credentials: true,
   })
