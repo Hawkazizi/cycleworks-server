@@ -208,7 +208,8 @@ export const getApplications = async () => {
       "user_applications.food_safety",
       "user_applications.description",
       "user_applications.farm_biosecurity",
-      "user_applications.created_at"
+      "user_applications.created_at",
+      "user_applications.supplier_name"
     )
     .orderBy("user_applications.created_at", "desc");
 

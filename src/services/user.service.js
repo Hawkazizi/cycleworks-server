@@ -12,6 +12,7 @@ export const registerUser = async ({
   mobile,
   password,
   reason,
+  supplier_name,
   role,
 }) => {
   const existing = await db("users").where({ mobile }).first();
@@ -24,9 +25,14 @@ export const registerUser = async ({
     .returning("*");
 
   let application = null;
-  if (reason) {
+  if (reason || supplier_name) {
     [application] = await db("user_applications")
-      .insert({ user_id: user.id, reason, status: "pending" })
+      .insert({
+        user_id: user.id,
+        reason,
+        supplier_name,
+        status: "pending",
+      })
       .returning("*");
   }
 
@@ -179,11 +185,20 @@ export async function verifyUserCode(mobile, inputCode) {
 
 /* -------------------- Profile -------------------- */
 export const getUserProfile = async (userId) => {
-  const user = await db("users")
-    .select("id", "name", "email", "status", "created_at")
-    .where({ id: userId })
+  const user = await db("users as u")
+    .leftJoin("user_applications as ua", "u.id", "ua.user_id")
+    .select(
+      "u.id",
+      "u.name",
+      "u.email",
+      "u.status",
+      "u.created_at",
+      "ua.supplier_name" // ✅ include supplier name
+    )
+    .where("u.id", userId)
     .first();
 
   if (!user) throw new Error("کاربر یافت نشد");
+
   return user;
 };

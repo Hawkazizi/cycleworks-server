@@ -189,3 +189,28 @@ export async function getAssignedSuppliers(requestId) {
 
   return rows;
 }
+
+/* -------------------- Update deadline -------------------- */
+
+export async function updateBuyerRequestDeadline(
+  requestId,
+  newDate,
+  updatedBy
+) {
+  const request = await db("buyer_requests").where({ id: requestId }).first();
+  if (!request) throw new Error("Buyer request not found");
+
+  if (["accepted", "rejected"].includes(request.status)) {
+    throw new Error("Cannot change deadline after review");
+  }
+
+  const [updated] = await db("buyer_requests").where({ id: requestId }).update(
+    {
+      deadline_date: newDate,
+      updated_at: db.fn.now(),
+    },
+    "*"
+  );
+
+  return updated;
+}

@@ -561,3 +561,24 @@ export const deleteTicket = async (req, res) => {
     res.status(500).json({ error: "خطا در حذف تیکت" });
   }
 };
+
+/* -------------------- Update deadline -------------------- */
+export const updateBuyerRequestDeadline = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { new_deadline_date } = req.body;
+
+    if (!new_deadline_date)
+      return res.status(400).json({ error: "new_deadline_date is required" });
+
+    const updated = await adminBuyerService.updateBuyerRequestDeadline(
+      id,
+      new_deadline_date,
+      req.user.id // optional: who made the change
+    );
+
+    res.json({ success: true, request: updated });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};

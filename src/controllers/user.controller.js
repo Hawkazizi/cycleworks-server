@@ -10,8 +10,7 @@ import * as ticketService from "../services/ticket.service.js";
 /* -------------------- Auth -------------------- */
 export const register = async (req, res) => {
   try {
-    const { name, mobile, password, reason, role } = req.body;
-
+    const { name, mobile, password, reason, supplier_name, role } = req.body;
     // validate required fields
     if (!mobile || !password) {
       return res
@@ -27,6 +26,7 @@ export const register = async (req, res) => {
       mobile,
       password,
       reason,
+      supplier_name,
       role: chosenRole,
     });
 

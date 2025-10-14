@@ -83,6 +83,7 @@ export async function createRequest(userId, data) {
       preferred_supplier_name: data.preferred_supplier_name || null,
       preferred_supplier_id: data.preferred_supplier_id || null,
       status: "pending",
+      description: data.description,
     })
     .returning("*");
 

@@ -1,11 +1,12 @@
 import express from "express";
 import dotenv from "dotenv";
-import cors from "cors"; // <-- add this
+import cors from "cors";
 import db from "./db/knex.js";
 import path from "path";
 import userRouter from "./routes/user.routes.js";
 import adminRouter from "./routes/admin.routes.js";
 import buyerRouter from "./routes/buyer.routes.js";
+import containerRouter from "./routes/container.routes.js";
 dotenv.config();
 
 const app = express();
@@ -37,6 +38,7 @@ app.get("/", (req, res) => {
 app.use("/api/users", userRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/buyers", buyerRouter);
+app.use("/api/containers", containerRouter);
 // Test DB connection on startup
 db.raw("SELECT 1+1 AS result")
   .then(() => {

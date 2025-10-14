@@ -1,5 +1,6 @@
 import { Router } from "express";
 import * as adminController from "../controllers/admin.controller.js";
+import * as adminTrackingCtrl from "../controllers/containerTracking.controller.js";
 import { authenticate } from "../middleware/authenticate.js";
 import { authorize } from "../middleware/authorize.js";
 import upload from "../middleware/upload.js";
@@ -219,4 +220,22 @@ router.delete(
 
   adminController.deleteTicket
 );
+
+/* -------------------- Update deadline -------------------- */
+
+router.patch(
+  "/buyer-requests/:id/update-deadline",
+  authenticate,
+  authorize("admin"), // only admin allowed
+  adminController.updateBuyerRequestDeadline
+);
+/* -------------------- Container Tracking -------------------- */
+
+router.get(
+  "/containers-with-tracking",
+  authenticate,
+  authorize("admin"),
+  adminTrackingCtrl.listAllContainersWithTracking
+);
+
 export default router;
