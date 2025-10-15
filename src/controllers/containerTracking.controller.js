@@ -1,14 +1,13 @@
 import * as trackingService from "../services/containerTracking.service.js";
 import db from "../db/knex.js";
 
-////////////Admin privileges ////////////////////////
-
+/* -------------------- ADMIN: List all containers with their latest tracking -------------------- */
 export async function listAllContainersWithTracking(req, res) {
   try {
     const rows = await db("farmer_plan_containers as c")
       .leftJoin("farmer_plans as p", "c.plan_id", "p.id")
       .leftJoin("users as u", "p.farmer_id", "u.id")
-      .leftJoin("user_applications as ua", "ua.user_id", "u.id") // ✅ supplier name
+      .leftJoin("user_applications as ua", "ua.user_id", "u.id")
       .leftJoin("buyer_requests as br", "p.request_id", "br.id")
       .leftJoin(
         db("container_tracking_statuses as t")
@@ -32,10 +31,11 @@ export async function listAllContainersWithTracking(req, res) {
         "p.request_id as buyer_request_id",
         "u.id as farmer_id",
         "u.name as farmer_name",
-        "ua.supplier_name", // ✅ added field
+        "ua.supplier_name",
         "br.import_country",
         "ct.status as latest_status",
         "ct.note",
+        "ct.tracking_code",
         "ct.created_at as updated_at"
       )
       .orderBy("ct.created_at", "desc");
@@ -47,7 +47,7 @@ export async function listAllContainersWithTracking(req, res) {
   }
 }
 
-////////////////////////
+/* -------------------- USER/ADMIN: Add new tracking status -------------------- */
 export async function addTracking(req, res) {
   try {
     const { id } = req.params; // container id
@@ -67,9 +67,8 @@ export async function addTracking(req, res) {
         .andWhere("farmer_plan_containers.id", id)
         .first();
 
-      if (!ownsContainer) {
+      if (!ownsContainer)
         return res.status(403).json({ error: "You do not own this container" });
-      }
     }
 
     const tracking = await trackingService.addTracking({
@@ -86,14 +85,13 @@ export async function addTracking(req, res) {
   }
 }
 
-// GET /api/containers/:id/tracking
+/* -------------------- USER/ADMIN: List tracking history of one container -------------------- */
 export async function listTracking(req, res) {
   try {
     const { id } = req.params;
     const userId = req.user.id;
     const roles = req.user.roles || [];
 
-    // 🧩 Only admin or owner can view
     if (!roles.includes("admin")) {
       const ownsContainer = await db("farmer_plan_containers")
         .join(
@@ -105,9 +103,8 @@ export async function listTracking(req, res) {
         .andWhere("farmer_plan_containers.id", id)
         .first();
 
-      if (!ownsContainer) {
+      if (!ownsContainer)
         return res.status(403).json({ error: "You do not own this container" });
-      }
     }
 
     const items = await trackingService.listTracking(id);
@@ -118,10 +115,12 @@ export async function listTracking(req, res) {
   }
 }
 
+/* -------------------- USER: List my containers with latest tracking + files -------------------- */
 export async function myContainersWithTracking(req, res) {
   try {
     const userId = req.user.id;
 
+    // Step 1: fetch containers + latest tracking info
     const rows = await db("farmer_plan_containers as c")
       .join("farmer_plans as p", "c.plan_id", "p.id")
       .join("buyer_requests as br", "p.request_id", "br.id")
@@ -148,13 +147,48 @@ export async function myContainersWithTracking(req, res) {
         "c.container_no",
         "br.import_country",
         "ct.status as latest_status",
+        "ct.tracking_code",
         "ct.created_at as updated_at"
       )
       .orderBy("ct.created_at", "desc");
 
-    res.json(rows);
+    // Step 2: fetch related files for each container
+    const containersWithFiles = await Promise.all(
+      rows.map(async (c) => {
+        const files = await db("farmer_plan_files")
+          .where("container_id", c.container_id)
+          .select(
+            "id",
+            "type",
+            "original_name",
+            "path",
+            "status",
+            "review_note",
+            "created_at"
+          )
+          .orderBy("created_at", "desc");
+
+        return { ...c, files };
+      })
+    );
+
+    res.json(containersWithFiles);
   } catch (err) {
     console.error("myContainersWithTracking error:", err);
+    res.status(500).json({ error: err.message });
+  }
+}
+
+/* -------------------- ADMIN: Find container by tracking code -------------------- */
+export async function findByTrackingCode(req, res) {
+  try {
+    const { code } = req.params;
+    const record = await trackingService.findByTrackingCode(code);
+    if (!record)
+      return res.status(404).json({ error: "Tracking code not found" });
+    res.json(record);
+  } catch (err) {
+    console.error("findByTrackingCode error:", err);
     res.status(500).json({ error: err.message });
   }
 }

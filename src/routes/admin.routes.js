@@ -230,7 +230,6 @@ router.patch(
   adminController.updateBuyerRequestDeadline
 );
 /* -------------------- Container Tracking -------------------- */
-
 router.get(
   "/containers-with-tracking",
   authenticate,
@@ -238,4 +237,10 @@ router.get(
   adminTrackingCtrl.listAllContainersWithTracking
 );
 
+router.get(
+  "/tracking-code/:code",
+  authenticate,
+  authorize("admin"),
+  adminTrackingCtrl.findByTrackingCode
+);
 export default router;
