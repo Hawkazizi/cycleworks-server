@@ -29,7 +29,7 @@ router.patch(
 router.post(
   "/users",
   authenticate,
-  authorize("admin", "manager"),
+  authorize("admin"),
   adminController.createUser
 );
 router.get(
@@ -41,7 +41,7 @@ router.get(
 router.patch(
   "/users/:id/status",
   authenticate,
-  authorize("admin", "manager"),
+  authorize("admin"),
   adminController.banOrUnbanUser
 );
 router.get(
@@ -53,7 +53,7 @@ router.get(
 router.delete(
   "/users/:id",
   authenticate,
-  authorize("admin", "manager"),
+  authorize("admin"),
   adminController.deleteUser
 );
 
@@ -75,7 +75,7 @@ router.get(
 router.post(
   "/applications/:id/review",
   authenticate,
-  authorize("admin", "manager"),
+  authorize("admin"),
   adminController.reviewApplication
 );
 
@@ -89,7 +89,7 @@ router.get(
 router.patch(
   "/settings/:key",
   authenticate,
-  authorize("admin", "manager"),
+  authorize("admin"),
   adminController.updateSetting
 );
 
@@ -103,25 +103,25 @@ router.get(
 router.post(
   "/license-keys",
   authenticate,
-  authorize("admin", "manager"),
+  authorize("admin"),
   adminController.createLicenseKey
 );
 router.patch(
   "/license-keys/:id",
   authenticate,
-  authorize("admin", "manager"),
+  authorize("admin"),
   adminController.updateLicenseKey
 );
 router.patch(
   "/license-keys/:id/toggle",
   authenticate,
-  authorize("admin", "manager"),
+  authorize("admin"),
   adminController.toggleLicenseKey
 );
 router.delete(
   "/license-keys/:id",
   authenticate,
-  authorize("admin", "manager"),
+  authorize("admin"),
   adminController.deleteLicenseKey
 );
 
@@ -143,26 +143,26 @@ router.get(
 router.post(
   "/buyer-requests/:id/review",
   authenticate,
-  authorize("admin", "manager"),
+  authorize("admin"),
   adminController.reviewBuyerRequest
 );
 router.post(
   "/buyer-requests/:id/admin-docs",
   authenticate,
-  authorize("admin", "manager"),
+  authorize("admin"),
   upload.array("files"),
   adminController.addAdminDocs
 );
 router.patch(
   "/buyer-requests/:id",
   authenticate,
-  authorize("admin", "manager"),
+  authorize("admin"),
   adminController.updateBuyerRequest
 );
 router.post(
   "/buyer-requests/:id/complete",
   authenticate,
-  authorize("admin", "manager"),
+  authorize("admin"),
   adminController.completeRequest
 );
 router.get(
@@ -176,13 +176,13 @@ router.get(
 router.post(
   "/farmer-files/:fileId/review",
   authenticate,
-  authorize("admin", "manager"),
+  authorize("admin"),
   adminController.reviewFarmerFile
 );
 router.post(
   "/buyer-requests/:id/assign-suppliers",
   authenticate,
-  authorize("admin", "manager"),
+  authorize("admin"),
   adminController.assignSuppliers
 );
 
@@ -233,14 +233,14 @@ router.patch(
 router.get(
   "/containers-with-tracking",
   authenticate,
-  authorize("admin"),
+  authorize("admin", "manager"),
   adminTrackingCtrl.listAllContainersWithTracking
 );
 
 router.get(
   "/tracking-code/:code",
   authenticate,
-  authorize("admin"),
+  authorize("admin", "manager"),
   adminTrackingCtrl.findByTrackingCode
 );
 export default router;

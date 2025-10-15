@@ -16,14 +16,14 @@ router.post(
 router.get(
   "/:id/tracking",
   authenticate,
-  authorize("user", "admin"),
+  authorize("user", "admin", "manager"),
   trackingCtrl.listTracking
 );
 
 router.get(
   "/my-containers-with-tracking",
   authenticate,
-  authorize("user"),
+  authorize("user", "manager"),
   trackingCtrl.myContainersWithTracking
 );
 
