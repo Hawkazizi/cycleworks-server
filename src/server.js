@@ -24,7 +24,7 @@ app.use(
       "https://www.digipoultry.com", // optional www
     ],
     credentials: true,
-  })
+  }),
 );
 
 // ✅ serve uploads folder statically

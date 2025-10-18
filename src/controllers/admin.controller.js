@@ -18,7 +18,7 @@ export const loginWithLicense = async (req, res) => {
 
     const { token, user, roles } = await adminService.loginWithLicense(
       licenseKey,
-      role
+      role,
     );
 
     res.json({ token, roles, user });
@@ -93,7 +93,7 @@ export const banOrUnbanUser = async (req, res) => {
     const updatedUser = await adminService.toggleUserStatus(
       Number(id),
       action,
-      adminId
+      adminId,
     );
 
     res.json({ user: updatedUser });
@@ -107,12 +107,17 @@ export async function getUserById(req, res) {
   try {
     const { id } = req.params;
     const user = await db("users")
-      .select("id", "name", "email", "status")
-      .where({ id })
+      .leftJoin("user_applications", "users.id", "user_applications.user_id")
+      .select(
+        "users.id",
+        "users.name",
+        "users.email",
+        "users.status",
+        "user_applications.supplier_name",
+      )
+      .where("users.id", id)
       .first();
-
     if (!user) return res.status(404).json({ error: "User not found" });
-
     res.json(user);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -318,8 +323,8 @@ export async function addAdminDocs(req, res) {
     const currentDocs = Array.isArray(existing.admin_docs)
       ? existing.admin_docs
       : existing.admin_docs
-      ? JSON.parse(existing.admin_docs)
-      : [];
+        ? JSON.parse(existing.admin_docs)
+        : [];
 
     const updatedDocs = [...currentDocs];
     newFiles.forEach((file) => {
@@ -376,7 +381,7 @@ export async function updateBuyerRequest(req, res) {
           preferred_supplier_id: preferred_supplier_id || null,
           updated_at: db.fn.now(),
         },
-        "*"
+        "*",
       );
 
     return res.json(updated[0]);
@@ -409,7 +414,7 @@ export async function reviewFarmerFile(req, res) {
       fileId,
       status,
       note,
-      reviewerId
+      reviewerId,
     );
     res.json(result);
   } catch (err) {
@@ -426,7 +431,7 @@ export async function assignSuppliers(req, res) {
     const result = await adminBuyerService.assignSuppliersToRequest(
       id,
       supplier_ids,
-      reviewerId
+      reviewerId,
     );
 
     res.json({
@@ -478,7 +483,7 @@ export const replyToTicket = async (req, res) => {
         "uploads",
         "admins",
         String(adminId),
-        "ticket_replies"
+        "ticket_replies",
       );
       fs.mkdirSync(adminDir, { recursive: true });
 
@@ -574,7 +579,7 @@ export const updateBuyerRequestDeadline = async (req, res) => {
     const updated = await adminBuyerService.updateBuyerRequestDeadline(
       id,
       new_deadline_date,
-      req.user.id // optional: who made the change
+      req.user.id, // optional: who made the change
     );
 
     res.json({ success: true, request: updated });

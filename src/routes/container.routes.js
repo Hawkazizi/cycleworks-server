@@ -10,21 +10,21 @@ router.post(
   "/:id/tracking",
   authenticate,
   authorize("user", "admin"),
-  trackingCtrl.addTracking
+  trackingCtrl.addTracking,
 );
 
 router.get(
   "/:id/tracking",
   authenticate,
   authorize("user", "admin", "manager"),
-  trackingCtrl.listTracking
+  trackingCtrl.listTracking,
 );
 
 router.get(
   "/my-containers-with-tracking",
   authenticate,
   authorize("user", "manager"),
-  trackingCtrl.myContainersWithTracking
+  trackingCtrl.myContainersWithTracking,
 );
 
 export default router;
