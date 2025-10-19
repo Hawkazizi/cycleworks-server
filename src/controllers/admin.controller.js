@@ -7,6 +7,7 @@ import * as adminTicketService from "../services/adminTicket.service.js";
 import db from "../db/knex.js";
 import path from "path";
 import fs from "fs";
+import { NotificationService } from "../services/notification.service.js";
 /* -------------------- Auth -------------------- */
 // Admin/Manager login
 export const loginWithLicense = async (req, res) => {
@@ -394,13 +395,48 @@ export async function completeRequest(req, res) {
   try {
     const { id } = req.params;
 
+    // Get old request for comparison
+    const oldRequest = await db("buyer_requests").where({ id }).first();
+    if (!oldRequest)
+      return res.status(404).json({ error: "Request not found" });
+
     const [updated] = await db("buyer_requests")
       .where({ id })
       .update({ final_status: "completed", updated_at: db.fn.now() })
       .returning("*");
 
-    res.json({ message: "Request completed and sent to buyer", updated });
+    // ✅ NOTIFY BUYER
+    if (
+      updated.final_status === "completed" &&
+      oldRequest.final_status !== "completed"
+    ) {
+      await NotificationService.create(updated.buyer_id, "completed", id, {
+        request_id: id,
+        final_status: "completed",
+      });
+
+      // OPTIONAL: still notify admins if needed
+      const admins = await db("users")
+        .join("user_roles", "users.id", "user_roles.user_id")
+        .join("roles", "user_roles.role_id", "roles.id")
+        .where("roles.name", "admin")
+        .where("users.status", "active")
+        .select("users.id");
+
+      for (const admin of admins) {
+        await NotificationService.create(admin.id, "completed", id, {
+          request_id: id,
+          final_status: "completed",
+        });
+      }
+    }
+
+    res.json({
+      message: "درخواست تکمیل شد و اعلان ارسال شد",
+      updated,
+    });
   } catch (err) {
+    console.error("COMPLETE ERROR:", err);
     res.status(400).json({ error: err.message });
   }
 }

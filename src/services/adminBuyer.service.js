@@ -1,5 +1,6 @@
 // services/adminBuyer.service.js
 import db from "../db/knex.js";
+import { NotificationService } from "./notification.service.js"; // 🚨 NEW IMPORT
 
 const BASE_URL = process.env.BASE_URL || "http://localhost:5000";
 
@@ -9,12 +10,12 @@ export async function getBuyerRequests() {
     .leftJoin("users as u", "br.buyer_id", "u.id")
     .leftJoin("users as s", "br.preferred_supplier_id", "s.id")
     .select(
-      "br.*", // includes deadline_date already
+      "br.*",
       "u.name as buyer_name",
       "u.email as buyer_email",
       "u.mobile as buyer_mobile",
       "s.name as supplier_name",
-      "s.mobile as supplier_mobile"
+      "s.mobile as supplier_mobile",
     )
     .orderBy("br.created_at", "desc");
 
@@ -34,12 +35,12 @@ export async function getBuyerRequestById(id) {
     .leftJoin("users as u", "br.buyer_id", "u.id")
     .leftJoin("users as s", "br.preferred_supplier_id", "s.id")
     .select(
-      "br.*", // includes deadline_date already
+      "br.*",
       "u.name as buyer_name",
       "u.email as buyer_email",
       "u.mobile as buyer_mobile",
       "s.name as supplier_name",
-      "s.mobile as supplier_mobile"
+      "s.mobile as supplier_mobile",
     )
     .where("br.id", id)
     .first();
@@ -52,19 +53,48 @@ export async function getBuyerRequestById(id) {
   return normalized;
 }
 
-export async function reviewBuyerRequest(id, { status, reviewerId }) {
+export async function reviewBuyerRequest(
+  id,
+  { status, final_status, farmer_status, reviewerId },
+) {
+  const oldRequest = await db("buyer_requests").where("id", id).first();
+  if (!oldRequest) throw new Error("Request not found");
+
   const [updated] = await db("buyer_requests")
     .where({ id })
     .update({
       status,
+      final_status: final_status ?? oldRequest.final_status,
+      farmer_status: farmer_status ?? oldRequest.farmer_status,
       reviewed_by: reviewerId,
       reviewed_at: db.fn.now(),
+      updated_at: db.fn.now(),
     })
     .returning("*");
 
-  return updated ? normalizeRequest(updated) : null;
-}
+  if (!updated) return null;
 
+  const normalized = normalizeRequest(updated);
+
+  // 🚨 NOTIFICATION LOGIC
+  // 1. If status → 'accepted' → NOTIFY SUPPLIER
+  if (status === "accepted" && oldRequest.status !== "accepted") {
+    const supplierId = updated.preferred_supplier_id;
+    if (supplierId) {
+      await NotificationService.create(supplierId, "request_accepted", id, {
+        buyerName: normalized.buyer_name || "Buyer",
+      });
+    }
+  }
+  // 2. If final_status → 'completed' → NOTIFY BUYER
+  if (final_status === "completed" && oldRequest.final_status !== "completed") {
+    await NotificationService.create(updated.buyer_id, "status_updated", id, {
+      final_status: "completed",
+    });
+  }
+
+  return normalized;
+}
 /* -------------------- Helpers -------------------- */
 function safeParseJSON(value, fallback) {
   if (!value) return fallback;
@@ -105,12 +135,10 @@ async function getPlansWithContainers(requestId) {
     .orderBy("fp.plan_date", "asc");
 
   for (const plan of plans) {
-    // load containers
     plan.containers = await db("farmer_plan_containers as c")
       .where("c.plan_id", plan.id)
       .orderBy("c.container_no", "asc");
 
-    // load files for each container
     for (const container of plan.containers) {
       const files = await db("farmer_plan_files")
         .where({ container_id: container.id })
@@ -130,17 +158,15 @@ async function getPlansWithContainers(requestId) {
 export async function assignSuppliersToRequest(
   requestId,
   supplierIds,
-  reviewerId
+  reviewerId,
 ) {
   if (!Array.isArray(supplierIds) || supplierIds.length === 0) {
     throw new Error("لیست تامین‌کنندگان الزامی است.");
   }
 
-  // ✅ validate request exists
   const request = await db("buyer_requests").where({ id: requestId }).first();
   if (!request) throw new Error("درخواست یافت نشد.");
 
-  // ✅ validate suppliers
   const validSuppliers = await db("users")
     .whereIn("id", supplierIds)
     .andWhere("status", "active");
@@ -149,23 +175,20 @@ export async function assignSuppliersToRequest(
     throw new Error("برخی از تامین‌کنندگان معتبر یا فعال نیستند.");
   }
 
-  // ✅ clear old mappings
   await db("buyer_request_suppliers")
     .where({ buyer_request_id: requestId })
     .del();
 
-  // ✅ insert new mappings
   const inserted = await db("buyer_request_suppliers")
     .insert(
       supplierIds.map((sid) => ({
         buyer_request_id: requestId,
         supplier_id: sid,
         assigned_by: reviewerId,
-      }))
+      })),
     )
     .returning("*");
 
-  // ✅ update preferred supplier as first in list (for backward compatibility)
   await db("buyer_requests").where({ id: requestId }).update({
     preferred_supplier_id: supplierIds[0],
     updated_at: db.fn.now(),
@@ -182,7 +205,7 @@ export async function getAssignedSuppliers(requestId) {
       "brs.*",
       "u.name as supplier_name",
       "u.email as supplier_email",
-      "u.mobile as supplier_mobile"
+      "u.mobile as supplier_mobile",
     )
     .where("brs.buyer_request_id", requestId)
     .orderBy("brs.id", "asc");
@@ -191,11 +214,10 @@ export async function getAssignedSuppliers(requestId) {
 }
 
 /* -------------------- Update deadline -------------------- */
-
 export async function updateBuyerRequestDeadline(
   requestId,
   newDate,
-  updatedBy
+  updatedBy,
 ) {
   const request = await db("buyer_requests").where({ id: requestId }).first();
   if (!request) throw new Error("Buyer request not found");
@@ -209,7 +231,7 @@ export async function updateBuyerRequestDeadline(
       deadline_date: newDate,
       updated_at: db.fn.now(),
     },
-    "*"
+    "*",
   );
 
   return updated;

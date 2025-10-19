@@ -1,5 +1,6 @@
 // services/buyerRequest.service.js
 import knex from "../db/knex.js";
+import { NotificationService } from "./notification.service.js"; // 🚨 NEW IMPORT
 
 const BASE_URL = process.env.BASE_URL || "http://localhost:5000";
 
@@ -20,12 +21,12 @@ function normalizeRequest(row) {
     ...row,
     farmer_docs: safeParseJSON(row.farmer_docs, []).map((doc) => ({
       ...doc,
-      filename: doc.filename || doc.original_name || "-", // ensure filename
+      filename: doc.filename || doc.original_name || "-",
       path: doc.path?.startsWith("http") ? doc.path : `${BASE_URL}${doc.path}`,
     })),
     admin_docs: safeParseJSON(row.admin_docs, []).map((doc) => ({
       ...doc,
-      filename: doc.filename || doc.original_name || "-", // ensure filename
+      filename: doc.filename || doc.original_name || "-",
       path: doc.path?.startsWith("http") ? doc.path : `${BASE_URL}${doc.path}`,
     })),
     farmer_plan: safeParseJSON(row.farmer_plan, {}),
@@ -51,7 +52,7 @@ async function hydratePlans(requestId) {
 
       container.files = files.map((f) => ({
         ...f,
-        filename: f.original_name || f.file_key || "-", // add filename explicitly
+        filename: f.original_name || f.file_key || "-",
         path: f.path?.startsWith("http") ? f.path : `${BASE_URL}${f.path}`,
       }));
     }
@@ -60,7 +61,7 @@ async function hydratePlans(requestId) {
   return plans;
 }
 
-/* -------------------- CRUD -------------------- */
+/* -------------------- CRUD WITH NOTIFICATIONS -------------------- */
 export async function createRequest(userId, data) {
   const [req] = await knex("buyer_requests")
     .insert({
@@ -87,6 +88,19 @@ export async function createRequest(userId, data) {
     })
     .returning("*");
 
+  // 🚨 NOTIFY ALL ADMINS - NEW REQUEST
+  const admins = await knex("users")
+    .join("user_roles", "users.id", "user_roles.user_id")
+    .join("roles", "user_roles.role_id", "roles.id")
+    .where("roles.name", "admin")
+    .where("users.status", "active")
+    .select("users.id");
+  for (const admin of admins) {
+    await NotificationService.create(admin.id, "new_request", req.id, {
+      buyerName: "Buyer",
+    });
+  }
+
   return normalizeRequest(req);
 }
 
@@ -100,7 +114,7 @@ export async function getMyRequests(userId) {
       const normalized = normalizeRequest(row);
       normalized.farmer_plans = await hydratePlans(row.id);
       return normalized;
-    })
+    }),
   );
 }
 
@@ -182,6 +196,59 @@ export async function getMyRequestHistory(userId) {
       const normalized = normalizeRequest(row);
       normalized.farmer_plans = await hydratePlans(row.id);
       return normalized;
-    })
+    }),
   );
+}
+
+// 🚨 NEW: For ADMIN updates (status changes) - CALL THIS FROM ADMIN SERVICE
+export async function adminUpdateRequest(requestId, updateData, reviewerId) {
+  // Get old data for comparison
+  const oldRequest = await knex("buyer_requests")
+    .where("id", requestId)
+    .first();
+  if (!oldRequest) throw new Error("Request not found");
+
+  const [updatedRequest] = await knex("buyer_requests")
+    .where("id", requestId)
+    .update({
+      ...updateData,
+      reviewed_by: reviewerId,
+      reviewed_at: knex.fn.now(),
+      updated_at: knex.fn.now(),
+    })
+    .returning("*");
+
+  // 🚨 NOTIFICATION LOGIC
+  // 1. If status → 'accepted' → NOTIFY SUPPLIER
+  if (updateData.status === "accepted" && oldRequest.status !== "accepted") {
+    const supplierId =
+      updateData.preferred_supplier_id || updatedRequest.preferred_supplier_id;
+    if (supplierId) {
+      await NotificationService.create(
+        supplierId,
+        "request_accepted",
+        requestId,
+        { buyerName: "Buyer" },
+      );
+    }
+  }
+  // 2. If final_status OR farmer_status changed → NOTIFY BUYER
+  const statusChanged =
+    (updateData.final_status &&
+      updateData.final_status !== oldRequest.final_status) ||
+    (updateData.farmer_status &&
+      updateData.farmer_status !== oldRequest.farmer_status);
+  if (statusChanged) {
+    await NotificationService.create(
+      updatedRequest.buyer_id,
+      "status_updated",
+      requestId,
+      {
+        final_status: updateData.final_status,
+        farmer_status: updateData.farmer_status,
+      },
+    );
+  }
+
+  return normalizeRequest(updatedRequest);
 }

@@ -1,4 +1,3 @@
-// services/admin.service.js
 import db from "../db/knex.js";
 import jwt from "jsonwebtoken";
 import { JWT_SECRET, JWT_EXPIRES_IN } from "../config/jwt.js";
@@ -60,7 +59,7 @@ export const getAdminProfile = async (userId) => {
       "users.email",
       "users.status",
       "users.created_at",
-      "roles.name as role"
+      "roles.name as role",
     )
     .where("users.id", userId)
     .andWhere("users.status", "active")
@@ -140,7 +139,7 @@ export const getAllUsers = async () => {
       "u.email",
       "u.status",
       "u.created_at",
-      "r.name as role_name"
+      "r.name as role_name",
     )
     .orderBy("u.id", "asc");
 };
@@ -209,7 +208,7 @@ export const getApplications = async () => {
       "user_applications.description",
       "user_applications.farm_biosecurity",
       "user_applications.created_at",
-      "user_applications.supplier_name"
+      "user_applications.supplier_name",
     )
     .orderBy("user_applications.created_at", "desc");
 
@@ -291,7 +290,7 @@ export const getAllLicenseKeys = async () => {
       "alk.*",
       "r.name as role_name",
       "u.name as assigned_user_name",
-      "u.email as assigned_user_email"
+      "u.email as assigned_user_email",
     )
     .orderBy("alk.created_at", "desc");
 };

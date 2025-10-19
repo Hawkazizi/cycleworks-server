@@ -35,7 +35,7 @@ export const register = async (req, res) => {
       "uploads",
       "users",
       String(user.id),
-      "registration"
+      "registration",
     );
     fs.mkdirSync(userDir, { recursive: true });
 
@@ -129,7 +129,7 @@ export async function requestEmailVerification(req, res) {
 
     const { code } = await userService.requestEmailVerification(
       req.user.id,
-      email
+      email,
     );
 
     await sendMail({
@@ -198,7 +198,7 @@ export async function listPlans(req, res) {
 
     const result = await farmerPlansService.listPlansWithContainers(
       requestId,
-      farmerId
+      farmerId,
     );
 
     res.json(result);
@@ -277,26 +277,28 @@ export async function getFarmerRequest(req, res) {
     res.status(500).json({ error: err.message });
   }
 }
-
 export async function updateFarmerRequestStatus(req, res) {
   try {
-    const updated = await farmerBuyerService.updateFarmerRequestStatus(
+    const { farmer_status } = req.body;
+
+    const updated = await userService.updateFarmerRequestStatus(
       req.user.id,
       req.params.id,
-      req.body.farmer_status
+      farmer_status,
     );
+
     res.json({
       message:
-        req.body.farmer_status === "rejected"
+        farmer_status === "rejected"
           ? "درخواست با موفقیت رد شد."
           : "درخواست تایید شد.",
       request: updated,
     });
   } catch (err) {
+    console.log("🔍 ERROR:", err.message); // 🚨 ADD THIS
     res.status(400).json({ error: err.message });
   }
 }
-
 /* -------------------- Tickets -------------------------- */
 
 /* -------------------- Create Ticket -------------------- */

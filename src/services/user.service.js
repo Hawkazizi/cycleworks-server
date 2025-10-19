@@ -1,7 +1,9 @@
+// services/user.service.js
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import db from "../db/knex.js";
 import { sendVerificationCode } from "./SMS/smsService.js";
+import { NotificationService } from "./notification.service.js";
 import { JWT_SECRET, JWT_EXPIRES_IN } from "../config/jwt.js";
 
 const SALT_ROUNDS = 10;
@@ -17,13 +19,10 @@ export const registerUser = async ({
 }) => {
   const existing = await db("users").where({ mobile }).first();
   if (existing) throw new Error("این شماره موبایل قبلاً ثبت شده است");
-
   const password_hash = await bcrypt.hash(password, SALT_ROUNDS);
-
   const [user] = await db("users")
     .insert({ name, mobile, password_hash, status: "pending" })
     .returning("*");
-
   let application = null;
   if (reason || supplier_name) {
     [application] = await db("user_applications")
@@ -35,18 +34,30 @@ export const registerUser = async ({
       })
       .returning("*");
   }
-
   const roleRow = await db("roles").where({ name: role }).first();
   if (!roleRow) throw new Error("نقش انتخاب شده معتبر نیست");
-
   await db("user_roles")
     .insert({ user_id: user.id, role_id: roleRow.id })
     .onConflict(["user_id", "role_id"])
     .ignore();
 
+  // Notify admins and managers about new application
+  if (application) {
+    const adminManagers = await db("user_roles")
+      .join("roles", "roles.id", "user_roles.role_id")
+      .whereIn("roles.name", ["admin", "manager"])
+      .select("user_id as id")
+      .distinct();
+    for (const am of adminManagers) {
+      await NotificationService.create(am.id, "new_application", null, {
+        user_name: name,
+        mobile,
+      });
+    }
+  }
+
   return { user, application, message: "درخواست ثبت شد، منتظر تأیید مدیر" };
 };
-
 export const loginUser = async ({ mobile, password }) => {
   const user = await db("users").where({ mobile }).first();
   if (!user) throw new Error("کاربری با این شماره یافت نشد");
@@ -97,7 +108,6 @@ export async function deleteProfileById(userId) {
 }
 
 /* -------------------- email Verification -------------------- */
-
 export async function requestEmailVerification(userId, email) {
   try {
     const code = String(Math.floor(100000 + Math.random() * 900000));
@@ -136,8 +146,8 @@ export async function verifyEmailCode(userId, code) {
 
   return db("users").where({ id: userId }).first();
 }
-/* -------------------- Change Password -------------------- */
 
+/* -------------------- Change Password -------------------- */
 export async function changePassword(userId, currentPassword, newPassword) {
   const user = await db("users").where({ id: userId }).first();
   if (!user) throw new Error("کاربر یافت نشد");
@@ -193,7 +203,7 @@ export const getUserProfile = async (userId) => {
       "u.email",
       "u.status",
       "u.created_at",
-      "ua.supplier_name" // ✅ include supplier name
+      "ua.supplier_name",
     )
     .where("u.id", userId)
     .first();
@@ -202,3 +212,50 @@ export const getUserProfile = async (userId) => {
 
   return user;
 };
+
+// 🚨 NEW: Farmer Status Update WITH NOTIFICATIONS
+export async function updateFarmerRequestStatus(
+  userId,
+  requestId,
+  farmer_status,
+) {
+  const oldRequest = await db("buyer_requests").where("id", requestId).first();
+  if (!oldRequest) throw new Error("Request not found");
+
+  // Verify user is assigned supplier
+  const isAssigned = await db("buyer_request_suppliers")
+    .where({ buyer_request_id: requestId, supplier_id: userId })
+    .first();
+  if (!isAssigned) throw new Error("Not authorized");
+
+  const [updated] = await db("buyer_requests")
+    .where("id", requestId)
+    .update({
+      farmer_status,
+      updated_at: db.fn.now(),
+    })
+    .returning("*");
+  if (farmer_status === "accepted" && oldRequest.farmer_status !== "accepted") {
+    // NOTIFY ALL ADMINS
+    const admins = await db("users")
+      .join("user_roles", "users.id", "user_roles.user_id")
+      .join("roles", "user_roles.role_id", "roles.id")
+      .where("roles.name", "admin")
+      .where("users.status", "active")
+      .select("users.id");
+    for (const admin of admins) {
+      await NotificationService.create(admin.id, "status_updated", requestId, {
+        farmer_status: "accepted",
+      });
+    }
+    // NOTIFY BUYER
+    await NotificationService.create(
+      updated.buyer_id,
+      "status_updated",
+      requestId,
+      { farmer_status: "accepted" },
+    );
+  }
+
+  return updated;
+}

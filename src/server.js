@@ -7,6 +7,7 @@ import userRouter from "./routes/user.routes.js";
 import adminRouter from "./routes/admin.routes.js";
 import buyerRouter from "./routes/buyer.routes.js";
 import containerRouter from "./routes/container.routes.js";
+import notificationRoutes from "./routes/notification.routes.js";
 dotenv.config();
 
 const app = express();
@@ -39,6 +40,7 @@ app.use("/api/users", userRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/buyers", buyerRouter);
 app.use("/api/containers", containerRouter);
+app.use("/api/notifications", notificationRoutes);
 // Test DB connection on startup
 db.raw("SELECT 1+1 AS result")
   .then(() => {

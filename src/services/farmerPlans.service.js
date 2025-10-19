@@ -1,4 +1,5 @@
 import db from "../db/knex.js";
+import { NotificationService } from "../services/notification.service.js";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -16,12 +17,10 @@ export async function createPlan({
   if (!containerAmount || containerAmount <= 0) {
     throw new Error("Container amount must be positive");
   }
-
   const buyerRequest = await db("buyer_requests")
     .where({ id: requestId })
     .first();
   if (!buyerRequest) throw new Error("Buyer request not found");
-
   return db.transaction(async (trx) => {
     // ✅ enforce deadline in SQL, comparing as DATE
     const [{ ok: inWindow }] = await trx
@@ -30,11 +29,9 @@ export async function createPlan({
         buyerRequest.deadline_date,
       ])
       .then((r) => r.rows);
-
     if (!inWindow) {
       throw new Error("Plan date exceeds request deadline");
     }
-
     // ✅ compute used quota
     const { cnt: usedRaw } = await trx("farmer_plan_containers as c")
       .join("farmer_plans as p", "p.id", "c.plan_id")
@@ -45,10 +42,9 @@ export async function createPlan({
     const total = Number(buyerRequest.container_amount || 0);
     if (used + containerAmount > total) {
       throw new Error(
-        `🚨 تعداد کانتینرها بیشتر از سقف ${total} است. شما تاکنون ${used} ثبت کرده‌اید.`
+        `🚨 تعداد کانتینرها بیشتر از سقف ${total} است. شما تاکنون ${used} ثبت کرده‌اید.`,
       );
     }
-
     // delete old plan for same date (if exists)
     const existing = await trx("farmer_plans")
       .where({
@@ -57,20 +53,18 @@ export async function createPlan({
         plan_date: planDate,
       })
       .first();
-
     if (existing) {
       await trx("farmer_plan_files")
         .whereIn(
           "container_id",
           trx("farmer_plan_containers")
             .select("id")
-            .where({ plan_id: existing.id })
+            .where({ plan_id: existing.id }),
         )
         .del();
       await trx("farmer_plan_containers").where({ plan_id: existing.id }).del();
       await trx("farmer_plans").where({ id: existing.id }).del();
     }
-
     // insert new plan
     const [plan] = await trx("farmer_plans")
       .insert({
@@ -80,7 +74,6 @@ export async function createPlan({
         status: "submitted",
       })
       .returning("*");
-
     // insert containers
     const containers = [];
     for (let i = 1; i <= containerAmount; i++) {
@@ -90,7 +83,6 @@ export async function createPlan({
       containers.push(c);
     }
     plan.containers = containers;
-
     const [{ count }] = await trx("farmer_plans")
       .where({ request_id: requestId, farmer_id: farmerId })
       .count("* as count");
@@ -100,7 +92,6 @@ export async function createPlan({
         updated_at: db.fn.now(),
       });
     }
-
     return plan;
   });
 }
@@ -117,15 +108,13 @@ export async function listPlansWithContainers(requestId, farmerId) {
       "reviewed_by",
       "reviewed_at",
       "created_at",
-      "updated_at"
+      "updated_at",
     )
     .where({ request_id: requestId, farmer_id: farmerId })
     .orderBy("plan_date", "asc");
-
   const buyerRequest = await db("buyer_requests")
     .where({ id: requestId })
     .first();
-
   const { cnt: usedRaw } = await db("farmer_plan_containers as c")
     .join("farmer_plans as p", "p.id", "c.plan_id")
     .where("p.request_id", requestId)
@@ -134,13 +123,11 @@ export async function listPlansWithContainers(requestId, farmerId) {
   const used = Number(usedRaw || 0);
   const total = Number(buyerRequest?.container_amount || 0);
   const remaining = Math.max(0, total - used);
-
   // hydrate containers + files
   for (const plan of plans) {
     const containers = await db("farmer_plan_containers")
       .where({ plan_id: plan.id })
       .orderBy("container_no", "asc");
-
     for (const container of containers) {
       const files = await db("farmer_plan_files")
         .where({ container_id: container.id })
@@ -149,7 +136,6 @@ export async function listPlansWithContainers(requestId, farmerId) {
     }
     plan.containers = containers;
   }
-
   return {
     plans,
     used_quota: used,
@@ -160,9 +146,17 @@ export async function listPlansWithContainers(requestId, farmerId) {
 
 /* -------------------- Containers -------------------- */
 export async function getContainersByPlan(planId) {
-  return db("farmer_plan_containers")
+  const containers = await db("farmer_plan_containers")
     .where({ plan_id: planId })
     .orderBy("container_no", "asc");
+
+  for (const container of containers) {
+    container.files = await db("farmer_plan_files")
+      .where({ container_id: container.id })
+      .orderBy("created_at", "asc");
+  }
+
+  return containers;
 }
 
 export async function getContainerById(containerId) {
@@ -190,9 +184,32 @@ export async function addFileToContainer(containerId, fileMeta) {
       status: "submitted",
     })
     .returning("*");
+
+  // Notify admins about new file upload
+  const container = await db("farmer_plan_containers")
+    .join("farmer_plans", "farmer_plans.id", "farmer_plan_containers.plan_id")
+    .where("farmer_plan_containers.id", containerId)
+    .select("farmer_plans.request_id")
+    .first();
+  const requestId = container.request_id;
+
+  const admins = await db("users")
+    .join("user_roles", "users.id", "user_roles.user_id")
+    .join("roles", "user_roles.role_id", "roles.id")
+    .where("roles.name", "admin")
+    .where("users.status", "active")
+    .select("users.id");
+
+  for (const admin of admins) {
+    await NotificationService.create(admin.id, "new_file_upload", requestId, {
+      fileId: file.id,
+      containerId,
+      type: fileMeta.type,
+    });
+  }
+
   return file;
 }
-
 export async function listFiles(containerId) {
   return db("farmer_plan_files")
     .where({ container_id: containerId })
