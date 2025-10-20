@@ -172,6 +172,7 @@ export async function getContainerById(containerId) {
 
 /* -------------------- File Upload -------------------- */
 export async function addFileToContainer(containerId, fileMeta) {
+  // 1️⃣ Insert file record
   const [file] = await db("farmer_plan_files")
     .insert({
       container_id: containerId,
@@ -185,14 +186,34 @@ export async function addFileToContainer(containerId, fileMeta) {
     })
     .returning("*");
 
-  // Notify admins about new file upload
-  const container = await db("farmer_plan_containers")
+  // 2️⃣ Get related buyer & farmer info
+  const containerInfo = await db("farmer_plan_containers")
     .join("farmer_plans", "farmer_plans.id", "farmer_plan_containers.plan_id")
+    .join("buyer_requests", "buyer_requests.id", "farmer_plans.request_id")
     .where("farmer_plan_containers.id", containerId)
-    .select("farmer_plans.request_id")
+    .select(
+      "farmer_plans.request_id",
+      "farmer_plans.farmer_id",
+      "buyer_requests.buyer_id", // ✅ FIXED: correct column name
+    )
     .first();
-  const requestId = container.request_id;
 
+  if (!containerInfo) return file;
+
+  const {
+    request_id: requestId,
+    buyer_id: buyerId,
+    farmer_id: farmerId,
+  } = containerInfo;
+
+  // Notification payload
+  const notificationData = {
+    fileId: file.id,
+    containerId,
+    type: fileMeta.type,
+  };
+
+  // 3️⃣ Notify Admins
   const admins = await db("users")
     .join("user_roles", "users.id", "user_roles.user_id")
     .join("roles", "user_roles.role_id", "roles.id")
@@ -201,15 +222,55 @@ export async function addFileToContainer(containerId, fileMeta) {
     .select("users.id");
 
   for (const admin of admins) {
-    await NotificationService.create(admin.id, "new_file_upload", requestId, {
-      fileId: file.id,
-      containerId,
-      type: fileMeta.type,
-    });
+    await NotificationService.create(
+      admin.id,
+      "new_file_upload",
+      requestId,
+      notificationData,
+    );
+  }
+
+  // 4️⃣ Notify Managers
+  const managers = await db("users")
+    .join("user_roles", "users.id", "user_roles.user_id")
+    .join("roles", "user_roles.role_id", "roles.id")
+    .where("roles.name", "manager")
+    .where("users.status", "active")
+    .select("users.id");
+
+  for (const manager of managers) {
+    await NotificationService.create(
+      manager.id,
+      "new_file_upload",
+      requestId,
+      notificationData,
+    );
+  }
+
+  // 5️⃣ Notify Buyer
+  if (buyerId) {
+    await NotificationService.create(
+      buyerId,
+      "new_file_upload",
+      requestId,
+      notificationData,
+    );
+  }
+
+  // 6️⃣ Notify Farmer (optional but recommended)
+  if (farmerId) {
+    await NotificationService.create(
+      farmerId,
+      "new_file_upload",
+      requestId,
+      notificationData,
+    );
   }
 
   return file;
 }
+
+/* -------------------- List Files -------------------- */
 export async function listFiles(containerId) {
   return db("farmer_plan_files")
     .where({ container_id: containerId })

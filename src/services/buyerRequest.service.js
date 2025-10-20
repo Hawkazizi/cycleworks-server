@@ -63,6 +63,7 @@ async function hydratePlans(requestId) {
 
 /* -------------------- CRUD WITH NOTIFICATIONS -------------------- */
 export async function createRequest(userId, data) {
+  // 1️⃣ Create request
   const [req] = await knex("buyer_requests")
     .insert({
       buyer_id: userId,
@@ -88,15 +89,17 @@ export async function createRequest(userId, data) {
     })
     .returning("*");
 
-  // 🚨 NOTIFY ALL ADMINS - NEW REQUEST
-  const admins = await knex("users")
+  // 2️⃣ Fetch active Admins and Managers together
+  const adminAndManagerUsers = await knex("users")
     .join("user_roles", "users.id", "user_roles.user_id")
     .join("roles", "user_roles.role_id", "roles.id")
-    .where("roles.name", "admin")
+    .whereIn("roles.name", ["admin", "manager"]) // ✅ Both roles
     .where("users.status", "active")
     .select("users.id");
-  for (const admin of admins) {
-    await NotificationService.create(admin.id, "new_request", req.id, {
+
+  // 3️⃣ Notify each Admin & Manager
+  for (const u of adminAndManagerUsers) {
+    await NotificationService.create(u.id, "new_request", req.id, {
       buyerName: "Buyer",
     });
   }
