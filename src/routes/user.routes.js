@@ -18,33 +18,33 @@ router.post(
     { name: "description", maxCount: 1 },
     { name: "farmBiosecurity", maxCount: 1 },
   ]),
-  userController.register
+  userController.register,
 );
 router.post("/login", userController.login);
 router.get(
   "/profile",
   authenticate,
   authorize("user"),
-  userController.getProfile
+  userController.getProfile,
 );
 router.patch(
   "/profile",
   authenticate,
   authorize("user"),
-  userController.updateProfile
+  userController.updateProfile,
 );
 router.delete(
   "/profile",
   authenticate,
   authorize("user"),
-  userController.deleteProfile
+  userController.deleteProfile,
 );
 
 /* -------------------- email verification flow -------------------- */
 router.post(
   "/profile/email/request",
   authenticate,
-  userController.requestEmailVerification
+  userController.requestEmailVerification,
 );
 router.post("/profile/email/verify", authenticate, userController.verifyEmail);
 
@@ -52,7 +52,7 @@ router.post("/profile/email/verify", authenticate, userController.verifyEmail);
 router.post(
   "/profile/change-password",
   authenticate,
-  userController.changePassword
+  userController.changePassword,
 );
 /* -------------------- Reqs -------------------- */
 
@@ -67,7 +67,7 @@ router.get(
   "/plans/:planId/containers",
   authenticate,
   authorize("user"),
-  userController.listContainers
+  userController.listContainers,
 );
 
 // Container Files (upload & list)
@@ -77,7 +77,7 @@ router
     authenticate,
     authorize("user"),
     upload.single("file"),
-    userController.uploadFile
+    userController.uploadFile,
   )
   .get(authenticate, authorize("user"), userController.listFiles);
 
@@ -86,21 +86,21 @@ router.get(
   "/farmer/requests",
   authenticate,
   authorize("user"),
-  userController.listFarmerRequests
+  userController.listFarmerRequests,
 );
 
 router.get(
   "/farmer/requests/:id",
   authenticate,
   authorize("user"),
-  userController.getFarmerRequest
+  userController.getFarmerRequest,
 );
 // ✅ Update farmer status (accept/reject)
 router.patch(
   "/farmer/requests/:id",
   authenticate,
   authorize("user"),
-  userController.updateFarmerRequestStatus
+  userController.updateFarmerRequestStatus,
 );
 
 /* -------------------- Tickets -------------------- */
@@ -109,21 +109,28 @@ router.post(
   authenticate,
   authorize("user"),
   upload.single("attachment"),
-  userController.createTicket
+  userController.createTicket,
 );
 
 router.get(
   "/tickets",
   authenticate,
   authorize("user"),
-  userController.getMyTickets
+  userController.getMyTickets,
 );
 router.patch(
   "/tickets/:id",
   authenticate,
   authorize("user"),
   upload.single("attachment"),
-  userController.updateTicket
+  userController.updateTicket,
+);
+
+router.get(
+  "/minimal",
+  authenticate,
+  authorize("user", "admin", "manager", "buyer"),
+  userController.getMinimalUsers,
 );
 
 export default router;

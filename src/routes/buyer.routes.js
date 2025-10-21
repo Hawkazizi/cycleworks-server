@@ -9,22 +9,14 @@ router.get(
   "/profile",
   authenticate,
   authorize("buyer"),
-  buyerController.getProfile
+  buyerController.getProfile,
 );
 
 router.put(
   "/profile",
   authenticate,
   authorize("buyer"),
-  buyerController.updateProfile
-);
-
-// Buyer history (all requests with any status)
-router.get(
-  "/requests/history",
-  authenticate,
-  authorize("buyer"),
-  buyerController.getMyRequestHistory
+  buyerController.updateProfile,
 );
 
 // Create request
@@ -32,7 +24,7 @@ router.post(
   "/requests",
   authenticate,
   authorize("buyer"),
-  buyerController.createRequest
+  buyerController.createRequest,
 );
 
 // List my requests
@@ -40,7 +32,7 @@ router.get(
   "/requests",
   authenticate,
   authorize("buyer"),
-  buyerController.getMyRequests
+  buyerController.getMyRequests,
 );
 
 // Get single request
@@ -48,7 +40,7 @@ router.get(
   "/requests/:id",
   authenticate,
   authorize("buyer"),
-  buyerController.getRequestById
+  buyerController.getRequestById,
 );
 
 // Update buyer request (only if still pending)
@@ -56,7 +48,7 @@ router.patch(
   "/requests/:id",
   authenticate,
   authorize("buyer"),
-  buyerController.updateRequest
+  buyerController.updateRequest,
 );
 
 // Cancel buyer request (soft delete = status=cancelled)
@@ -64,7 +56,7 @@ router.delete(
   "/requests/:id",
   authenticate,
   authorize("buyer"),
-  buyerController.cancelRequest
+  buyerController.cancelRequest,
 );
 
 // Minimal users (for buyer to select farmer)
@@ -72,7 +64,7 @@ router.get(
   "/users/minimal",
   authenticate,
   authorize("buyer"),
-  buyerController.getMinimalUsers
+  buyerController.getMinimalUsers,
 );
 /* -------------------- Tickets -------------------- */
 router.post(
@@ -80,20 +72,27 @@ router.post(
   authenticate,
   upload.single("attachment"),
   authorize("buyer"),
-  buyerController.createBuyerTicket
+  buyerController.createBuyerTicket,
 );
 
 router.get(
   "/tickets",
   authenticate,
   authorize("buyer"),
-  buyerController.getMyBuyerTickets
+  buyerController.getMyBuyerTickets,
 );
 router.patch(
   "/tickets/:id",
   authenticate,
   upload.single("attachment"),
-  buyerController.updateBuyerTicket
+  buyerController.updateBuyerTicket,
 );
 
+/////////Extra
+router.get(
+  "/minimal",
+  authenticate,
+  authorize("buyer"),
+  buyerController.getMinimalBuyers,
+);
 export default router;

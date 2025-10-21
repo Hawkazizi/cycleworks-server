@@ -222,11 +222,16 @@ export async function updateFarmerRequestStatus(
   const oldRequest = await db("buyer_requests").where("id", requestId).first();
   if (!oldRequest) throw new Error("Request not found");
 
-  // Verify user is assigned supplier
+  // ✅ Allow if this farmer is either explicitly assigned OR is the preferred supplier
   const isAssigned = await db("buyer_request_suppliers")
     .where({ buyer_request_id: requestId, supplier_id: userId })
     .first();
-  if (!isAssigned) throw new Error("Not authorized");
+
+  const isPreferred = oldRequest.preferred_supplier_id === userId;
+
+  if (!isAssigned && !isPreferred) {
+    throw new Error("Not authorized");
+  }
 
   const [updated] = await db("buyer_requests")
     .where("id", requestId)
@@ -235,6 +240,7 @@ export async function updateFarmerRequestStatus(
       updated_at: db.fn.now(),
     })
     .returning("*");
+
   if (farmer_status === "accepted" && oldRequest.farmer_status !== "accepted") {
     // NOTIFY ALL ADMINS
     const admins = await db("users")
@@ -258,4 +264,20 @@ export async function updateFarmerRequestStatus(
   }
 
   return updated;
+}
+
+export async function getMinimalUsers(roleName) {
+  let query = db("users")
+    .select("users.id", "users.name", "users.mobile", "users.email")
+    .where("users.status", "active");
+
+  if (roleName) {
+    query = query
+      .join("user_roles", "users.id", "user_roles.user_id")
+      .join("roles", "user_roles.role_id", "roles.id")
+      .where("roles.name", roleName);
+  }
+
+  const users = await query.orderBy("users.name", "asc");
+  return users;
 }

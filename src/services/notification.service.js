@@ -1,82 +1,108 @@
-// Updated services/notification.service.js
+// services/notification.service.js
 import db from "../db/knex.js";
 
 export const NotificationService = {
-  // Create notification
-  create: async (userId, type, relatedRelatedId, data = {}) => {
-    // Fetch roles to determine language
-    const roles = await db("user_roles")
+  /**
+   * Create a new notification.
+   * @param {number} userId - The user receiving the notification.
+   * @param {string} type - The notification type.
+   * @param {number|null} relatedId - The related request or record ID (if any).
+   * @param {object} data - Extra data payload.
+   * @param {object|null} trx - Optional Knex transaction to ensure FK consistency.
+   */
+  create: async (userId, type, relatedId, data = {}, trx = null) => {
+    const dbConn = trx || db;
+
+    // Determine user role for localization
+    const roles = await dbConn("user_roles")
       .join("roles", "roles.id", "user_roles.role_id")
       .where("user_roles.user_id", userId)
       .select("roles.name");
+
     const roleNames = roles.map((r) => r.name.toLowerCase());
     const isBuyer = roleNames.includes("buyer");
-    // Generate localized message based on type (expand as needed)
+
+    // 🔹 Message localization logic
     let message;
     switch (type) {
       case "status_updated":
         let baseMsg = isBuyer
-          ? `Request #${relatedRelatedId} status updated to ${data.farmer_status || data.final_status || ""}`
-          : `درخواست #${relatedRelatedId} وضعیت به‌روزرسانی شد به ${data.farmer_status || data.final_status || ""}`;
+          ? `Request #${relatedId} status updated to ${data.farmer_status || data.final_status || ""}`
+          : `درخواست #${relatedId} وضعیت به‌روزرسانی شد به ${data.farmer_status || data.final_status || ""}`;
         if (data.final_status === "completed") {
           baseMsg = isBuyer
-            ? `Request #${relatedRelatedId} has been completed!`
-            : `درخواست #${relatedRelatedId} تکمیل شد ✅`;
+            ? `Request #${relatedId} has been completed!`
+            : `درخواست #${relatedId} تکمیل شد ✅`;
         }
         message = baseMsg;
         break;
+
       case "request_accepted":
         message = isBuyer
-          ? `Request #${relatedRelatedId} has been accepted!`
-          : `درخواست #${relatedRelatedId} پذیرفته شد! لطفا آن را تکمیل کنید.`;
+          ? `Request #${relatedId} has been accepted!`
+          : `درخواست #${relatedId} پذیرفته شد! لطفا آن را تکمیل کنید.`;
         break;
+
       case "new_request":
         message = isBuyer
-          ? `Your new request #${relatedRelatedId} is under review` // If buyer needs this type
-          : `درخواست جدید مشتری #${relatedRelatedId} نیاز به بررسی دارد`;
+          ? `Your new request #${relatedId} is under review`
+          : `درخواست جدید مشتری #${relatedId} نیاز به بررسی دارد`;
         break;
+
       case "completed":
         message = isBuyer
-          ? `Request #${relatedRelatedId} has been completed!`
-          : `درخواست #${relatedRelatedId} تکمیل شد!`;
+          ? `Request #${relatedId} has been completed!`
+          : `درخواست #${relatedId} تکمیل شد!`;
         break;
+
       case "new_file_upload":
         message = isBuyer
-          ? `New file uploaded for request #${relatedRelatedId} (type: ${data.type || "unknown"})`
-          : `فایل جدیدی (نوع: ${data.type || "نامشخص"}) برای درخواست #${relatedRelatedId} بارگذاری شد`;
+          ? `New file uploaded for request #${relatedId} (type: ${data.type || "unknown"})`
+          : `فایل جدیدی (نوع: ${data.type || "نامشخص"}) برای درخواست #${relatedId} بارگذاری شد`;
         break;
+
       case "new_application":
         message = isBuyer
           ? `New registration application from ${data.user_name} (${data.mobile}) needs review`
           : `درخواست ثبت‌نام جدیدی از ${data.user_name} (${data.mobile}) نیاز به بررسی دارد`;
         break;
+
       default:
-        message = "New notification"; // Fallback; add more types as you have them
+        message = "New notification";
         break;
     }
-    const [notification] = await db("notifications")
+
+    // 🔹 Insert using same transaction (if provided)
+    const [notification] = await dbConn("notifications")
       .insert({
         user_id: userId,
         type,
         message,
-        related_request_id: relatedRelatedId ? Number(relatedRelatedId) : null,
+        related_request_id: relatedId ? Number(relatedId) : null,
         data,
       })
       .returning("*");
+
     return notification;
   },
-  // Get user's notifications
+
+  /**
+   * Get all notifications for a user with pagination.
+   */
   getUserNotifications: async (userId, page = 1, limit = 10) => {
     const offset = (page - 1) * limit;
+
     const notifications = await db("notifications")
       .where({ user_id: userId })
       .orderBy("created_at", "desc")
       .limit(limit)
       .offset(offset);
+
     const unreadCount = await db("notifications")
       .where({ user_id: userId, status: "unread" })
       .count()
       .first();
+
     return {
       notifications,
       unreadCount: parseInt(unreadCount.count),
@@ -84,7 +110,10 @@ export const NotificationService = {
       totalPages: Math.ceil(parseInt(unreadCount.count) / limit),
     };
   },
-  // Mark single as read
+
+  /**
+   * Mark a single notification as read.
+   */
   markAsRead: async (notificationId, userId) => {
     const [notification] = await db("notifications")
       .where({ id: notificationId, user_id: userId })
@@ -92,7 +121,10 @@ export const NotificationService = {
       .returning("*");
     return notification;
   },
-  // Mark all as read
+
+  /**
+   * Mark all notifications as read.
+   */
   markAllAsRead: async (userId) => {
     return await db("notifications")
       .where({ user_id: userId, status: "unread" })

@@ -32,15 +32,29 @@ export async function getBuyerRequests() {
 
 export async function getBuyerRequestById(id) {
   const row = await db("buyer_requests as br")
+    // Buyer of the request
     .leftJoin("users as u", "br.buyer_id", "u.id")
+    // Preferred supplier (optional)
     .leftJoin("users as s", "br.preferred_supplier_id", "s.id")
+    // ✅ Creator of the request (admin/manager/user who created it)
+    .leftJoin("users as c", "br.creator_id", "c.id")
     .select(
       "br.*",
+
+      // Buyer (request owner)
       "u.name as buyer_name",
       "u.email as buyer_email",
       "u.mobile as buyer_mobile",
+
+      // Preferred supplier
       "s.name as supplier_name",
       "s.mobile as supplier_mobile",
+
+      // ✅ Creator fields
+      "c.id as created_by_user_id",
+      "c.name as created_by_name",
+      "c.email as created_by_email",
+      "c.mobile as created_by_mobile",
     )
     .where("br.id", id)
     .first();
@@ -48,8 +62,12 @@ export async function getBuyerRequestById(id) {
   if (!row) return null;
 
   const normalized = normalizeRequest(row);
+
+  // Keep your existing hydrations
   normalized.farmer_plans = await getPlansWithContainers(row.id);
   normalized.assigned_suppliers = await getAssignedSuppliers(row.id);
+
+  // Nothing else needed — creator fields are already on `normalized`
   return normalized;
 }
 

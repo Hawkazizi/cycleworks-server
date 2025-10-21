@@ -396,3 +396,14 @@ export const updateTicket = async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 };
+
+export async function getMinimalUsers(req, res) {
+  try {
+    const role = req.query.role || null;
+    const users = await userService.getMinimalUsers(role);
+    res.json(users);
+  } catch (err) {
+    console.error("❌ Error fetching minimal users:", err);
+    res.status(500).json({ error: "Failed to fetch users." });
+  }
+}

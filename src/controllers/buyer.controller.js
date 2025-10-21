@@ -1,5 +1,6 @@
 import path from "path";
 import fs from "fs";
+import db from "../db/knex.js";
 import * as buyerReqService from "../services/buyerRequest.service.js";
 import * as adminService from "../services/admin.service.js";
 import * as buyerService from "../services/buyer.service.js";
@@ -23,18 +24,37 @@ export async function updateProfile(req, res) {
 
 //////////////////////////// Reqs ///////////////////////////////////
 
-export async function createRequest(req, res) {
+export const createRequest = async (req, res) => {
   try {
-    const request = await buyerReqService.createRequest(req.user.id, req.body);
-    res.json(request);
-  } catch (e) {
-    res.status(400).json({ error: e.message });
+    const creatorId = req.user.id; // Master Buyer (logged-in user)
+    const { existingBuyerId, newBuyer, ...requestData } = req.body;
+
+    const result = await buyerReqService.createRequestWithBuyerAndLicense({
+      creatorId,
+      existingBuyerId,
+      newBuyer,
+      requestData,
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error("❌ createRequest error:", error);
+    res.status(400).json({ error: error.message });
   }
-}
+};
 
 export async function getMyRequests(req, res) {
-  const list = await buyerReqService.getMyRequests(req.user.id);
-  res.json(list);
+  try {
+    const { search = "" } = req.query;
+    const userId = req.user.id;
+    const roles = req.user.roles || [];
+
+    const list = await buyerReqService.getMyRequests(userId, search, roles);
+    res.json(list);
+  } catch (error) {
+    console.error("❌ getMyRequests error:", error);
+    res.status(500).json({ error: "Failed to fetch requests" });
+  }
 }
 
 export async function getRequestById(req, res) {
@@ -48,7 +68,7 @@ export async function updateRequest(req, res) {
     const updated = await buyerReqService.updateRequest(
       req.user.id,
       req.params.id,
-      req.body
+      req.body,
     );
     res.json(updated);
   } catch (e) {
@@ -60,17 +80,12 @@ export async function cancelRequest(req, res) {
   try {
     const cancelled = await buyerReqService.cancelRequest(
       req.user.id,
-      req.params.id
+      req.params.id,
     );
     res.json(cancelled);
   } catch (e) {
     res.status(400).json({ error: e.message });
   }
-}
-
-export async function getMyRequestHistory(req, res) {
-  const list = await buyerReqService.getMyRequestHistory(req.user.id);
-  res.json(list);
 }
 
 export const getMinimalUsers = async (req, res) => {
@@ -103,7 +118,7 @@ export const createBuyerTicket = async (req, res) => {
         "uploads",
         "buyers",
         String(buyerId),
-        "tickets"
+        "tickets",
       );
       fs.mkdirSync(buyerDir, { recursive: true });
 
@@ -160,7 +175,7 @@ export const updateBuyerTicket = async (req, res) => {
         "uploads",
         "buyers",
         String(buyerId),
-        "tickets"
+        "tickets",
       );
       fs.mkdirSync(buyerDir, { recursive: true });
 
@@ -189,5 +204,23 @@ export const updateBuyerTicket = async (req, res) => {
   } catch (err) {
     console.error("UPDATE BUYER TICKET ERROR:", err);
     res.status(400).json({ error: err.message });
+  }
+};
+
+////////////Extras
+export const getMinimalBuyers = async (req, res) => {
+  try {
+    const buyers = await db("users as u")
+      .join("user_roles as ur", "u.id", "ur.user_id")
+      .join("roles as r", "ur.role_id", "r.id")
+      .where("r.name", "buyer") // ✅ only buyers
+      .andWhere("u.status", "active")
+      .select("u.id", "u.name", "u.email", "u.mobile")
+      .orderBy("u.name", "asc");
+
+    res.json(buyers);
+  } catch (error) {
+    console.error("❌ getMinimalBuyers error:", error);
+    res.status(500).json({ error: "Failed to fetch buyers list" });
   }
 };
