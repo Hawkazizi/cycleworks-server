@@ -194,7 +194,7 @@ export async function addFileToContainer(containerId, fileMeta) {
     .select(
       "farmer_plans.request_id",
       "farmer_plans.farmer_id",
-      "buyer_requests.buyer_id", // ✅ FIXED: correct column name
+      "buyer_requests.buyer_id",
     )
     .first();
 
@@ -206,66 +206,63 @@ export async function addFileToContainer(containerId, fileMeta) {
     farmer_id: farmerId,
   } = containerInfo;
 
-  // Notification payload
+  // 3️⃣ Notification payload
   const notificationData = {
     fileId: file.id,
     containerId,
     type: fileMeta.type,
   };
 
-  // 3️⃣ Notify Admins
-  const admins = await db("users")
+  // 4️⃣ Fetch all active Admins & Managers together
+  const adminManagerUsers = await db("users")
     .join("user_roles", "users.id", "user_roles.user_id")
     .join("roles", "user_roles.role_id", "roles.id")
-    .where("roles.name", "admin")
+    .whereIn(db.raw("LOWER(roles.name)"), ["admin", "manager"])
     .where("users.status", "active")
+    .distinct()
     .select("users.id");
 
-  for (const admin of admins) {
-    await NotificationService.create(
-      admin.id,
-      "new_file_upload",
-      requestId,
-      notificationData,
+  // 5️⃣ Prepare all notification promises
+  const notificationPromises = [];
+
+  // Admins + Managers
+  for (const am of adminManagerUsers) {
+    notificationPromises.push(
+      NotificationService.create(
+        am.id,
+        "new_file_upload",
+        requestId,
+        notificationData,
+      ),
     );
   }
 
-  // 4️⃣ Notify Managers
-  const managers = await db("users")
-    .join("user_roles", "users.id", "user_roles.user_id")
-    .join("roles", "user_roles.role_id", "roles.id")
-    .where("roles.name", "manager")
-    .where("users.status", "active")
-    .select("users.id");
-
-  for (const manager of managers) {
-    await NotificationService.create(
-      manager.id,
-      "new_file_upload",
-      requestId,
-      notificationData,
-    );
-  }
-
-  // 5️⃣ Notify Buyer
+  // Buyer (if exists)
   if (buyerId) {
-    await NotificationService.create(
-      buyerId,
-      "new_file_upload",
-      requestId,
-      notificationData,
+    notificationPromises.push(
+      NotificationService.create(
+        buyerId,
+        "new_file_upload",
+        requestId,
+        notificationData,
+      ),
     );
   }
 
-  // 6️⃣ Notify Farmer (optional but recommended)
+  // Farmer (optional)
   if (farmerId) {
-    await NotificationService.create(
-      farmerId,
-      "new_file_upload",
-      requestId,
-      notificationData,
+    notificationPromises.push(
+      NotificationService.create(
+        farmerId,
+        "new_file_upload",
+        requestId,
+        notificationData,
+      ),
     );
   }
+
+  // 6️⃣ Execute all notifications in parallel
+  await Promise.allSettled(notificationPromises);
 
   return file;
 }

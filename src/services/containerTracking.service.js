@@ -1,5 +1,5 @@
 import db from "../db/knex.js";
-
+import { NotificationService } from "./notification.service.js";
 /* -------------------- Helper: Generate tracking code -------------------- */
 async function generateTrackingCode(containerId) {
   // find related buyer request and its import country
@@ -26,10 +26,11 @@ async function generateTrackingCode(containerId) {
   return `${prefix}${randomPart}`;
 }
 
-/* -------------------- Create Tracking Record -------------------- */
+/* -------------------- Create Tracking Record + Notify -------------------- */
 export async function addTracking({ containerId, status, note, createdBy }) {
   const tracking_code = await generateTrackingCode(containerId);
 
+  // ✅ Insert tracking record
   const [inserted] = await db("container_tracking_statuses")
     .insert({
       container_id: containerId,
@@ -39,6 +40,61 @@ export async function addTracking({ containerId, status, note, createdBy }) {
       tracking_code,
     })
     .returning("*");
+
+  // ✅ Find related buyer request ID for notification context
+  const related = await db("farmer_plan_containers as c")
+    .leftJoin("farmer_plans as p", "c.plan_id", "p.id")
+    .leftJoin("buyer_requests as br", "p.request_id", "br.id")
+    .select("br.id as request_id", "br.buyer_id")
+    .where("c.id", containerId)
+    .first();
+
+  const relatedRequestId = related?.request_id || null;
+  const buyerId = related?.buyer_id || null;
+
+  // ✅ Notify Admins & Managers
+  const adminManagers = await db("users")
+    .join("user_roles", "users.id", "user_roles.user_id")
+    .join("roles", "user_roles.role_id", "roles.id")
+    .whereIn(db.raw("LOWER(roles.name)"), ["admin", "manager"])
+    .where("users.status", "active")
+    .distinct()
+    .select("users.id");
+
+  const notificationData = {
+    containerId,
+    tracking_code,
+    status,
+    note,
+  };
+
+  // Queue all notifications (admins, managers, buyer if any)
+  const notificationPromises = [];
+
+  // 🟢 Notify Admins & Managers
+  for (const am of adminManagers) {
+    notificationPromises.push(
+      NotificationService.create(
+        am.id,
+        "status_updated",
+        relatedRequestId,
+        notificationData,
+      ),
+    );
+  }
+
+  // 🟡 Notify Buyer (optional but useful)
+  if (buyerId) {
+    notificationPromises.push(
+      NotificationService.create(buyerId, "status_updated", relatedRequestId, {
+        ...notificationData,
+        message: `وضعیت کانتینر جدید برای درخواست شما (#${relatedRequestId}) ثبت شد.`,
+      }),
+    );
+  }
+
+  // ✅ Execute all notifications in parallel
+  await Promise.allSettled(notificationPromises);
 
   return inserted;
 }
@@ -69,7 +125,7 @@ export async function findByTrackingCode(code) {
       "br.description",
       "br.preferred_supplier_name as supplier_name",
       "br.preferred_supplier_id as supplier_id",
-      "u.name as supplier_user_name" // 👈 get from users table too
+      "u.name as supplier_user_name", // 👈 get from users table too
     )
     .leftJoin("farmer_plan_containers as c", "t.container_id", "c.id")
     .leftJoin("farmer_plans as p", "c.plan_id", "p.id")

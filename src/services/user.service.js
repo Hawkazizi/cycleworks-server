@@ -214,6 +214,7 @@ export const getUserProfile = async (userId) => {
 };
 
 // 🚨 NEW: Farmer Status Update WITH NOTIFICATIONS
+// 🚨 NEW: Farmer Status Update WITH NOTIFICATIONS
 export async function updateFarmerRequestStatus(
   userId,
   requestId,
@@ -233,6 +234,7 @@ export async function updateFarmerRequestStatus(
     throw new Error("Not authorized");
   }
 
+  // ✅ Update farmer status
   const [updated] = await db("buyer_requests")
     .where("id", requestId)
     .update({
@@ -241,26 +243,37 @@ export async function updateFarmerRequestStatus(
     })
     .returning("*");
 
+  // ✅ Only notify on first-time acceptance
   if (farmer_status === "accepted" && oldRequest.farmer_status !== "accepted") {
-    // NOTIFY ALL ADMINS
-    const admins = await db("users")
+    // 🟢 Notify all active Admins and Managers
+    const adminManagers = await db("users")
       .join("user_roles", "users.id", "user_roles.user_id")
       .join("roles", "user_roles.role_id", "roles.id")
-      .where("roles.name", "admin")
+      .whereIn("roles.name", ["admin", "manager"])
       .where("users.status", "active")
+      .distinct()
       .select("users.id");
-    for (const admin of admins) {
-      await NotificationService.create(admin.id, "status_updated", requestId, {
+
+    for (const am of adminManagers) {
+      await NotificationService.create(am.id, "status_updated", requestId, {
         farmer_status: "accepted",
+        from_user_id: userId,
+        message: `تامین‌کننده درخواست #${requestId} را پذیرفت.`,
       });
     }
-    // NOTIFY BUYER
-    await NotificationService.create(
-      updated.buyer_id,
-      "status_updated",
-      requestId,
-      { farmer_status: "accepted" },
-    );
+
+    // 🟡 Notify Buyer
+    if (updated.buyer_id) {
+      await NotificationService.create(
+        updated.buyer_id,
+        "status_updated",
+        requestId,
+        {
+          farmer_status: "accepted",
+          message: `تامین‌کننده درخواست شما (شناسه ${requestId}) را پذیرفت.`,
+        },
+      );
+    }
   }
 
   return updated;
