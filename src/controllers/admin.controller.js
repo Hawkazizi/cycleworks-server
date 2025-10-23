@@ -391,52 +391,51 @@ export async function updateBuyerRequest(req, res) {
     return res.status(500).json({ error: "خطا در بروزرسانی درخواست." });
   }
 }
-export async function completeRequest(req, res) {
+export async function toggleFinalStatus(req, res) {
   try {
     const { id } = req.params;
+    const { action } = req.body; // expected: "accepted" or "cancelled"
 
-    // Get old request for comparison
+    if (!["accepted", "cancelled"].includes(action)) {
+      return res.status(400).json({ error: "Invalid action" });
+    }
+
     const oldRequest = await db("buyer_requests").where({ id }).first();
     if (!oldRequest)
       return res.status(404).json({ error: "Request not found" });
 
     const [updated] = await db("buyer_requests")
       .where({ id })
-      .update({ final_status: "completed", updated_at: db.fn.now() })
+      .update({ final_status: action, updated_at: db.fn.now() })
       .returning("*");
 
-    // ✅ NOTIFY BUYER
-    if (
-      updated.final_status === "completed" &&
-      oldRequest.final_status !== "completed"
-    ) {
-      await NotificationService.create(updated.buyer_id, "completed", id, {
+    // ✅ Notify Buyer
+    await NotificationService.create(updated.buyer_id, action, id, {
+      request_id: id,
+      final_status: action,
+    });
+
+    // ✅ Notify Admins
+    const admins = await db("users")
+      .join("user_roles", "users.id", "user_roles.user_id")
+      .join("roles", "user_roles.role_id", "roles.id")
+      .where("roles.name", "admin")
+      .where("users.status", "active")
+      .select("users.id");
+
+    for (const admin of admins) {
+      await NotificationService.create(admin.id, action, id, {
         request_id: id,
-        final_status: "completed",
+        final_status: action,
       });
-
-      // OPTIONAL: still notify admins if needed
-      const admins = await db("users")
-        .join("user_roles", "users.id", "user_roles.user_id")
-        .join("roles", "user_roles.role_id", "roles.id")
-        .where("roles.name", "admin")
-        .where("users.status", "active")
-        .select("users.id");
-
-      for (const admin of admins) {
-        await NotificationService.create(admin.id, "completed", id, {
-          request_id: id,
-          final_status: "completed",
-        });
-      }
     }
 
     res.json({
-      message: "درخواست تکمیل شد و اعلان ارسال شد",
+      message: `درخواست با وضعیت '${action}' به‌روزرسانی شد`,
       updated,
     });
   } catch (err) {
-    console.error("COMPLETE ERROR:", err);
+    console.error("FINAL STATUS TOGGLE ERROR:", err);
     res.status(400).json({ error: err.message });
   }
 }
@@ -623,3 +622,47 @@ export const updateBuyerRequestDeadline = async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 };
+
+export async function reviewContainerMetadataController(req, res) {
+  try {
+    const { id } = req.params;
+    const { status, note } = req.body;
+    const reviewerId = req.user.licenseId; // From middleware
+
+    const result = await adminFarmerPlansService.reviewContainerMetadata(
+      id,
+      status,
+      note,
+      reviewerId,
+    );
+    res.json(result);
+  } catch (err) {
+    console.error("reviewContainerMetadata error:", err);
+    res.status(400).json({ message: err.message });
+  }
+}
+
+/**
+ * Controller: PATCH /api/admin/containers/:id/admin-metadata
+ */
+export async function updateContainerAdminMetadataController(req, res) {
+  try {
+    const { id } = req.params;
+    const reviewerId = req.user.licenseId; // from authenticate middleware
+    const { metadata } = req.body;
+
+    const result = await adminFarmerPlansService.updateContainerAdminMetadata(
+      id,
+      metadata,
+      reviewerId,
+    );
+
+    res.json({
+      message: "✅ Admin metadata saved successfully",
+      container: result,
+    });
+  } catch (err) {
+    console.error("updateContainerAdminMetadata error:", err);
+    res.status(400).json({ message: err.message });
+  }
+}

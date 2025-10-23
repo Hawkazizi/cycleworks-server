@@ -407,3 +407,21 @@ export async function getMinimalUsers(req, res) {
     res.status(500).json({ error: "Failed to fetch users." });
   }
 }
+
+export async function updateContainerMetadataController(req, res) {
+  try {
+    const { id } = req.params; // container id
+    const userId = req.user.id;
+    const { metadata } = req.body;
+
+    const result = await farmerPlansService.updateContainerMetadata(
+      id,
+      metadata,
+      userId,
+    );
+    res.json(result);
+  } catch (err) {
+    console.error("updateContainerMetadata error:", err);
+    res.status(400).json({ message: err.message });
+  }
+}

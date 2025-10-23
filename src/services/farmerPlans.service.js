@@ -270,6 +270,39 @@ export async function addFileToContainer(containerId, fileMeta) {
   return file;
 }
 
+/* -------------------- Container Metadata -------------------- */
+export async function updateContainerMetadata(containerId, metadata, userId) {
+  if (!metadata || typeof metadata !== "object") {
+    throw new Error("Invalid metadata payload");
+  }
+
+  const container = await db("farmer_plan_containers")
+    .where({ id: containerId })
+    .first();
+
+  if (!container) throw new Error("Container not found");
+
+  // Optional: check farmer ownership
+  const plan = await db("farmer_plans")
+    .where({ id: container.plan_id })
+    .first();
+  if (plan.farmer_id !== userId)
+    throw new Error("Not authorized to modify this container");
+
+  await db("farmer_plan_containers")
+    .where({ id: containerId })
+    .update({
+      metadata: JSON.stringify(metadata),
+      metadata_status: "submitted",
+      metadata_review_note: null,
+      metadata_reviewed_by: null,
+      metadata_reviewed_at: null,
+      updated_at: db.fn.now(),
+    });
+
+  return { message: "Metadata submitted successfully" };
+}
+
 /* -------------------- List Files -------------------- */
 export async function listFiles(containerId) {
   return db("farmer_plan_files")

@@ -16,13 +16,13 @@ router.get(
   "/profile",
   authenticate,
   authorize("admin", "manager"),
-  adminController.getProfile
+  adminController.getProfile,
 );
 router.patch(
   "/profile",
   authenticate,
   authorize("admin", "manager"),
-  adminController.updateProfile
+  adminController.updateProfile,
 );
 
 /* -------------------- Users -------------------- */
@@ -30,31 +30,31 @@ router.post(
   "/users",
   authenticate,
   authorize("admin"),
-  adminController.createUser
+  adminController.createUser,
 );
 router.get(
   "/users",
   authenticate,
   authorize("admin", "manager"),
-  adminController.listUsers
+  adminController.listUsers,
 );
 router.patch(
   "/users/:id/status",
   authenticate,
   authorize("admin"),
-  adminController.banOrUnbanUser
+  adminController.banOrUnbanUser,
 );
 router.get(
   "/users/:id",
   authenticate,
   authorize("admin", "manager", "buyer", "user"),
-  adminController.getUserById
+  adminController.getUserById,
 );
 router.delete(
   "/users/:id",
   authenticate,
   authorize("admin"),
-  adminController.deleteUser
+  adminController.deleteUser,
 );
 
 /* -------------------- Reports -------------------- */
@@ -62,7 +62,7 @@ router.get(
   "/reports/export-csv",
   authenticate,
   authorize("admin", "manager"),
-  adminController.exportReportsCSV
+  adminController.exportReportsCSV,
 );
 
 /* -------------------- Applications -------------------- */
@@ -70,13 +70,13 @@ router.get(
   "/applications",
   authenticate,
   authorize("admin", "manager"),
-  adminController.getApplications
+  adminController.getApplications,
 );
 router.post(
   "/applications/:id/review",
   authenticate,
   authorize("admin"),
-  adminController.reviewApplication
+  adminController.reviewApplication,
 );
 
 /* -------------------- Settings -------------------- */
@@ -84,13 +84,13 @@ router.get(
   "/settings",
   authenticate,
   authorize("admin", "manager"),
-  adminController.getSettings
+  adminController.getSettings,
 );
 router.patch(
   "/settings/:key",
   authenticate,
   authorize("admin"),
-  adminController.updateSetting
+  adminController.updateSetting,
 );
 
 /* -------------------- License Keys -------------------- */
@@ -98,31 +98,31 @@ router.get(
   "/license-keys",
   authenticate,
   authorize("admin", "manager"),
-  adminController.getLicenseKeys
+  adminController.getLicenseKeys,
 );
 router.post(
   "/license-keys",
   authenticate,
   authorize("admin"),
-  adminController.createLicenseKey
+  adminController.createLicenseKey,
 );
 router.patch(
   "/license-keys/:id",
   authenticate,
   authorize("admin"),
-  adminController.updateLicenseKey
+  adminController.updateLicenseKey,
 );
 router.patch(
   "/license-keys/:id/toggle",
   authenticate,
   authorize("admin"),
-  adminController.toggleLicenseKey
+  adminController.toggleLicenseKey,
 );
 router.delete(
   "/license-keys/:id",
   authenticate,
   authorize("admin"),
-  adminController.deleteLicenseKey
+  adminController.deleteLicenseKey,
 );
 
 /* -------------------- Roles -------------------- */
@@ -130,7 +130,7 @@ router.get(
   "/roles",
   authenticate,
   authorize("admin", "manager"),
-  adminController.getRoles
+  adminController.getRoles,
 );
 
 /* -------------------- Buyer Requests -------------------- */
@@ -138,38 +138,39 @@ router.get(
   "/buyer-requests",
   authenticate,
   authorize("admin", "manager"),
-  adminController.getBuyerRequests
+  adminController.getBuyerRequests,
 );
 router.post(
   "/buyer-requests/:id/review",
   authenticate,
   authorize("admin"),
-  adminController.reviewBuyerRequest
+  adminController.reviewBuyerRequest,
 );
 router.post(
   "/buyer-requests/:id/admin-docs",
   authenticate,
   authorize("admin"),
   upload.array("files"),
-  adminController.addAdminDocs
+  adminController.addAdminDocs,
 );
 router.patch(
   "/buyer-requests/:id",
   authenticate,
   authorize("admin"),
-  adminController.updateBuyerRequest
+  adminController.updateBuyerRequest,
 );
 router.post(
-  "/buyer-requests/:id/complete",
+  "/buyer-requests/:id/final-status",
   authenticate,
   authorize("admin"),
-  adminController.completeRequest
+  adminController.toggleFinalStatus,
 );
+
 router.get(
   "/buyer-requests/:id",
   authenticate,
   authorize("admin", "manager"),
-  adminController.getBuyerRequestById
+  adminController.getBuyerRequestById,
 );
 
 // Review farmer files
@@ -177,13 +178,26 @@ router.post(
   "/farmer-files/:fileId/review",
   authenticate,
   authorize("admin"),
-  adminController.reviewFarmerFile
+  adminController.reviewFarmerFile,
 );
+router.patch(
+  "/containers/:id/metadata-review",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.reviewContainerMetadataController,
+);
+router.patch(
+  "/containers/:id/admin-metadata",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.updateContainerAdminMetadataController,
+);
+
 router.post(
   "/buyer-requests/:id/assign-suppliers",
   authenticate,
   authorize("admin"),
-  adminController.assignSuppliers
+  adminController.assignSuppliers,
 );
 
 /* -------------------- Tickets -------------------- */
@@ -191,26 +205,26 @@ router.get(
   "/tickets",
   authenticate,
   authorize("admin", "manager"),
-  adminController.listTickets
+  adminController.listTickets,
 );
 router.get(
   "/tickets/:id",
   authenticate,
   authorize("admin", "manager"),
-  adminController.getTicket
+  adminController.getTicket,
 );
 router.post(
   "/tickets/:id/reply",
   authenticate,
   authorize("admin", "manager"),
   upload.single("attachment"),
-  adminController.replyToTicket
+  adminController.replyToTicket,
 );
 router.post(
   "/tickets/:id/close",
   authenticate,
   authorize("admin", "manager"),
-  adminController.closeTicket
+  adminController.closeTicket,
 );
 
 router.delete(
@@ -218,7 +232,7 @@ router.delete(
   authenticate,
   authorize("admin", "manager"),
 
-  adminController.deleteTicket
+  adminController.deleteTicket,
 );
 
 /* -------------------- Update deadline -------------------- */
@@ -227,20 +241,20 @@ router.patch(
   "/buyer-requests/:id/update-deadline",
   authenticate,
   authorize("admin"), // only admin allowed
-  adminController.updateBuyerRequestDeadline
+  adminController.updateBuyerRequestDeadline,
 );
 /* -------------------- Container Tracking -------------------- */
 router.get(
   "/containers-with-tracking",
   authenticate,
   authorize("admin", "manager"),
-  adminTrackingCtrl.listAllContainersWithTracking
+  adminTrackingCtrl.listAllContainersWithTracking,
 );
 
 router.get(
   "/tracking-code/:code",
   authenticate,
   authorize("admin", "manager"),
-  adminTrackingCtrl.findByTrackingCode
+  adminTrackingCtrl.findByTrackingCode,
 );
 export default router;

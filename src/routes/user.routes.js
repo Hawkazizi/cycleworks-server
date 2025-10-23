@@ -81,6 +81,12 @@ router
   )
   .get(authenticate, authorize("user"), userController.listFiles);
 
+router.patch(
+  "/containers/:id/metadata",
+  authenticate,
+  authorize("user"),
+  userController.updateContainerMetadataController,
+);
 // Farmer Requests
 router.get(
   "/farmer/requests",
