@@ -224,3 +224,13 @@ export const getMinimalBuyers = async (req, res) => {
     res.status(500).json({ error: "Failed to fetch buyers list" });
   }
 };
+
+export async function listUserRoleUsers(req, res) {
+  try {
+    const users = await buyerService.getUsersWithUserRole();
+    res.json(users);
+  } catch (err) {
+    console.error("Error fetching user-role users:", err);
+    res.status(500).json({ message: "Failed to fetch users with 'user' role" });
+  }
+}

@@ -31,3 +31,22 @@ export async function updateProfile(userId, data) {
 
   return updated;
 }
+export async function getUsersWithUserRole() {
+  const users = await knex("users as u")
+    .join("user_roles as ur", "u.id", "ur.user_id")
+    .join("roles as r", "ur.role_id", "r.id")
+    .where("r.name", "user")
+    .andWhere("u.status", "active")
+    .select(
+      "u.id",
+      "u.name",
+      "u.email",
+      "u.mobile",
+      "u.status",
+      "u.created_at",
+      "r.name as role",
+    )
+    .orderBy("u.created_at", "desc");
+
+  return users;
+}

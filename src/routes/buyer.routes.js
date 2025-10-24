@@ -95,4 +95,10 @@ router.get(
   authorize("buyer"),
   buyerController.getMinimalBuyers,
 );
+router.get(
+  "/roles/user",
+  authenticate,
+  authorize("buyer"),
+  buyerController.listUserRoleUsers,
+);
 export default router;
