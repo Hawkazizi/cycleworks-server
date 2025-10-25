@@ -163,7 +163,15 @@ export async function createRequestWithBuyerAndLicense({
           : [],
         container_amount: requestData.container_amount || null,
         cartons: requestData.cartons ? parseInt(requestData.cartons, 10) : null,
-        deadline_date: requestData.deadline_date || null,
+
+        // ✅ NEW: start and end dates
+        deadline_start_date: requestData.deadline_start_date || null,
+        deadline_end_date: requestData.deadline_end_date || null,
+
+        // (optional) keep for backward compatibility
+        deadline_date:
+          requestData.deadline_end_date || requestData.deadline_date || null,
+
         transport_type: requestData.transport_type || null,
         import_country: requestData.import_country || null,
         entry_border: requestData.entry_border || null,
@@ -216,7 +224,7 @@ export async function createRequest(userId, data) {
   const [req] = await knex("buyer_requests")
     .insert({
       buyer_id: userId,
-      creator_id: null, // regular buyers don't have creator
+      creator_id: null,
       product_type: data.product_type || "eggs",
       packaging: data.packaging || null,
       size: Array.isArray(data.size) ? data.size : [],
@@ -227,7 +235,12 @@ export async function createRequest(userId, data) {
       certificates: Array.isArray(data.certificates) ? data.certificates : [],
       container_amount: data.container_amount || null,
       cartons: data.cartons ? parseInt(data.cartons, 10) : null,
-      deadline_date: data.deadline_date || null,
+
+      // ✅ NEW
+      deadline_start_date: data.deadline_start_date || null,
+      deadline_end_date: data.deadline_end_date || null,
+      deadline_date: data.deadline_end_date || data.deadline_date || null,
+
       transport_type: data.transport_type || null,
       import_country: data.import_country || null,
       entry_border: data.entry_border || null,
@@ -330,7 +343,13 @@ export async function updateRequest(userId, requestId, data) {
       expiration_days: data.expiration_days ?? req.expiration_days,
       certificates: data.certificates ?? req.certificates,
       container_amount: data.container_amount ?? req.container_amount,
-      deadline_date: data.deadline_date ?? req.deadline_date,
+
+      // ✅ NEW
+      deadline_start_date: data.deadline_start_date ?? req.deadline_start_date,
+      deadline_end_date: data.deadline_end_date ?? req.deadline_end_date,
+      deadline_date:
+        data.deadline_end_date ?? data.deadline_date ?? req.deadline_date,
+
       transport_type: data.transport_type ?? req.transport_type,
       import_country: data.import_country ?? req.import_country,
       entry_border: data.entry_border ?? req.entry_border,

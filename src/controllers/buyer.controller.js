@@ -26,14 +26,35 @@ export async function updateProfile(req, res) {
 
 export const createRequest = async (req, res) => {
   try {
-    const creatorId = req.user.id; // Master Buyer (logged-in user)
-    const { existingBuyerId, newBuyer, ...requestData } = req.body;
+    const creatorId = req.user.id;
+    const {
+      existingBuyerId,
+      newBuyer,
+      deadline_start_date,
+      deadline_end_date,
+      ...requestData
+    } = req.body;
+
+    // 🧭 Validate deadline order
+    if (
+      deadline_start_date &&
+      deadline_end_date &&
+      new Date(deadline_start_date) > new Date(deadline_end_date)
+    ) {
+      return res.status(400).json({
+        error: "Start date cannot be after end date",
+      });
+    }
 
     const result = await buyerReqService.createRequestWithBuyerAndLicense({
       creatorId,
       existingBuyerId,
       newBuyer,
-      requestData,
+      requestData: {
+        ...requestData,
+        deadline_start_date,
+        deadline_end_date,
+      },
     });
 
     res.json(result);

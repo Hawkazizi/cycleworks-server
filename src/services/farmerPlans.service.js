@@ -23,15 +23,34 @@ export async function createPlan({
   if (!buyerRequest) throw new Error("Buyer request not found");
   return db.transaction(async (trx) => {
     // ✅ enforce deadline in SQL, comparing as DATE
-    const [{ ok: inWindow }] = await trx
-      .raw(`SELECT (?::date <= ?::date) as ok`, [
-        planDate,
-        buyerRequest.deadline_date,
-      ])
-      .then((r) => r.rows);
-    if (!inWindow) {
-      throw new Error("Plan date exceeds request deadline");
+    // ✅ enforce new deadline window (supports both new and old fields)
+    let inWindow = true;
+
+    if (buyerRequest.deadline_start_date && buyerRequest.deadline_end_date) {
+      // Check if planDate is between start and end (inclusive)
+      const [{ ok }] = await trx
+        .raw(`SELECT (?::date BETWEEN ?::date AND ?::date) AS ok`, [
+          planDate,
+          buyerRequest.deadline_start_date,
+          buyerRequest.deadline_end_date,
+        ])
+        .then((r) => r.rows);
+      inWindow = ok;
+    } else if (buyerRequest.deadline_date) {
+      // Legacy fallback
+      const [{ ok }] = await trx
+        .raw(`SELECT (?::date <= ?::date) AS ok`, [
+          planDate,
+          buyerRequest.deadline_date,
+        ])
+        .then((r) => r.rows);
+      inWindow = ok;
     }
+
+    if (!inWindow) {
+      throw new Error("Plan date is outside the allowed request period");
+    }
+
     // ✅ compute used quota
     const { cnt: usedRaw } = await trx("farmer_plan_containers as c")
       .join("farmer_plans as p", "p.id", "c.plan_id")

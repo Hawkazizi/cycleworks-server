@@ -16,13 +16,13 @@ export async function listAllContainersWithTracking(req, res) {
           .groupBy("container_id")
           .as("last"),
         "c.id",
-        "last.container_id"
+        "last.container_id",
       )
       .leftJoin("container_tracking_statuses as ct", function () {
         this.on("ct.container_id", "=", "c.id").andOn(
           "ct.created_at",
           "=",
-          "last.latest_time"
+          "last.latest_time",
         );
       })
       .select(
@@ -36,7 +36,7 @@ export async function listAllContainersWithTracking(req, res) {
         "ct.status as latest_status",
         "ct.note",
         "ct.tracking_code",
-        "ct.created_at as updated_at"
+        "ct.created_at as updated_at",
       )
       .orderBy("ct.created_at", "desc");
 
@@ -56,12 +56,12 @@ export async function addTracking(req, res) {
     const roles = req.user.roles || [];
 
     // 🧩 Check ownership or admin privilege
-    if (!roles.includes("admin")) {
+    if (!roles.includes("admin") && !roles.includes("manager")) {
       const ownsContainer = await db("farmer_plan_containers")
         .join(
           "farmer_plans",
           "farmer_plan_containers.plan_id",
-          "farmer_plans.id"
+          "farmer_plans.id",
         )
         .where("farmer_plans.farmer_id", userId)
         .andWhere("farmer_plan_containers.id", id)
@@ -92,12 +92,12 @@ export async function listTracking(req, res) {
     const userId = req.user.id;
     const roles = req.user.roles || [];
 
-    if (!roles.includes("admin")) {
+    if (!roles.includes("admin") && !roles.includes("manager")) {
       const ownsContainer = await db("farmer_plan_containers")
         .join(
           "farmer_plans",
           "farmer_plan_containers.plan_id",
-          "farmer_plans.id"
+          "farmer_plans.id",
         )
         .where("farmer_plans.farmer_id", userId)
         .andWhere("farmer_plan_containers.id", id)
@@ -131,13 +131,13 @@ export async function myContainersWithTracking(req, res) {
           .groupBy("container_id")
           .as("last"),
         "c.id",
-        "last.container_id"
+        "last.container_id",
       )
       .leftJoin("container_tracking_statuses as ct", function () {
         this.on("ct.container_id", "=", "c.id").andOn(
           "ct.created_at",
           "=",
-          "last.latest_time"
+          "last.latest_time",
         );
       })
       .where("p.farmer_id", userId)
@@ -148,7 +148,7 @@ export async function myContainersWithTracking(req, res) {
         "br.import_country",
         "ct.status as latest_status",
         "ct.tracking_code",
-        "ct.created_at as updated_at"
+        "ct.created_at as updated_at",
       )
       .orderBy("ct.created_at", "desc");
 
@@ -164,12 +164,12 @@ export async function myContainersWithTracking(req, res) {
             "path",
             "status",
             "review_note",
-            "created_at"
+            "created_at",
           )
           .orderBy("created_at", "desc");
 
         return { ...c, files };
-      })
+      }),
     );
 
     res.json(containersWithFiles);

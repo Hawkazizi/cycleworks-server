@@ -9,7 +9,7 @@ const router = express.Router();
 router.post(
   "/:id/tracking",
   authenticate,
-  authorize("user", "admin"),
+  authorize("user", "admin", "manager"),
   trackingCtrl.addTracking,
 );
 
