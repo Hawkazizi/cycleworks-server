@@ -243,11 +243,15 @@ export async function assignSuppliersToRequest(
 }
 
 /* -------------------- Update deadline -------------------- */
-export async function updateBuyerRequestDeadline(
-  requestId,
-  newDate,
-  updatedBy,
-) {
+/* -------------------- Update deadline (supports start/end) -------------------- */
+export async function updateBuyerRequestDeadline(requestId, data, updatedBy) {
+  const { new_deadline_start, new_deadline_end, new_deadline_date } = data;
+
+  // 🧩 Validate input
+  if (!new_deadline_start && !new_deadline_end && !new_deadline_date) {
+    throw new Error("حداقل یکی از تاریخ‌های جدید الزامی است.");
+  }
+
   const request = await db("buyer_requests").where({ id: requestId }).first();
   if (!request) throw new Error("Buyer request not found");
 
@@ -255,16 +259,40 @@ export async function updateBuyerRequestDeadline(
     throw new Error("Cannot change deadline after review");
   }
 
-  const [updated] = await db("buyer_requests").where({ id: requestId }).update(
-    {
-      deadline_date: newDate,
-      updated_at: db.fn.now(),
-    },
-    "*",
-  );
+  // 🧠 Build update object dynamically
+  const updateData = {
+    updated_at: db.fn.now(),
+  };
 
-  // 🔔 Notify buyer and supplier
+  if (new_deadline_start) updateData.deadline_start_date = new_deadline_start;
+  if (new_deadline_end) updateData.deadline_end_date = new_deadline_end;
+
+  // 🧱 Backward compatibility: legacy field
+  if (new_deadline_date && !new_deadline_start && !new_deadline_end) {
+    updateData.deadline_date = new_deadline_date;
+  }
+
+  // ⚙️ Update database
+  const [updated] = await db("buyer_requests")
+    .where({ id: requestId })
+    .update(updateData)
+    .returning("*");
+
+  if (!updated) throw new Error("Update failed");
+
+  // 🔔 Notifications
   const notifications = [];
+
+  const readableDates = [];
+  if (updateData.deadline_start_date)
+    readableDates.push(`شروع: ${updateData.deadline_start_date}`);
+  if (updateData.deadline_end_date)
+    readableDates.push(`پایان: ${updateData.deadline_end_date}`);
+
+  const formattedMsg =
+    readableDates.length > 0
+      ? `بازه تحویل جدید (${readableDates.join(" / ")}) تنظیم شد.`
+      : `تاریخ تحویل جدید (${new_deadline_date}) تنظیم شد.`;
 
   if (request.buyer_id) {
     notifications.push(
@@ -272,9 +300,7 @@ export async function updateBuyerRequestDeadline(
         request.buyer_id,
         "status_updated",
         requestId,
-        {
-          message: `ددلاین درخواست شما به ${newDate} تغییر یافت.`,
-        },
+        { message: formattedMsg },
       ),
     );
   }
@@ -285,14 +311,11 @@ export async function updateBuyerRequestDeadline(
         request.preferred_supplier_id,
         "status_updated",
         requestId,
-        {
-          message: `ددلاین جدیدی (${newDate}) برای درخواست #${requestId} تنظیم شد.`,
-        },
+        { message: formattedMsg },
       ),
     );
   }
 
-  // 🔔 Notify managers
   const managers = await db("users")
     .join("user_roles", "users.id", "user_roles.user_id")
     .join("roles", "user_roles.role_id", "roles.id")
@@ -303,7 +326,7 @@ export async function updateBuyerRequestDeadline(
   for (const m of managers) {
     notifications.push(
       NotificationService.create(m.id, "status_updated", requestId, {
-        message: `ددلاین درخواست #${requestId} توسط ادمین به ${newDate} تغییر کرد.`,
+        message: `ادمین بازه تحویل درخواست #${requestId} را تغییر داد: ${formattedMsg}`,
       }),
     );
   }

@@ -606,20 +606,34 @@ export const deleteTicket = async (req, res) => {
 export const updateBuyerRequestDeadline = async (req, res) => {
   try {
     const { id } = req.params;
-    const { new_deadline_date } = req.body;
+    const {
+      new_deadline_start,
+      new_deadline_end,
+      new_deadline_date, // legacy support
+    } = req.body;
 
-    if (!new_deadline_date)
-      return res.status(400).json({ error: "new_deadline_date is required" });
+    // ✅ Validate input: at least one field is required
+    if (!new_deadline_start && !new_deadline_end && !new_deadline_date) {
+      return res
+        .status(400)
+        .json({ error: "حداقل یکی از تاریخ‌های جدید الزامی است." });
+    }
 
+    // ✅ Call the updated service (supports both start/end & legacy)
     const updated = await adminBuyerService.updateBuyerRequestDeadline(
       id,
-      new_deadline_date,
-      req.user.id, // optional: who made the change
+      { new_deadline_start, new_deadline_end, new_deadline_date },
+      req.user?.id || null,
     );
 
-    res.json({ success: true, request: updated });
+    return res.json({
+      success: true,
+      message: "بازه تحویل با موفقیت به‌روزرسانی شد",
+      request: updated,
+    });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    console.error("Error updating buyer request deadline:", err);
+    return res.status(400).json({ error: err.message });
   }
 };
 
