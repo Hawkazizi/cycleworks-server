@@ -11,7 +11,7 @@ const router = Router();
 // Admin (Manager) login
 router.post("/login", adminController.loginWithLicense);
 
-// Admin (Manager) profile
+// Admin (Manager) prsofile
 router.get(
   "/profile",
   authenticate,
@@ -45,6 +45,13 @@ router.patch(
   adminController.banOrUnbanUser,
 );
 router.get(
+  "/users/:id/picture",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.getUserProfilePicture,
+);
+
+router.get(
   "/users/:id",
   authenticate,
   authorize("admin", "manager", "buyer", "user"),
@@ -71,6 +78,27 @@ router.get(
   authenticate,
   authorize("admin", "manager"),
   adminController.getApplications,
+);
+router.get(
+  "/applications/user/:userId",
+  authenticate,
+  authorize("admin", "manager", "user"),
+  adminController.getApplicationsByUser,
+);
+
+router.patch(
+  "/applications/:id",
+  authenticate,
+  authorize("admin", "manager", "user"),
+  upload.fields([
+    { name: "biosecurity", maxCount: 1 },
+    { name: "vaccination", maxCount: 1 },
+    { name: "emergency", maxCount: 1 },
+    { name: "food_safety", maxCount: 1 },
+    { name: "description", maxCount: 1 },
+    { name: "farm_biosecurity", maxCount: 1 },
+  ]),
+  adminController.updateApplication,
 );
 router.post(
   "/applications/:id/review",

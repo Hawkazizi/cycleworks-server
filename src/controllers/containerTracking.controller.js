@@ -1,6 +1,5 @@
 import * as trackingService from "../services/containerTracking.service.js";
 import db from "../db/knex.js";
-
 /* -------------------- ADMIN: List all containers with their latest tracking -------------------- */
 export async function listAllContainersWithTracking(req, res) {
   try {
@@ -28,7 +27,11 @@ export async function listAllContainersWithTracking(req, res) {
       .select(
         "c.id as container_id",
         "c.container_no",
+        "c.created_at as container_created_at", // ✅ new
+        "p.plan_date", // ✅ new
+        "p.created_at as plan_created_at", // ✅ new
         "p.request_id as buyer_request_id",
+        "br.created_at as request_created_at", // ✅ new
         "u.id as farmer_id",
         "u.name as farmer_name",
         "ua.supplier_name",
@@ -40,7 +43,13 @@ export async function listAllContainersWithTracking(req, res) {
       )
       .orderBy("ct.created_at", "desc");
 
-    res.json(rows);
+    // ✅ Optional: filter by supplier if provided (for your SupplierDetails.jsx)
+    const { supplier_id } = req.query;
+    const filteredRows = supplier_id
+      ? rows.filter((r) => String(r.farmer_id) === String(supplier_id))
+      : rows;
+
+    res.json(filteredRows);
   } catch (err) {
     console.error("listAllContainersWithTracking error:", err);
     res.status(500).json({ error: err.message });
@@ -51,7 +60,7 @@ export async function listAllContainersWithTracking(req, res) {
 export async function addTracking(req, res) {
   try {
     const { id } = req.params; // container id
-    const { status, note } = req.body;
+    const { status, note, tracking_code } = req.body;
     const userId = req.user.id;
     const roles = req.user.roles || [];
 
@@ -75,6 +84,7 @@ export async function addTracking(req, res) {
       containerId: id,
       status,
       note,
+      tracking_code,
       createdBy: userId,
     });
 

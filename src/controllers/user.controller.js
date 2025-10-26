@@ -112,6 +112,103 @@ export async function updateProfile(req, res) {
   }
 }
 
+export const uploadProfilePicture = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+
+    // Ensure /uploads/profiles directory exists
+    const dir = path.join("uploads", "profiles");
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    // Move from /uploads/temp → /uploads/profiles
+    const newFilePath = `/uploads/profiles/${req.file.filename}`;
+    fs.renameSync(req.file.path, path.join(dir, req.file.filename));
+
+    // Get existing user record
+    const user = await db("users").where({ id: userId }).first();
+
+    // 🧹 Delete old profile picture if exists
+    if (user?.profile_picture) {
+      const oldPath = path.join(
+        process.cwd(),
+        user.profile_picture.startsWith("/")
+          ? user.profile_picture.slice(1)
+          : user.profile_picture,
+      );
+
+      if (fs.existsSync(oldPath)) {
+        try {
+          fs.unlinkSync(oldPath);
+          console.log(`🧹 Deleted old profile picture: ${oldPath}`);
+        } catch (err) {
+          console.warn("⚠ Failed to delete old picture:", err.message);
+        }
+      }
+    }
+
+    // 🧠 Update DB
+    await db("users").where({ id: userId }).update({
+      profile_picture: newFilePath,
+      updated_at: new Date(),
+    });
+
+    res.json({
+      message: "Profile picture updated successfully",
+      profile_picture: newFilePath,
+    });
+  } catch (err) {
+    console.error("uploadProfilePicture error:", err);
+    res.status(500).json({ error: "Failed to upload profile picture" });
+  }
+};
+
+export const getProfilePicture = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const user = await db("users")
+      .select("profile_picture")
+      .where({ id: userId })
+      .first();
+
+    if (!user || !user.profile_picture) {
+      return res.status(404).json({ error: "Profile picture not found" });
+    }
+
+    // Build absolute path
+    const filePath = path.join(
+      process.cwd(),
+      user.profile_picture.startsWith("/")
+        ? user.profile_picture.slice(1)
+        : user.profile_picture,
+    );
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: "File not found on server" });
+    }
+
+    // Detect file type (jpeg/png/webp/jpg)
+    const ext = path.extname(filePath).toLowerCase();
+    const mimeType =
+      ext === ".png"
+        ? "image/png"
+        : ext === ".webp"
+          ? "image/webp"
+          : "image/jpeg";
+
+    res.setHeader("Content-Type", mimeType);
+    fs.createReadStream(filePath).pipe(res);
+  } catch (err) {
+    console.error("getProfilePicture error:", err);
+    res.status(500).json({ error: "Failed to fetch profile picture" });
+  }
+};
+
 export async function deleteProfile(req, res) {
   try {
     await userService.deleteProfileById(req.user.id);

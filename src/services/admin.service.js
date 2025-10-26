@@ -49,6 +49,7 @@ export const loginWithLicense = async (licenseKey, role) => {
 };
 
 /* -------------------- Profile -------------------- */
+/* -------------------- Profile -------------------- */
 export const getAdminProfile = async (userId) => {
   const admin = await db("users")
     .leftJoin("user_roles", "users.id", "user_roles.user_id")
@@ -57,6 +58,7 @@ export const getAdminProfile = async (userId) => {
       "users.id as userId",
       "users.name",
       "users.email",
+      "users.mobile",
       "users.status",
       "users.created_at",
       "roles.name as role",
@@ -82,11 +84,20 @@ export const getAdminProfile = async (userId) => {
     licenseCreatedAt: license?.created_at || null,
   };
 };
+
 export const updateAdminProfile = async (userId, data) => {
   const [updated] = await db("users")
     .where("id", userId)
     .update({ ...data, updated_at: db.fn.now() })
-    .returning(["id", "name", "email", "status", "created_at"]);
+    .returning([
+      "id",
+      "name",
+      "email",
+      "mobile",
+      "status",
+      "created_at",
+      "updated_at",
+    ]);
 
   if (!updated) throw new Error("Profile update failed");
 
@@ -226,10 +237,20 @@ export const getApplications = async () => {
     const files = {};
     fileFields.forEach((field) => {
       if (row[field]) {
-        files[field] = {
-          ...row[field],
-          url: `${BASE_URL}${row[field].path}`,
-        };
+        try {
+          const parsed =
+            typeof row[field] === "string"
+              ? JSON.parse(row[field])
+              : row[field];
+          files[field] = {
+            ...parsed,
+            url: parsed?.path
+              ? `${BASE_URL}${parsed.path.startsWith("/") ? parsed.path : `/${parsed.path}`}`
+              : null,
+          };
+        } catch {
+          files[field] = null;
+        }
       } else {
         files[field] = null;
       }
@@ -240,6 +261,122 @@ export const getApplications = async () => {
       files, // structured object with all six docs
     };
   });
+};
+
+export const getApplicationsByUser = async (userId) => {
+  const rows = await db("user_applications")
+    .join("users", "user_applications.user_id", "users.id")
+    .select(
+      "user_applications.*",
+      "users.name",
+      "users.email",
+      "users.mobile",
+      "users.status as user_status",
+    )
+    .where("user_applications.user_id", userId)
+    .orderBy("user_applications.created_at", "desc");
+
+  return rows.map((row) => {
+    const fileFields = [
+      "biosecurity",
+      "vaccination",
+      "emergency",
+      "food_safety",
+      "description",
+      "farm_biosecurity",
+    ];
+
+    const files = {};
+    fileFields.forEach((field) => {
+      if (row[field]) {
+        try {
+          const parsed =
+            typeof row[field] === "string"
+              ? JSON.parse(row[field])
+              : row[field];
+          files[field] = {
+            ...parsed,
+            url: `${BASE_URL}${parsed.path}`,
+          };
+        } catch {
+          files[field] = null;
+        }
+      } else {
+        files[field] = null;
+      }
+    });
+
+    return { ...row, files };
+  });
+};
+
+export const updateApplication = async (id, updates, userId, role) => {
+  // Validate existence
+  const existing = await db("user_applications").where({ id }).first();
+  if (!existing) throw new Error("Application not found");
+
+  // Only admin or manager can update status fields
+  const allowedAdminFields = [
+    "status",
+    "reviewed_by",
+    "reviewed_at",
+    "notes",
+    "admin_comment",
+  ];
+
+  // Fields users can edit when re-uploading info
+  const allowedUserFields = [
+    "reason",
+    "supplier_name",
+    "biosecurity",
+    "vaccination",
+    "emergency",
+    "food_safety",
+    "description",
+    "farm_biosecurity",
+  ];
+
+  let allowedFields = [];
+
+  if (role === "admin" || role === "manager") {
+    allowedFields = allowedAdminFields;
+  } else if (role === "user" || role === "farmer") {
+    allowedFields = allowedUserFields;
+  }
+
+  const updateData = {};
+  for (const key in updates) {
+    if (allowedFields.includes(key)) {
+      updateData[key] = updates[key];
+    }
+  }
+
+  if (Object.keys(updateData).length === 0) {
+    throw new Error("No valid fields to update");
+  }
+
+  // If admin/manager updates status → update user status accordingly
+  if (updateData.status && (role === "admin" || role === "manager")) {
+    const userStatus = updateData.status === "approved" ? "active" : "pending";
+    await db("users")
+      .where({ id: existing.user_id })
+      .update({ status: userStatus });
+  }
+
+  // Perform update
+  const [updated] = await db("user_applications")
+    .where({ id })
+    .update(
+      {
+        ...updateData,
+        ...(role !== "user"
+          ? { reviewed_by: userId, reviewed_at: db.fn.now() }
+          : {}),
+      },
+      "*",
+    );
+
+  return { message: "Application updated", application: updated };
 };
 
 export const reviewApplication = async (id, status, reviewerId) => {

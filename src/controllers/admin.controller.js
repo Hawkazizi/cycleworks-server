@@ -27,7 +27,6 @@ export const loginWithLicense = async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 };
-
 // Get profile (admin or manager)
 export const getProfile = async (req, res) => {
   try {
@@ -35,21 +34,35 @@ export const getProfile = async (req, res) => {
     const admin = await adminService.getAdminProfile(adminUserId);
     res.json({ admin });
   } catch (err) {
-    res.status(404).json({ error: err.message });
+    console.error("Get profile error:", err);
+    res.status(404).json({ error: "پروفایل یافت نشد" });
   }
 };
 
+// Update profile (admin or manager)
 export const updateProfile = async (req, res) => {
   try {
     const adminUserId = req.user.id;
-    const { name } = req.body;
-    if (!name) return res.status(400).json({ error: "Name is required" });
+    const { name, email, mobile } = req.body;
+
+    if (!name && !email && !mobile) {
+      return res
+        .status(400)
+        .json({ error: "حداقل یکی از فیلدهای پروفایل الزامی است." });
+    }
 
     const updated = await adminService.updateAdminProfile(adminUserId, {
-      name,
+      ...(name && { name }),
+      ...(email && { email }),
+      ...(mobile && { mobile }),
     });
-    res.json({ admin: updated });
+
+    res.json({
+      message: "پروفایل با موفقیت بروزرسانی شد",
+      admin: updated,
+    });
   } catch (err) {
+    console.error("Update profile error:", err);
     res.status(400).json({ error: err.message });
   }
 };
@@ -107,23 +120,122 @@ export const banOrUnbanUser = async (req, res) => {
 export async function getUserById(req, res) {
   try {
     const { id } = req.params;
-    const user = await db("users")
-      .leftJoin("user_applications", "users.id", "user_applications.user_id")
+
+    const user = await db("users as u")
+      .leftJoin("user_applications as ua", "u.id", "ua.user_id")
       .select(
-        "users.id",
-        "users.name",
-        "users.email",
-        "users.status",
-        "user_applications.supplier_name",
+        "u.id",
+        "u.name",
+        "u.email",
+        "u.mobile",
+        "u.status",
+        "u.created_at",
+        "ua.supplier_name",
+        "ua.status as application_status",
+        "ua.reviewed_at",
+        "ua.reviewed_by",
       )
-      .where("users.id", id)
+      .where("u.id", id)
       .first();
+
     if (!user) return res.status(404).json({ error: "User not found" });
-    res.json(user);
+
+    // ✅ Buyer requests where this supplier is involved
+    const buyerRequests = await db("buyer_requests as br")
+      .leftJoin("users as b", "br.buyer_id", "b.id")
+      .select(
+        "br.id",
+        "br.status",
+        "br.final_status",
+        "br.created_at",
+        "b.name as buyer_name",
+        "b.email as buyer_email",
+        "b.mobile as buyer_mobile",
+      )
+      .where("br.preferred_supplier_id", id)
+      .orWhereIn(
+        "br.id",
+        db("buyer_request_suppliers")
+          .select("buyer_request_id")
+          .where("supplier_id", id),
+      )
+      .orderBy("br.created_at", "desc");
+
+    // ✅ Containers handled by this supplier
+    const containers = await db("farmer_plan_containers as c")
+      .leftJoin("farmer_plans as p", "c.plan_id", "p.id")
+      .leftJoin("buyer_requests as br", "p.request_id", "br.id")
+      .select(
+        "c.id",
+        "c.container_no",
+        "c.status",
+        "c.created_at",
+        "br.id as buyer_request_id",
+      )
+      .whereIn(
+        "p.request_id",
+        buyerRequests.map((r) => r.id),
+      );
+
+    // ✅ Simple stats
+    const stats = {
+      total_requests: buyerRequests.length,
+      total_containers: containers.length,
+      active_requests: buyerRequests.filter(
+        (r) => r.status === "accepted" || r.status === "pending",
+      ).length,
+    };
+
+    res.json({
+      user,
+      stats,
+      buyerRequests,
+      containers,
+    });
   } catch (err) {
+    console.error("getUserById error:", err);
     res.status(500).json({ error: err.message });
   }
 }
+export const getUserProfilePicture = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const user = await db("users")
+      .select("profile_picture")
+      .where({ id })
+      .first();
+
+    if (!user || !user.profile_picture) {
+      // Gracefully return 204 (No Content) so frontend won't throw errors
+      return res.status(204).end();
+    }
+    const filePath = path.join(
+      process.cwd(),
+      user.profile_picture.startsWith("/")
+        ? user.profile_picture.slice(1)
+        : user.profile_picture,
+    );
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: "File not found on server" });
+    }
+
+    const ext = path.extname(filePath).toLowerCase();
+    const mimeType =
+      ext === ".png"
+        ? "image/png"
+        : ext === ".webp"
+          ? "image/webp"
+          : "image/jpeg";
+
+    res.setHeader("Content-Type", mimeType);
+    fs.createReadStream(filePath).pipe(res);
+  } catch (err) {
+    console.error("getUserProfilePicture error:", err);
+    res.status(500).json({ error: "Failed to fetch profile picture" });
+  }
+};
+
 export const deleteUser = async (req, res) => {
   try {
     const { id } = req.params;
@@ -154,6 +266,62 @@ export const getApplications = async (req, res) => {
     res.json(apps);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+};
+
+/* -------------------- Get Applications by User -------------------- */
+export const getApplicationsByUser = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const apps = await adminService.getApplicationsByUser(userId);
+
+    if (!apps || apps.length === 0) {
+      return res
+        .status(404)
+        .json({ message: "No application found for this user" });
+    }
+
+    res.json(apps);
+  } catch (err) {
+    console.error("getApplicationsByUser error:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/* -------------------- Update Application (Admin / User / Manager / Farmer) -------------------- */
+export const updateApplication = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+    const role = req.user.roles[0];
+
+    // ✅ Combine body and uploaded files
+    const updates = { ...req.body };
+
+    // ✅ If files were uploaded, map them to JSON objects
+    if (req.files && Object.keys(req.files).length > 0) {
+      for (const field in req.files) {
+        const file = req.files[field][0];
+        updates[field] = JSON.stringify({
+          originalname: file.originalname,
+          filename: file.filename,
+          path: `/uploads/temp/${file.filename}`,
+          mimetype: file.mimetype,
+          size: file.size,
+        });
+      }
+    }
+
+    const result = await adminService.updateApplication(
+      id,
+      updates,
+      userId,
+      role,
+    );
+    res.json(result);
+  } catch (err) {
+    console.error("updateApplication error:", err);
+    res.status(400).json({ error: err.message });
   }
 };
 

@@ -33,6 +33,20 @@ router.patch(
   authorize("user"),
   userController.updateProfile,
 );
+router.post(
+  "/profile/picture",
+  authenticate,
+  authorize("user"),
+  upload.single("picture"),
+  userController.uploadProfilePicture,
+);
+router.get(
+  "/profile/picture",
+  authenticate,
+  authorize("user"),
+  userController.getProfilePicture,
+);
+
 router.delete(
   "/profile",
   authenticate,

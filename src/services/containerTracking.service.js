@@ -27,8 +27,26 @@ async function generateTrackingCode(containerId) {
 }
 
 /* -------------------- Create Tracking Record + Notify -------------------- */
-export async function addTracking({ containerId, status, note, createdBy }) {
-  const tracking_code = await generateTrackingCode(containerId);
+export async function addTracking({
+  containerId,
+  status,
+  note,
+  createdBy,
+  tracking_code, // user-provided TY number
+}) {
+  // ✅ Use TY number if provided, otherwise fallback to generated code (optional)
+  const finalTrackingCode =
+    tracking_code && tracking_code.trim() !== ""
+      ? tracking_code.trim()
+      : await generateTrackingCode(containerId);
+
+  // ✅ Prevent duplicate TY numbers
+  const existing = await db("container_tracking_statuses")
+    .where({ tracking_code: finalTrackingCode })
+    .first();
+
+  if (existing)
+    throw new Error("This tracking code (TY number) already exists");
 
   // ✅ Insert tracking record
   const [inserted] = await db("container_tracking_statuses")
@@ -37,7 +55,7 @@ export async function addTracking({ containerId, status, note, createdBy }) {
       status,
       note,
       created_by: createdBy,
-      tracking_code,
+      tracking_code: finalTrackingCode,
     })
     .returning("*");
 
@@ -63,12 +81,11 @@ export async function addTracking({ containerId, status, note, createdBy }) {
 
   const notificationData = {
     containerId,
-    tracking_code,
+    tracking_code: finalTrackingCode,
     status,
     note,
   };
 
-  // Queue all notifications (admins, managers, buyer if any)
   const notificationPromises = [];
 
   // 🟢 Notify Admins & Managers
@@ -93,7 +110,6 @@ export async function addTracking({ containerId, status, note, createdBy }) {
     );
   }
 
-  // ✅ Execute all notifications in parallel
   await Promise.allSettled(notificationPromises);
 
   return inserted;
