@@ -25,6 +25,28 @@ router.patch(
   adminController.updateProfile,
 );
 
+// 🆕 Profile Picture (Admin / Manager)
+router.post(
+  "/profile/picture",
+  authenticate,
+  authorize("admin", "manager"),
+  upload.single("picture"),
+  adminController.uploadProfilePicture,
+);
+router.get(
+  "/profile/picture",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.getProfilePicture,
+);
+
+// 🧹 Delete admin/manager profile
+router.delete(
+  "/profile",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.deleteProfile,
+);
 /* -------------------- Users -------------------- */
 router.post(
   "/users",
@@ -105,6 +127,12 @@ router.post(
   authenticate,
   authorize("admin"),
   adminController.reviewApplication,
+);
+router.patch(
+  "/applications/:id/final-review",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.finalizeApplicationReview,
 );
 
 /* -------------------- Settings -------------------- */

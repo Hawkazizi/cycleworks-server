@@ -67,6 +67,118 @@ export const updateProfile = async (req, res) => {
   }
 };
 
+/* -------------------- Upload Admin/Manager Profile Picture -------------------- */
+export const uploadProfilePicture = async (req, res) => {
+  try {
+    const adminId = req.user.id;
+
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+
+    // Ensure /uploads/profiles directory exists
+    const dir = path.join("uploads", "profiles");
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    // Move from /uploads/temp → /uploads/profiles
+    const newFilePath = `/uploads/profiles/${req.file.filename}`;
+    fs.renameSync(req.file.path, path.join(dir, req.file.filename));
+
+    // Get existing admin record
+    const admin = await db("users").where({ id: adminId }).first();
+
+    // 🧹 Delete old profile picture if exists
+    if (admin?.profile_picture) {
+      const oldPath = path.join(
+        process.cwd(),
+        admin.profile_picture.startsWith("/")
+          ? admin.profile_picture.slice(1)
+          : admin.profile_picture,
+      );
+
+      if (fs.existsSync(oldPath)) {
+        try {
+          fs.unlinkSync(oldPath);
+          console.log(`🧹 Deleted old profile picture: ${oldPath}`);
+        } catch (err) {
+          console.warn("⚠ Failed to delete old picture:", err.message);
+        }
+      }
+    }
+
+    // 🧠 Update DB
+    await db("users").where({ id: adminId }).update({
+      profile_picture: newFilePath,
+      updated_at: new Date(),
+    });
+
+    res.json({
+      message: "Profile picture updated successfully",
+      profile_picture: newFilePath,
+    });
+  } catch (err) {
+    console.error("uploadProfilePicture (admin) error:", err);
+    res.status(500).json({ error: "Failed to upload profile picture" });
+  }
+};
+
+/* -------------------- Get Admin/Manager Profile Picture -------------------- */
+export const getProfilePicture = async (req, res) => {
+  try {
+    const adminId = req.user.id;
+    const admin = await db("users")
+      .select("profile_picture")
+      .where({ id: adminId })
+      .first();
+
+    if (!admin || !admin.profile_picture) {
+      return res.status(404).json({ error: "Profile picture not found" });
+    }
+
+    const filePath = path.join(
+      process.cwd(),
+      admin.profile_picture.startsWith("/")
+        ? admin.profile_picture.slice(1)
+        : admin.profile_picture,
+    );
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: "File not found on server" });
+    }
+
+    const ext = path.extname(filePath).toLowerCase();
+    const mimeType =
+      ext === ".png"
+        ? "image/png"
+        : ext === ".webp"
+          ? "image/webp"
+          : "image/jpeg";
+
+    res.setHeader("Content-Type", mimeType);
+    fs.createReadStream(filePath).pipe(res);
+  } catch (err) {
+    console.error("getProfilePicture (admin) error:", err);
+    res.status(500).json({ error: "Failed to fetch profile picture" });
+  }
+};
+
+/* -------------------- Delete Admin/Manager Profile -------------------- */
+export const deleteProfile = async (req, res) => {
+  try {
+    const adminId = req.user.id;
+
+    // Delete from DB (reusing your service)
+    await db("users").where({ id: adminId }).del();
+
+    res.json({ message: "Admin profile deleted" });
+  } catch (err) {
+    console.error("deleteProfile (admin) error:", err);
+    res.status(500).json({ error: "Failed to delete profile" });
+  }
+};
+
 /* -------------------- Users -------------------- */
 export const createUser = async (req, res) => {
   try {
@@ -289,16 +401,17 @@ export const getApplicationsByUser = async (req, res) => {
 };
 
 /* -------------------- Update Application (Admin / User / Manager / Farmer) -------------------- */
+/* -------------------- Update Application (Admin / User / Manager / Farmer) -------------------- */
 export const updateApplication = async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user.id;
     const role = req.user.roles[0];
 
-    // ✅ Combine body and uploaded files
+    // 🧠 Combine body + uploaded files
     const updates = { ...req.body };
 
-    // ✅ If files were uploaded, map them to JSON objects
+    // ✅ Handle uploaded files (admins can upload too)
     if (req.files && Object.keys(req.files).length > 0) {
       for (const field in req.files) {
         const file = req.files[field][0];
@@ -308,16 +421,20 @@ export const updateApplication = async (req, res) => {
           path: `/uploads/temp/${file.filename}`,
           mimetype: file.mimetype,
           size: file.size,
+          uploaded_by: role, // store who uploaded it
+          uploaded_at: new Date().toISOString(),
         });
       }
     }
 
+    // ✅ Call updated service function
     const result = await adminService.updateApplication(
       id,
       updates,
       userId,
       role,
     );
+
     res.json(result);
   } catch (err) {
     console.error("updateApplication error:", err);
@@ -335,6 +452,32 @@ export const reviewApplication = async (req, res) => {
     const result = await adminService.reviewApplication(id, status, reviewerId);
     res.json(result);
   } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
+/* -------------------- Final Review (Second Phase) -------------------- */
+export const finalizeApplicationReview = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { final_approved, final_admin_comment } = req.body;
+    const userId = req.user.id;
+    const role = req.user.roles[0];
+
+    if (!(role === "admin" || role === "manager")) {
+      return res.status(403).json({ error: "Unauthorized" });
+    }
+
+    const result = await adminService.updateApplication(
+      id,
+      { final_approved, final_admin_comment },
+      userId,
+      role,
+    );
+
+    res.json(result);
+  } catch (err) {
+    console.error("finalizeApplicationReview error:", err);
     res.status(400).json({ error: err.message });
   }
 };

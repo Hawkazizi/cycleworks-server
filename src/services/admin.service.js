@@ -49,7 +49,6 @@ export const loginWithLicense = async (licenseKey, role) => {
 };
 
 /* -------------------- Profile -------------------- */
-/* -------------------- Profile -------------------- */
 export const getAdminProfile = async (userId) => {
   const admin = await db("users")
     .leftJoin("user_roles", "users.id", "user_roles.user_id")
@@ -203,13 +202,25 @@ export const deleteUser = async (userId) => {
   });
 };
 /* -------------------- Applications -------------------- */
+/* -------------------- Applications (All) -------------------- */
 export const getApplications = async () => {
   const rows = await db("user_applications")
     .join("users", "user_applications.user_id", "users.id")
+    .leftJoin(
+      "users as reviewer",
+      "user_applications.reviewed_by",
+      "reviewer.id",
+    )
+    .leftJoin(
+      "users as final_reviewer",
+      "user_applications.final_reviewed_by",
+      "final_reviewer.id",
+    )
     .select(
       "user_applications.id",
       "users.name",
       "users.email",
+      "users.mobile",
       "user_applications.reason",
       "user_applications.status",
       "user_applications.biosecurity",
@@ -220,20 +231,27 @@ export const getApplications = async () => {
       "user_applications.farm_biosecurity",
       "user_applications.created_at",
       "user_applications.supplier_name",
+
+      // 🆕 Second phase fields
+      "user_applications.final_approved",
+      "user_applications.final_admin_comment",
+      "user_applications.final_reviewed_by",
+      "user_applications.final_reviewed_at",
+      db.raw("reviewer.name as reviewed_by_name"),
+      db.raw("final_reviewer.name as final_reviewed_by_name"),
     )
     .orderBy("user_applications.created_at", "desc");
 
-  return rows.map((row) => {
-    const fileFields = [
-      "biosecurity",
-      "vaccination",
-      "emergency",
-      "food_safety",
-      "description",
-      "farm_biosecurity",
-    ];
+  const fileFields = [
+    "biosecurity",
+    "vaccination",
+    "emergency",
+    "food_safety",
+    "description",
+    "farm_biosecurity",
+  ];
 
-    // Attach full URLs to each file object if it exists
+  return rows.map((row) => {
     const files = {};
     fileFields.forEach((field) => {
       if (row[field]) {
@@ -258,34 +276,53 @@ export const getApplications = async () => {
 
     return {
       ...row,
-      files, // structured object with all six docs
+      files,
     };
   });
 };
 
+/* -------------------- Applications by User -------------------- */
 export const getApplicationsByUser = async (userId) => {
   const rows = await db("user_applications")
     .join("users", "user_applications.user_id", "users.id")
+    .leftJoin(
+      "users as reviewer",
+      "user_applications.reviewed_by",
+      "reviewer.id",
+    )
+    .leftJoin(
+      "users as final_reviewer",
+      "user_applications.final_reviewed_by",
+      "final_reviewer.id",
+    )
     .select(
       "user_applications.*",
       "users.name",
       "users.email",
       "users.mobile",
       "users.status as user_status",
+
+      // 🆕 Second phase fields
+      "user_applications.final_approved",
+      "user_applications.final_admin_comment",
+      "user_applications.final_reviewed_by",
+      "user_applications.final_reviewed_at",
+      db.raw("reviewer.name as reviewed_by_name"),
+      db.raw("final_reviewer.name as final_reviewed_by_name"),
     )
     .where("user_applications.user_id", userId)
     .orderBy("user_applications.created_at", "desc");
 
-  return rows.map((row) => {
-    const fileFields = [
-      "biosecurity",
-      "vaccination",
-      "emergency",
-      "food_safety",
-      "description",
-      "farm_biosecurity",
-    ];
+  const fileFields = [
+    "biosecurity",
+    "vaccination",
+    "emergency",
+    "food_safety",
+    "description",
+    "farm_biosecurity",
+  ];
 
+  return rows.map((row) => {
     const files = {};
     fileFields.forEach((field) => {
       if (row[field]) {
@@ -296,7 +333,9 @@ export const getApplicationsByUser = async (userId) => {
               : row[field];
           files[field] = {
             ...parsed,
-            url: `${BASE_URL}${parsed.path}`,
+            url: parsed?.path
+              ? `${BASE_URL}${parsed.path.startsWith("/") ? parsed.path : `/${parsed.path}`}`
+              : null,
           };
         } catch {
           files[field] = null;
@@ -306,7 +345,10 @@ export const getApplicationsByUser = async (userId) => {
       }
     });
 
-    return { ...row, files };
+    return {
+      ...row,
+      files,
+    };
   });
 };
 
@@ -315,17 +357,8 @@ export const updateApplication = async (id, updates, userId, role) => {
   const existing = await db("user_applications").where({ id }).first();
   if (!existing) throw new Error("Application not found");
 
-  // Only admin or manager can update status fields
-  const allowedAdminFields = [
-    "status",
-    "reviewed_by",
-    "reviewed_at",
-    "notes",
-    "admin_comment",
-  ];
-
-  // Fields users can edit when re-uploading info
-  const allowedUserFields = [
+  // Fields users can update (their application details)
+  const userEditableFields = [
     "reason",
     "supplier_name",
     "biosecurity",
@@ -336,14 +369,26 @@ export const updateApplication = async (id, updates, userId, role) => {
     "farm_biosecurity",
   ];
 
-  let allowedFields = [];
+  // Fields admins can update for reviews + approvals
+  const adminOnlyFields = [
+    "status",
+    "reviewed_by",
+    "reviewed_at",
+    "notes",
+    "admin_comment",
+    "final_approved",
+    "final_admin_comment",
+  ];
 
+  // ✅ Admins and managers can edit both sets of fields
+  let allowedFields = [];
   if (role === "admin" || role === "manager") {
-    allowedFields = allowedAdminFields;
+    allowedFields = [...userEditableFields, ...adminOnlyFields];
   } else if (role === "user" || role === "farmer") {
-    allowedFields = allowedUserFields;
+    allowedFields = [...userEditableFields];
   }
 
+  // Filter only allowed fields
   const updateData = {};
   for (const key in updates) {
     if (allowedFields.includes(key)) {
@@ -355,7 +400,7 @@ export const updateApplication = async (id, updates, userId, role) => {
     throw new Error("No valid fields to update");
   }
 
-  // If admin/manager updates status → update user status accordingly
+  /* -------------------- First-Phase Approval -------------------- */
   if (updateData.status && (role === "admin" || role === "manager")) {
     const userStatus = updateData.status === "approved" ? "active" : "pending";
     await db("users")
@@ -363,7 +408,31 @@ export const updateApplication = async (id, updates, userId, role) => {
       .update({ status: userStatus });
   }
 
-  // Perform update
+  /* -------------------- Second-Phase Review -------------------- */
+  if (
+    updates.final_approved !== undefined &&
+    (role === "admin" || role === "manager")
+  ) {
+    updateData.final_reviewed_by = userId;
+    updateData.final_reviewed_at = db.fn.now();
+
+    const msg = updates.final_approved
+      ? "Your application has been fully approved."
+      : "Your application requires further changes.";
+
+    // Optional notification (if you have NotificationService)
+    try {
+      await NotificationService.create({
+        user_id: existing.user_id,
+        title: "Final Application Review",
+        message: msg,
+      });
+    } catch (err) {
+      console.warn("Notification failed:", err.message);
+    }
+  }
+
+  /* -------------------- Apply Update -------------------- */
   const [updated] = await db("user_applications")
     .where({ id })
     .update(
@@ -377,28 +446,6 @@ export const updateApplication = async (id, updates, userId, role) => {
     );
 
   return { message: "Application updated", application: updated };
-};
-
-export const reviewApplication = async (id, status, reviewerId) => {
-  if (!["approved", "rejected"].includes(status)) {
-    throw new Error("Invalid status");
-  }
-
-  const [app] = await db("user_applications")
-    .where({ id })
-    .update({
-      status,
-      reviewed_by: reviewerId,
-      reviewed_at: db.fn.now(),
-    })
-    .returning("*");
-
-  if (!app) throw new Error("Application not found");
-
-  const userStatus = status === "approved" ? "active" : "pending";
-  await db("users").where({ id: app.user_id }).update({ status: userStatus });
-
-  return { message: `Application ${status}`, application: app };
 };
 
 /* -------------------- Settings -------------------- */

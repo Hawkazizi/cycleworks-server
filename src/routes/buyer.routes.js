@@ -5,6 +5,7 @@ import { authorize } from "../middleware/authorize.js";
 import upload from "../middleware/upload.js";
 const router = Router();
 
+// 🧠 Buyer Profile
 router.get(
   "/profile",
   authenticate,
@@ -17,6 +18,29 @@ router.put(
   authenticate,
   authorize("buyer"),
   buyerController.updateProfile,
+);
+
+// 🖼️ Buyer Profile Picture
+router.post(
+  "/profile/picture",
+  authenticate,
+  authorize("buyer"),
+  upload.single("picture"),
+  buyerController.uploadProfilePicture,
+);
+router.get(
+  "/profile/picture",
+  authenticate,
+  authorize("buyer"),
+  buyerController.getProfilePicture,
+);
+
+// 🧹 Delete Buyer Profile
+router.delete(
+  "/profile",
+  authenticate,
+  authorize("buyer"),
+  buyerController.deleteProfile,
 );
 
 // Create request

@@ -8,20 +8,142 @@ import * as ticketService from "../services/ticket.service.js";
 
 import knex from "../db/knex.js";
 
+/* -------------------- Get Buyer Profile -------------------- */
 export async function getProfile(req, res) {
-  const me = await knex("users").where({ id: req.user.id }).first();
-  res.json(me);
+  try {
+    const me = await knex("users").where({ id: req.user.id }).first();
+    if (!me) return res.status(404).json({ error: "Profile not found" });
+    res.json(me);
+  } catch (err) {
+    console.error("getProfile (buyer) error:", err);
+    res.status(500).json({ error: "Failed to fetch profile" });
+  }
 }
 
+/* -------------------- Update Buyer Profile -------------------- */
 export async function updateProfile(req, res) {
   try {
     const updated = await buyerService.updateProfile(req.user.id, req.body);
     res.json(updated);
   } catch (e) {
+    console.error("updateProfile (buyer) error:", e);
     res.status(400).json({ error: e.message });
   }
 }
 
+/* -------------------- Upload Buyer Profile Picture -------------------- */
+export const uploadProfilePicture = async (req, res) => {
+  try {
+    const buyerId = req.user.id;
+
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+
+    // Ensure /uploads/profiles directory exists
+    const dir = path.join("uploads", "profiles");
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    // Move from /uploads/temp → /uploads/profiles
+    const newFilePath = `/uploads/profiles/${req.file.filename}`;
+    fs.renameSync(req.file.path, path.join(dir, req.file.filename));
+
+    // Get existing user record
+    const buyer = await knex("users").where({ id: buyerId }).first();
+
+    // 🧹 Delete old profile picture if exists
+    if (buyer?.profile_picture) {
+      const oldPath = path.join(
+        process.cwd(),
+        buyer.profile_picture.startsWith("/")
+          ? buyer.profile_picture.slice(1)
+          : buyer.profile_picture,
+      );
+
+      if (fs.existsSync(oldPath)) {
+        try {
+          fs.unlinkSync(oldPath);
+          console.log(`🧹 Deleted old buyer profile picture: ${oldPath}`);
+        } catch (err) {
+          console.warn("⚠ Failed to delete old picture:", err.message);
+        }
+      }
+    }
+
+    // 🧠 Update DB
+    await knex("users").where({ id: buyerId }).update({
+      profile_picture: newFilePath,
+      updated_at: new Date(),
+    });
+
+    res.json({
+      message: "Profile picture updated successfully",
+      profile_picture: newFilePath,
+    });
+  } catch (err) {
+    console.error("uploadProfilePicture (buyer) error:", err);
+    res.status(500).json({ error: "Failed to upload profile picture" });
+  }
+};
+
+/* -------------------- Get Buyer Profile Picture -------------------- */
+export const getProfilePicture = async (req, res) => {
+  try {
+    const buyerId = req.user.id;
+    const buyer = await knex("users")
+      .select("profile_picture")
+      .where({ id: buyerId })
+      .first();
+
+    if (!buyer || !buyer.profile_picture) {
+      return res.status(404).json({ error: "Profile picture not found" });
+    }
+
+    // Build absolute path
+    const filePath = path.join(
+      process.cwd(),
+      buyer.profile_picture.startsWith("/")
+        ? buyer.profile_picture.slice(1)
+        : buyer.profile_picture,
+    );
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: "File not found on server" });
+    }
+
+    // Detect file type (jpeg/png/webp/jpg)
+    const ext = path.extname(filePath).toLowerCase();
+    const mimeType =
+      ext === ".png"
+        ? "image/png"
+        : ext === ".webp"
+          ? "image/webp"
+          : "image/jpeg";
+
+    res.setHeader("Content-Type", mimeType);
+    fs.createReadStream(filePath).pipe(res);
+  } catch (err) {
+    console.error("getProfilePicture (buyer) error:", err);
+    res.status(500).json({ error: "Failed to fetch profile picture" });
+  }
+};
+
+/* -------------------- Delete Buyer Profile -------------------- */
+export const deleteProfile = async (req, res) => {
+  try {
+    const buyerId = req.user.id;
+
+    // 🧹 Delete from DB
+    await knex("users").where({ id: buyerId }).del();
+
+    res.json({ message: "Buyer profile deleted successfully" });
+  } catch (err) {
+    console.error("deleteProfile (buyer) error:", err);
+    res.status(500).json({ error: "Failed to delete buyer profile" });
+  }
+};
 //////////////////////////// Reqs ///////////////////////////////////
 
 export const createRequest = async (req, res) => {
