@@ -26,29 +26,57 @@ async function generateTrackingCode(containerId) {
   return `${prefix}${randomPart}`;
 }
 
-/* -------------------- Create Tracking Record + Notify -------------------- */
+/* -------------------- Add Tracking Status -------------------- */
 export async function addTracking({
   containerId,
   status,
   note,
   createdBy,
-  tracking_code, // user-provided TY number
+  tracking_code,
 }) {
-  // ✅ Use TY number if provided, otherwise fallback to generated code (optional)
-  const finalTrackingCode =
-    tracking_code && tracking_code.trim() !== ""
-      ? tracking_code.trim()
-      : await generateTrackingCode(containerId);
+  // 🔍 Step 1: Find existing TY code for this container (always reuse if exists)
+  const existingRows = await db("container_tracking_statuses")
+    .where({ container_id: containerId })
+    .orderBy("created_at", "asc");
 
-  // ✅ Prevent duplicate TY numbers
-  const existing = await db("container_tracking_statuses")
-    .where({ tracking_code: finalTrackingCode })
+  let finalTrackingCode = tracking_code?.trim();
+
+  if (existingRows.length > 0 && existingRows[0].tracking_code) {
+    // ✅ Container already has a TY → always reuse it
+    finalTrackingCode = existingRows[0].tracking_code;
+  } else {
+    // 🆕 First time — must have a TY provided or generate one
+    if (!finalTrackingCode) {
+      finalTrackingCode = await generateTrackingCode(containerId);
+    }
+
+    // 🚫 Ensure TY not already used by another container
+    const conflict = await db("container_tracking_statuses")
+      .where({ tracking_code: finalTrackingCode })
+      .andWhereNot({ container_id: containerId })
+      .first();
+
+    if (conflict) {
+      throw new Error("This TY number already belongs to another container");
+    }
+  }
+
+  // 🔒 Step 2: Avoid inserting the exact same row again
+  const duplicate = await db("container_tracking_statuses")
+    .where({
+      container_id: containerId,
+      tracking_code: finalTrackingCode,
+      status,
+      note,
+    })
     .first();
 
-  if (existing)
-    throw new Error("This tracking code (TY number) already exists");
+  if (duplicate) {
+    console.log("⚠️ Duplicate tracking skipped:", duplicate.id);
+    return duplicate;
+  }
 
-  // ✅ Insert tracking record
+  // ✅ Step 3: Safe insert of the new tracking record
   const [inserted] = await db("container_tracking_statuses")
     .insert({
       container_id: containerId,
@@ -59,7 +87,7 @@ export async function addTracking({
     })
     .returning("*");
 
-  // ✅ Find related buyer request ID for notification context
+  // 🧠 Step 4: Notify admins and buyer (same logic as before)
   const related = await db("farmer_plan_containers as c")
     .leftJoin("farmer_plans as p", "c.plan_id", "p.id")
     .leftJoin("buyer_requests as br", "p.request_id", "br.id")
@@ -70,7 +98,6 @@ export async function addTracking({
   const relatedRequestId = related?.request_id || null;
   const buyerId = related?.buyer_id || null;
 
-  // ✅ Notify Admins & Managers
   const adminManagers = await db("users")
     .join("user_roles", "users.id", "user_roles.user_id")
     .join("roles", "user_roles.role_id", "roles.id")
@@ -88,7 +115,6 @@ export async function addTracking({
 
   const notificationPromises = [];
 
-  // 🟢 Notify Admins & Managers
   for (const am of adminManagers) {
     notificationPromises.push(
       NotificationService.create(
@@ -100,12 +126,11 @@ export async function addTracking({
     );
   }
 
-  // 🟡 Notify Buyer (optional but useful)
   if (buyerId) {
     notificationPromises.push(
       NotificationService.create(buyerId, "status_updated", relatedRequestId, {
         ...notificationData,
-        message: `وضعیت کانتینر جدید برای درخواست شما (#${relatedRequestId}) ثبت شد.`,
+        message: `وضعیت جدید برای کانتینر درخواست شما (#${relatedRequestId}) ثبت شد.`,
       }),
     );
   }

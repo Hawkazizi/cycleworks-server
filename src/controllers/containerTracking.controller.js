@@ -3,6 +3,7 @@ import db from "../db/knex.js";
 /* -------------------- ADMIN: List all containers with their latest tracking -------------------- */
 export async function listAllContainersWithTracking(req, res) {
   try {
+    // 1️⃣ Fetch all containers with their latest tracking record
     const rows = await db("farmer_plan_containers as c")
       .leftJoin("farmer_plans as p", "c.plan_id", "p.id")
       .leftJoin("users as u", "p.farmer_id", "u.id")
@@ -27,15 +28,21 @@ export async function listAllContainersWithTracking(req, res) {
       .select(
         "c.id as container_id",
         "c.container_no",
-        "c.created_at as container_created_at", // ✅ new
-        "p.plan_date", // ✅ new
-        "p.created_at as plan_created_at", // ✅ new
-        "p.request_id as buyer_request_id",
-        "br.created_at as request_created_at", // ✅ new
-        "u.id as farmer_id",
+        "c.created_at as container_created_at",
+        "p.plan_date",
+        "p.farmer_id",
         "u.name as farmer_name",
         "ua.supplier_name",
+        "p.request_id as buyer_request_id",
         "br.import_country",
+        "br.entry_border",
+        "br.exit_border",
+        "br.transport_type",
+        "br.product_type",
+        "br.packaging",
+        "br.egg_type",
+        "br.container_amount",
+        "br.cartons",
         "ct.status as latest_status",
         "ct.note",
         "ct.tracking_code",
@@ -43,13 +50,48 @@ export async function listAllContainersWithTracking(req, res) {
       )
       .orderBy("ct.created_at", "desc");
 
-    // ✅ Optional: filter by supplier if provided (for your SupplierDetails.jsx)
+    // 2️⃣ Optional filter by supplier
     const { supplier_id } = req.query;
     const filteredRows = supplier_id
       ? rows.filter((r) => String(r.farmer_id) === String(supplier_id))
       : rows;
 
-    res.json(filteredRows);
+    // 3️⃣ Calculate statistics
+    const totalContainers = filteredRows.length;
+
+    const containersByCountry = {
+      Qatar: 0,
+      Oman: 0,
+      Bahrain: 0,
+      Other: 0,
+    };
+
+    // ✅ A container is considered "exited Iran" if status is "loaded_on_ship" or "delivered"
+    const exitedIranStatuses = ["loaded_on_ship", "delivered"];
+
+    let exitedIran = 0;
+    filteredRows.forEach((c) => {
+      const country = c.import_country?.trim();
+      if (["Qatar", "Oman", "Bahrain"].includes(country)) {
+        containersByCountry[country]++;
+      } else {
+        containersByCountry.Other++;
+      }
+
+      if (exitedIranStatuses.includes((c.latest_status || "").toLowerCase())) {
+        exitedIran++;
+      }
+    });
+
+    // 4️⃣ Return both the raw containers and stats
+    res.json({
+      stats: {
+        totalContainers,
+        containersByCountry,
+        exitedIran,
+      },
+      containers: filteredRows,
+    });
   } catch (err) {
     console.error("listAllContainersWithTracking error:", err);
     res.status(500).json({ error: err.message });

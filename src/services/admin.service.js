@@ -143,6 +143,9 @@ export const getAllUsers = async () => {
   return db("users as u")
     .leftJoin("user_roles as ur", "u.id", "ur.user_id")
     .leftJoin("roles as r", "ur.role_id", "r.id")
+    .leftJoin("farmer_plans as fp", "fp.farmer_id", "u.id") // 👈 Link user → farmer plans
+    .leftJoin("farmer_plan_containers as c", "c.plan_id", "fp.id") // 👈 Link plans → containers
+    .groupBy("u.id", "r.name") // 👈 Needed for aggregate queries
     .select(
       "u.id",
       "u.name",
@@ -150,6 +153,7 @@ export const getAllUsers = async () => {
       "u.status",
       "u.created_at",
       "r.name as role_name",
+      db.raw("COUNT(c.id) AS containers_count"), // 👈 Add container count
     )
     .orderBy("u.id", "asc");
 };
