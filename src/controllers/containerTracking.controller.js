@@ -1,9 +1,9 @@
 import * as trackingService from "../services/containerTracking.service.js";
 import db from "../db/knex.js";
-/* -------------------- ADMIN: List all containers with their latest tracking -------------------- */
+
+/* -------------------- ADMIN: List all containers with latest tracking + plans + files -------------------- */
 export async function listAllContainersWithTracking(req, res) {
   try {
-    // 1️⃣ Fetch all containers with their latest tracking record
     const rows = await db("farmer_plan_containers as c")
       .leftJoin("farmer_plans as p", "c.plan_id", "p.id")
       .leftJoin("users as u", "p.farmer_id", "u.id")
@@ -28,9 +28,12 @@ export async function listAllContainersWithTracking(req, res) {
       .select(
         "c.id as container_id",
         "c.container_no",
+        "c.status as container_status",
         "c.created_at as container_created_at",
+        "p.id as plan_id",
         "p.plan_date",
-        "p.farmer_id",
+        "p.status as plan_status",
+        "u.id as farmer_id",
         "u.name as farmer_name",
         "ua.supplier_name",
         "p.request_id as buyer_request_id",
@@ -43,6 +46,13 @@ export async function listAllContainersWithTracking(req, res) {
         "br.egg_type",
         "br.container_amount",
         "br.cartons",
+        // ⬇️ include metadata
+        "c.metadata",
+        "c.metadata_status",
+        "c.metadata_review_note",
+        "c.admin_metadata",
+        "c.admin_metadata_status",
+        "c.admin_metadata_review_note",
         "ct.status as latest_status",
         "ct.note",
         "ct.tracking_code",
@@ -50,50 +60,107 @@ export async function listAllContainersWithTracking(req, res) {
       )
       .orderBy("ct.created_at", "desc");
 
-    // 2️⃣ Optional filter by supplier
+    if (!rows.length) {
+      return res.json({
+        stats: { totalContainers: 0, containersByCountry: {}, exitedIran: 0 },
+        containers: [],
+      });
+    }
+
     const { supplier_id } = req.query;
     const filteredRows = supplier_id
       ? rows.filter((r) => String(r.farmer_id) === String(supplier_id))
       : rows;
 
-    // 3️⃣ Calculate statistics
-    const totalContainers = filteredRows.length;
+    const containerIds = filteredRows.map((r) => r.container_id);
 
-    const containersByCountry = {
-      Qatar: 0,
-      Oman: 0,
-      Bahrain: 0,
-      Other: 0,
-    };
+    // Tracking history
+    const histories = await db("container_tracking_statuses")
+      .whereIn("container_id", containerIds)
+      .orderBy("created_at", "desc");
 
-    // ✅ A container is considered "exited Iran" if status is "loaded_on_ship" or "delivered"
+    const historyByContainer = histories.reduce((acc, h) => {
+      (acc[h.container_id] ||= []).push(h);
+      return acc;
+    }, {});
+
+    // Files by container_id
+    const files = await db("farmer_plan_files")
+      .whereIn("container_id", containerIds)
+      .select(
+        "id",
+        "container_id",
+        "original_name",
+        "mime_type",
+        "path",
+        "size_bytes",
+        "status",
+        "type",
+        "created_at",
+      );
+
+    const filesByContainer = files.reduce((acc, f) => {
+      (acc[f.container_id] ||= []).push(f);
+      return acc;
+    }, {});
+
+    // Merge all
+    const containers = filteredRows.map((c) => ({
+      ...c,
+      metadata: c.metadata || {},
+      admin_metadata: c.admin_metadata || {},
+      tracking_history: historyByContainer[c.container_id] || [],
+      files: filesByContainer[c.container_id] || [],
+    }));
+
+    // Stats
     const exitedIranStatuses = ["loaded_on_ship", "delivered"];
-
+    const containersByCountry = {};
     let exitedIran = 0;
-    filteredRows.forEach((c) => {
-      const country = c.import_country?.trim();
-      if (["Qatar", "Oman", "Bahrain"].includes(country)) {
-        containersByCountry[country]++;
-      } else {
-        containersByCountry.Other++;
-      }
 
-      if (exitedIranStatuses.includes((c.latest_status || "").toLowerCase())) {
+    containers.forEach((c) => {
+      const country = c.import_country?.trim() || "Unknown";
+      containersByCountry[country] = (containersByCountry[country] || 0) + 1;
+      if (exitedIranStatuses.includes((c.latest_status || "").toLowerCase()))
         exitedIran++;
-      }
     });
 
-    // 4️⃣ Return both the raw containers and stats
     res.json({
       stats: {
-        totalContainers,
+        totalContainers: containers.length,
         containersByCountry,
         exitedIran,
       },
-      containers: filteredRows,
+      containers,
     });
   } catch (err) {
     console.error("listAllContainersWithTracking error:", err);
+    res.status(500).json({ error: err.message || "Internal server error" });
+  }
+}
+
+/* -------------------- ADMIN: Get files for a single container -------------------- */
+export async function getContainerFiles(req, res) {
+  try {
+    const { id } = req.params;
+    const files = await db("farmer_plan_files")
+      .where({ container_id: id })
+      .select(
+        "id",
+        "container_id",
+        "original_name",
+        "mime_type",
+        "path",
+        "size_bytes",
+        "status",
+        "type",
+        "created_at",
+      )
+      .orderBy("created_at", "desc");
+
+    res.json({ files });
+  } catch (err) {
+    console.error("getContainerFiles error:", err);
     res.status(500).json({ error: err.message });
   }
 }

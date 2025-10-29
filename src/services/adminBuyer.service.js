@@ -243,7 +243,6 @@ export async function assignSuppliersToRequest(
 }
 
 /* -------------------- Update deadline -------------------- */
-/* -------------------- Update deadline (supports start/end) -------------------- */
 export async function updateBuyerRequestDeadline(requestId, data, updatedBy) {
   const { new_deadline_start, new_deadline_end, new_deadline_date } = data;
 

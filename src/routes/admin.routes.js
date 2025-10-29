@@ -306,7 +306,12 @@ router.get(
   authorize("admin", "manager"),
   adminTrackingCtrl.listAllContainersWithTracking,
 );
-
+router.get(
+  "/containers/:id/files",
+  authenticate,
+  authorize("admin", "manager"),
+  adminTrackingCtrl.getContainerFiles,
+);
 router.get(
   "/tracking-code/:code",
   authenticate,
