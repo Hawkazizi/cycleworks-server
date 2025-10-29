@@ -182,3 +182,51 @@ export async function findByTrackingCode(code) {
       };
     });
 }
+
+/* -------------------- Update TY Number (User / Admin) -------------------- */
+/* -------------------- Update TY Number (User / Admin / Manager) -------------------- */
+export async function updateTyNumber(containerId, tyNumber, userId, role) {
+  if (!containerId) throw new Error("Container ID is required");
+  if (!tyNumber) throw new Error("TY number cannot be empty");
+
+  // Validate container existence
+  const container = await db("farmer_plan_containers")
+    .where({ id: containerId })
+    .first();
+
+  if (!container) throw new Error("Container not found");
+
+  // Role check: if user, ensure they own the container
+  if (role === "user") {
+    const plan = await db("farmer_plans")
+      .where({ id: container.plan_id, farmer_id: userId })
+      .first();
+    if (!plan) throw new Error("Unauthorized: container not owned by user");
+  }
+
+  // 🧠 Check if tracking already exists
+  const existing = await db("container_tracking_statuses")
+    .where({ container_id: containerId })
+    .orderBy("created_at", "asc")
+    .first();
+
+  if (existing) {
+    // ✅ Update the first tracking record’s code
+    await db("container_tracking_statuses").where({ id: existing.id }).update({
+      tracking_code: tyNumber,
+      note: "TY number updated manually",
+      created_at: db.fn.now(),
+    });
+  } else {
+    // 🆕 Create a new tracking record if none exists
+    await db("container_tracking_statuses").insert({
+      container_id: containerId,
+      status: "ty_assigned",
+      note: "TY number assigned",
+      tracking_code: tyNumber,
+      created_by: userId,
+    });
+  }
+
+  return { success: true, message: "TY number updated successfully" };
+}

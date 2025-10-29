@@ -311,3 +311,25 @@ export async function findByTrackingCode(req, res) {
     res.status(500).json({ error: err.message });
   }
 }
+
+/* -------------------- PATCH: Update TY Number -------------------- */
+export async function updateTyNumber(req, res) {
+  try {
+    const { id } = req.params;
+    const { ty_number } = req.body;
+    const userId = req.user.id;
+    const role = req.user.roles[0];
+
+    const result = await trackingService.updateTyNumber(
+      id,
+      ty_number,
+      userId,
+      role,
+    );
+
+    res.json(result);
+  } catch (err) {
+    console.error("updateTyNumber error:", err);
+    res.status(400).json({ error: err.message });
+  }
+}

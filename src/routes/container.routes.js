@@ -23,8 +23,14 @@ router.get(
 router.get(
   "/my-containers-with-tracking",
   authenticate,
-  authorize("user", "manager"),
+  authorize("user", "manager", "admin"),
   trackingCtrl.myContainersWithTracking,
+);
+router.patch(
+  "/:id/ty-number",
+  authenticate,
+  authorize("user", "admin", "manager"),
+  trackingCtrl.updateTyNumber,
 );
 
 export default router;
