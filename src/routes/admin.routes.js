@@ -318,4 +318,12 @@ router.get(
   authorize("admin", "manager"),
   adminTrackingCtrl.findByTrackingCode,
 );
+/* -------------------- Completion -------------------- */
+router.put(
+  "/buyer-requests/:id/complete",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.completeBuyerRequest,
+);
+
 export default router;

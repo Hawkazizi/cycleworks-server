@@ -212,9 +212,6 @@ export const getUserProfile = async (userId) => {
 
   return user;
 };
-
-// 🚨 NEW: Farmer Status Update WITH NOTIFICATIONS
-// 🚨 NEW: Farmer Status Update WITH NOTIFICATIONS
 export async function updateFarmerRequestStatus(
   userId,
   requestId,
@@ -234,13 +231,18 @@ export async function updateFarmerRequestStatus(
     throw new Error("Not authorized");
   }
 
-  // ✅ Update farmer status
+  // 🔹 Auto-set final_status = 'accepted' when farmer accepts the request
+  const updateData = {
+    farmer_status,
+    updated_at: db.fn.now(),
+  };
+  if (farmer_status === "accepted") {
+    updateData.final_status = "accepted";
+  }
+
   const [updated] = await db("buyer_requests")
     .where("id", requestId)
-    .update({
-      farmer_status,
-      updated_at: db.fn.now(),
-    })
+    .update(updateData)
     .returning("*");
 
   // ✅ Only notify on first-time acceptance
@@ -258,7 +260,7 @@ export async function updateFarmerRequestStatus(
       await NotificationService.create(am.id, "status_updated", requestId, {
         farmer_status: "accepted",
         from_user_id: userId,
-        message: `تامین‌کننده درخواست #${requestId} را پذیرفت.`,
+        message: `تامین‌کننده درخواست #${requestId} را پذیرفت و فرآیند آغاز شد.`,
       });
     }
 
@@ -270,7 +272,7 @@ export async function updateFarmerRequestStatus(
         requestId,
         {
           farmer_status: "accepted",
-          message: `تامین‌کننده درخواست شما (شناسه ${requestId}) را پذیرفت.`,
+          message: `تامین‌کننده درخواست شما (شناسه ${requestId}) را پذیرفت و درخواست در حال اجرا است 🚚.`,
         },
       );
     }

@@ -1,4 +1,3 @@
-// services/notification.service.js
 import db from "../db/knex.js";
 
 export const NotificationService = {

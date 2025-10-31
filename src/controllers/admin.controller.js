@@ -991,3 +991,18 @@ export async function updateContainerAdminMetadataController(req, res) {
     res.status(400).json({ message: err.message });
   }
 }
+
+/* -------------------- completion of a request -------------------- */
+
+export const completeBuyerRequest = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const adminId = req.user.id;
+
+    const result = await adminService.toggleRequestCompletion(id, adminId);
+    res.json(result);
+  } catch (err) {
+    console.error("completeBuyerRequest error:", err);
+    res.status(400).json({ error: err.message });
+  }
+};

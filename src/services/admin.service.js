@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import { JWT_SECRET, JWT_EXPIRES_IN } from "../config/jwt.js";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
+import { NotificationService } from "./notification.service.js";
 const BASE_URL = process.env.BASE_URL || "http://localhost:5000";
 
 /* -------------------- Auth -------------------- */
@@ -85,18 +86,47 @@ export const getAdminProfile = async (userId) => {
 };
 
 export const updateAdminProfile = async (userId, data) => {
+  // 🧩 Extract fields
+  const { email, mobile, name } = data;
+
+  // 🛑 Check for duplicate email
+  if (email) {
+    const existingEmail = await db("users")
+      .where("email", email)
+      .andWhereNot("id", userId)
+      .first();
+
+    if (existingEmail) {
+      throw new Error("این ایمیل قبلاً توسط کاربر دیگری استفاده شده است.");
+    }
+  }
+
+  // 🛑 Optional: also check duplicate mobile (if needed)
+  if (mobile) {
+    const existingMobile = await db("users")
+      .where("mobile", mobile)
+      .andWhereNot("id", userId)
+      .first();
+
+    if (existingMobile) {
+      throw new Error(
+        "این شماره موبایل قبلاً توسط کاربر دیگری استفاده شده است.",
+      );
+    }
+  }
+
+  // ✅ Proceed to update safely
   const [updated] = await db("users")
     .where("id", userId)
-    .update({ ...data, updated_at: db.fn.now() })
-    .returning([
-      "id",
-      "name",
-      "email",
-      "mobile",
-      "status",
-      "created_at",
-      "updated_at",
-    ]);
+    .update(
+      {
+        ...(name && { name }),
+        ...(email && { email }),
+        ...(mobile && { mobile }),
+        updated_at: db.fn.now(),
+      },
+      ["id", "name", "email", "mobile", "status", "created_at", "updated_at"],
+    );
 
   if (!updated) throw new Error("Profile update failed");
 
@@ -559,3 +589,45 @@ export const deleteLicenseKey = async (id) => {
 export const getAllRoles = async () => {
   return db("roles").select("id", "name").orderBy("id", "asc");
 };
+
+/* -------------------- request completion -------------------- */
+
+export async function toggleRequestCompletion(requestId, adminId) {
+  const existing = await db("buyer_requests").where({ id: requestId }).first();
+  if (!existing) throw new Error("Buyer request not found");
+
+  const newStatus = !existing.is_completed;
+
+  await db("buyer_requests")
+    .where({ id: requestId })
+    .update({
+      is_completed: newStatus,
+      completed_at: newStatus ? db.fn.now() : null, // ✅ timestamp logic
+      updated_at: db.fn.now(),
+    });
+
+  // ✅ Send notification to buyer
+  await NotificationService.create(
+    existing.buyer_id,
+    "buyer_request_toggle_completion",
+    existing.id,
+    JSON.stringify({
+      title: newStatus
+        ? "درخواست شما خاتمه یافت"
+        : "درخواست شما از حالت خاتمه یافته خارج شد",
+      message: newStatus
+        ? "درخواست شما با موفقیت خاتمه یافته است."
+        : "درخواست شما مجدداً فعال شده است.",
+      is_completed: newStatus,
+    }),
+  );
+
+  return {
+    success: true,
+    message: newStatus
+      ? "Request marked as completed."
+      : "Request marked as active again.",
+    is_completed: newStatus,
+    completed_at: newStatus ? new Date().toISOString() : null,
+  };
+}
