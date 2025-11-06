@@ -1,155 +1,80 @@
+// services/containerTracking.service.js
 import db from "../db/knex.js";
-import { NotificationService } from "./notification.service.js";
-/* -------------------- Helper: Generate tracking code -------------------- */
-async function generateTrackingCode(containerId) {
-  // find related buyer request and its import country
+
+/* =======================================================================
+   🔢 HELPER: Generate Unique Tracking Code
+======================================================================= */
+export async function generateTrackingCode(containerId) {
   const info = await db("farmer_plan_containers as c")
     .leftJoin("farmer_plans as p", "c.plan_id", "p.id")
     .leftJoin("buyer_requests as br", "p.request_id", "br.id")
-    .select("br.import_country")
+    .select("br.import_country", "c.metadata")
     .where("c.id", containerId)
     .first();
 
   if (!info) throw new Error("Container or buyer request not found");
 
-  const prefixMap = {
-    Qatar: "Q12-",
-    Oman: "O12-",
-    Bahrain: "B12-",
-  };
-
+  const prefixMap = { Qatar: "Q12-", Oman: "O12-", Bahrain: "B12-" };
   const prefix = prefixMap[info.import_country] || "X12-";
-
-  // generate random suffix (6 uppercase alphanumerics)
   const randomPart = Math.random().toString(36).substring(2, 8).toUpperCase();
 
   return `${prefix}${randomPart}`;
 }
 
-/* -------------------- Add Tracking Status -------------------- */
-export async function addTracking({
+/* =======================================================================
+   🧭 ADD TRACKING STATUS
+======================================================================= */
+export async function addTracking(
   containerId,
+  userId,
   status,
-  note,
-  createdBy,
   tracking_code,
-}) {
-  // 🔍 Step 1: Find existing TY code for this container (always reuse if exists)
-  const existingRows = await db("container_tracking_statuses")
-    .where({ container_id: containerId })
-    .orderBy("created_at", "asc");
-
-  let finalTrackingCode = tracking_code?.trim();
-
-  if (existingRows.length > 0 && existingRows[0].tracking_code) {
-    // ✅ Container already has a TY → always reuse it
-    finalTrackingCode = existingRows[0].tracking_code;
-  } else {
-    // 🆕 First time — must have a TY provided or generate one
-    if (!finalTrackingCode) {
-      finalTrackingCode = await generateTrackingCode(containerId);
-    }
-
-    // 🚫 Ensure TY not already used by another container
-    const conflict = await db("container_tracking_statuses")
-      .where({ tracking_code: finalTrackingCode })
-      .andWhereNot({ container_id: containerId })
-      .first();
-
-    if (conflict) {
-      throw new Error("This TY number already belongs to another container");
-    }
-  }
-
-  // 🔒 Step 2: Avoid inserting the exact same row again
-  const duplicate = await db("container_tracking_statuses")
-    .where({
-      container_id: containerId,
-      tracking_code: finalTrackingCode,
-      status,
-      note,
-    })
+  note,
+) {
+  // Check for existing record
+  const existing = await db("container_tracking_statuses")
+    .where({ container_id: containerId, tracking_code: tracking_code || null })
     .first();
 
-  if (duplicate) {
-    console.log("⚠️ Duplicate tracking skipped:", duplicate.id);
-    return duplicate;
-  }
-
-  // ✅ Step 3: Safe insert of the new tracking record
-  const [inserted] = await db("container_tracking_statuses")
-    .insert({
-      container_id: containerId,
+  if (existing) {
+    await db("container_tracking_statuses").where({ id: existing.id }).update({
       status,
       note,
-      created_by: createdBy,
-      tracking_code: finalTrackingCode,
-    })
-    .returning("*");
+      updated_at: db.fn.now(),
+    });
 
-  // 🧠 Step 4: Notify admins and buyer (same logic as before)
-  const related = await db("farmer_plan_containers as c")
-    .leftJoin("farmer_plans as p", "c.plan_id", "p.id")
-    .leftJoin("buyer_requests as br", "p.request_id", "br.id")
-    .select("br.id as request_id", "br.buyer_id")
-    .where("c.id", containerId)
-    .first();
+    return {
+      updated: true,
+      message: `Tracking code "${tracking_code}" updated successfully`,
+    };
+  }
 
-  const relatedRequestId = related?.request_id || null;
-  const buyerId = related?.buyer_id || null;
-
-  const adminManagers = await db("users")
-    .join("user_roles", "users.id", "user_roles.user_id")
-    .join("roles", "user_roles.role_id", "roles.id")
-    .whereIn(db.raw("LOWER(roles.name)"), ["admin", "manager"])
-    .where("users.status", "active")
-    .distinct()
-    .select("users.id");
-
-  const notificationData = {
-    containerId,
-    tracking_code: finalTrackingCode,
+  // Insert new tracking record
+  await db("container_tracking_statuses").insert({
+    container_id: containerId,
     status,
     note,
-  };
+    tracking_code: tracking_code || null,
+    created_by: userId,
+  });
 
-  const notificationPromises = [];
-
-  for (const am of adminManagers) {
-    notificationPromises.push(
-      NotificationService.create(
-        am.id,
-        "status_updated",
-        relatedRequestId,
-        notificationData,
-      ),
-    );
-  }
-
-  if (buyerId) {
-    notificationPromises.push(
-      NotificationService.create(buyerId, "status_updated", relatedRequestId, {
-        ...notificationData,
-        message: `وضعیت جدید برای کانتینر درخواست شما (#${relatedRequestId}) ثبت شد.`,
-      }),
-    );
-  }
-
-  await Promise.allSettled(notificationPromises);
-
-  return inserted;
+  return { created: true, message: "Tracking status added successfully" };
 }
 
-/* -------------------- List All Tracking History -------------------- */
+/* =======================================================================
+   📋 LIST TRACKING HISTORY
+======================================================================= */
 export async function listTracking(containerId) {
   return db("container_tracking_statuses")
     .where({ container_id: containerId })
     .orderBy("created_at", "desc");
 }
 
-/* -------------------- Find By Tracking Code (for admin search) -------------------- */
+/* =======================================================================
+   🔍 FIND BY TY CODE
+======================================================================= */
 export async function findByTrackingCode(code) {
-  return db("container_tracking_statuses as t")
+  const row = await db("container_tracking_statuses as t")
     .select(
       "t.*",
       "c.container_no",
@@ -166,67 +91,52 @@ export async function findByTrackingCode(code) {
       "br.description",
       "br.preferred_supplier_name as supplier_name",
       "br.preferred_supplier_id as supplier_id",
-      "u.name as supplier_user_name", // 👈 get from users table too
+      "u.name as supplier_user_name",
     )
     .leftJoin("farmer_plan_containers as c", "t.container_id", "c.id")
     .leftJoin("farmer_plans as p", "c.plan_id", "p.id")
     .leftJoin("buyer_requests as br", "p.request_id", "br.id")
     .leftJoin("users as u", "br.preferred_supplier_id", "u.id")
-    .where("t.tracking_code", code)
-    .first()
-    .then((row) => {
-      if (!row) return null;
-      return {
-        ...row,
-        supplier_name: row.supplier_name || row.supplier_user_name || null,
-      };
-    });
+    .whereRaw("LOWER(t.tracking_code) = LOWER(?)", [code])
+    .first();
+
+  if (!row) return null;
+
+  return {
+    ...row,
+    supplier_name: row.supplier_name || row.supplier_user_name || null,
+    tracking_info: {
+      code: row.tracking_code,
+      status: row.status,
+      note: row.note,
+      created_at: row.created_at,
+    },
+  };
 }
 
-/* -------------------- Update TY Number (User / Admin) -------------------- */
-/* -------------------- Update TY Number (User / Admin / Manager) -------------------- */
-export async function updateTyNumber(containerId, tyNumber, userId, role) {
-  if (!containerId) throw new Error("Container ID is required");
-  if (!tyNumber) throw new Error("TY number cannot be empty");
-
-  // Validate container existence
-  const container = await db("farmer_plan_containers")
-    .where({ id: containerId })
-    .first();
-
-  if (!container) throw new Error("Container not found");
-
-  // Role check: if user, ensure they own the container
-  if (role === "user") {
-    const plan = await db("farmer_plans")
-      .where({ id: container.plan_id, farmer_id: userId })
-      .first();
-    if (!plan) throw new Error("Unauthorized: container not owned by user");
-  }
-
-  // 🧠 Check if tracking already exists
-  const existing = await db("container_tracking_statuses")
-    .where({ container_id: containerId })
-    .orderBy("created_at", "asc")
-    .first();
-
-  if (existing) {
-    // ✅ Update the first tracking record’s code
-    await db("container_tracking_statuses").where({ id: existing.id }).update({
-      tracking_code: tyNumber,
-      note: "TY number updated manually",
-      created_at: db.fn.now(),
-    });
-  } else {
-    // 🆕 Create a new tracking record if none exists
-    await db("container_tracking_statuses").insert({
+/* =======================================================================
+   ✏️ UPDATE TY NUMBER (pure DB logic)
+======================================================================= */
+export async function updateTyNumber(containerId, tyNumber, userId) {
+  // Ensure unique constraint handled properly
+  await db("container_tracking_statuses")
+    .insert({
       container_id: containerId,
-      status: "ty_assigned",
-      note: "TY number assigned",
+      status: "TY Number Assigned",
       tracking_code: tyNumber,
       created_by: userId,
-    });
-  }
+    })
+    .onConflict(["container_id", "tracking_code"])
+    .ignore();
 
-  return { success: true, message: "TY number updated successfully" };
+  // Update metadata in farmer_plan_containers
+  await db("farmer_plan_containers")
+    .where({ id: containerId })
+    .update({
+      metadata: db.raw("jsonb_set(metadata, '{tracking_code}', ?::jsonb)", [
+        `"${tyNumber}"`,
+      ]),
+    });
+
+  return { success: true, message: "TY number recorded successfully" };
 }

@@ -1,4 +1,3 @@
-// controllers/admin.controller.js
 import * as adminService from "../services/admin.service.js";
 import * as adminBuyerService from "../services/adminBuyer.service.js";
 import * as adminReportService from "../services/adminReport.service.js";
@@ -258,7 +257,6 @@ export async function getUserById(req, res) {
       .select(
         "br.id",
         "br.status",
-        "br.final_status",
         "br.created_at",
         "b.name as buyer_name",
         "b.email as buyer_email",
@@ -585,21 +583,153 @@ export async function getBuyerRequests(req, res) {
     res.status(500).json({ error: err.message });
   }
 }
-
-export async function getBuyerRequestById(req, res) {
+export const getBuyerRequestById = async (req, res) => {
   try {
-    const { id } = req.params;
-    const request = await adminBuyerService.getBuyerRequestById(id);
+    const { id } = req.params; // buyer_request_id
 
-    if (!request) {
+    // 1️⃣ Fetch base buyer request with full details and all user joins
+    const request = await db("buyer_requests as br")
+      .leftJoin("users as buyer", "br.buyer_id", "buyer.id")
+      .leftJoin("users as ps", "br.preferred_supplier_id", "ps.id")
+      .leftJoin("users as creator", "br.creator_id", "creator.id")
+      .select(
+        // Buyer Request Core
+        "br.id",
+        "br.buyer_id",
+        "br.status",
+        "br.reviewed_by",
+        "br.reviewed_at",
+        "br.created_at",
+        "br.updated_at",
+        "br.size",
+        "br.expiration_date",
+        "br.certificates",
+        "br.import_country",
+        "br.entry_border",
+        "br.exit_border",
+        "br.preferred_supplier_name",
+        "br.preferred_supplier_id",
+        "br.packaging",
+        "br.egg_type",
+        "br.container_amount",
+        "br.expiration_days",
+        "br.transport_type",
+        "br.product_type",
+        "br.cartons",
+        "br.description",
+        "br.creator_id",
+        "br.admin_extra_files",
+        "br.deadline_start",
+        "br.deadline_end",
+
+        // Buyer Info
+        "buyer.name as buyer_name",
+        "buyer.email as buyer_email",
+        "buyer.mobile as buyer_mobile",
+
+        // Preferred Supplier Info
+        "ps.name as preferred_supplier_name",
+        "ps.email as preferred_supplier_email",
+        "ps.mobile as preferred_supplier_mobile",
+      )
+      .where("br.id", id)
+      .first();
+
+    if (!request)
       return res.status(404).json({ error: "Buyer request not found" });
+
+    // 2️⃣ Fetch farmer plans linked to this buyer request
+    const plans = await db("farmer_plans as fp")
+      .leftJoin("users as farmer", "fp.farmer_id", "farmer.id")
+      .select(
+        "fp.id",
+        "fp.plan_date",
+        "fp.created_at",
+        "fp.request_id",
+        "fp.farmer_id",
+        "farmer.name as farmer_name",
+        "farmer.email as farmer_email",
+        "farmer.mobile as farmer_mobile",
+      )
+      .where("fp.request_id", id);
+
+    // 3️⃣ Assigned suppliers (request-level)
+    request.assigned_suppliers = await db("buyer_request_suppliers as brs")
+      .leftJoin("users as s", "brs.supplier_id", "s.id")
+      .select(
+        "brs.id",
+        "brs.supplier_id",
+        "s.name as supplier_name",
+        "s.mobile as supplier_mobile",
+        "brs.share_percentage",
+        "brs.assigned_at",
+        "brs.container_id",
+      )
+      .where("brs.buyer_request_id", id);
+
+    // 4️⃣ For each plan → include containers, files, tracking, metadata
+    for (const plan of plans) {
+      const containers = await db("farmer_plan_containers as c")
+        .leftJoin("farmer_plans as p", "c.plan_id", "p.id")
+        .leftJoin("buyer_requests as br", "p.request_id", "br.id")
+        .leftJoin("users as supplier", "c.supplier_id", "supplier.id")
+        .select(
+          "c.id",
+          "c.plan_id",
+          "c.container_no",
+          "c.status as container_status",
+          "c.created_at as container_created_at",
+          "c.tracking_code",
+          "br.entry_border",
+          "br.exit_border",
+          "br.egg_type",
+          "br.import_country",
+          "br.cartons",
+          "br.container_amount",
+          "c.admin_metadata",
+          "c.admin_metadata_status",
+          "c.admin_metadata_review_note",
+          "supplier.name as supplier_name",
+          "supplier.mobile as supplier_mobile",
+          "c.supplier_id",
+        )
+        .where("c.plan_id", plan.id)
+        .orderBy("c.id", "asc");
+
+      for (const c of containers) {
+        // 🧾 Files
+        c.files = await db("farmer_plan_files")
+          .where({ container_id: c.id })
+          .select("id", "file_key", "original_name", "path", "status");
+
+        // 🛰 Tracking
+        c.tracking_history = await db("container_tracking_statuses")
+          .where({ container_id: c.id })
+          .select("id", "status", "created_at")
+          .orderBy("created_at", "desc");
+
+        // 🧠 Safe JSON parse
+        try {
+          c.admin_metadata = c.admin_metadata
+            ? JSON.parse(c.admin_metadata)
+            : {};
+        } catch {
+          c.admin_metadata = {};
+        }
+      }
+
+      plan.containers = containers;
     }
 
+    request.farmer_plans = plans;
+
+    // ✅ Final response
     res.json(request);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("getBuyerRequestById error:", err);
+    res.status(500).json({ error: "Failed to load buyer request details" });
   }
-}
+};
 
 export async function reviewBuyerRequest(req, res) {
   try {
@@ -632,12 +762,11 @@ export async function addAdminDocs(req, res) {
     });
 
     const existing = await db("buyer_requests").where({ id }).first();
-    const currentDocs = Array.isArray(existing.admin_docs)
-      ? existing.admin_docs
-      : existing.admin_docs
-        ? JSON.parse(existing.admin_docs)
+    const currentDocs = Array.isArray(existing.admin_extra_files)
+      ? existing.admin_extra_files
+      : existing.admin_extra_files
+        ? JSON.parse(existing.admin_extra_files)
         : [];
-
     const updatedDocs = [...currentDocs];
     newFiles.forEach((file) => {
       if (file.type) {
@@ -655,7 +784,7 @@ export async function addAdminDocs(req, res) {
     const [updated] = await db("buyer_requests")
       .where({ id })
       .update({
-        admin_docs: JSON.stringify(updatedDocs),
+        admin_extra_files: JSON.stringify(updatedDocs),
         updated_at: db.fn.now(),
       })
       .returning("*");
@@ -717,7 +846,7 @@ export async function toggleFinalStatus(req, res) {
 
     const [updated] = await db("buyer_requests")
       .where({ id })
-      .update({ final_status: action, updated_at: db.fn.now() })
+      .update({ status: action, updated_at: db.fn.now() })
       .returning("*");
 
     // ✅ Notify Buyer
@@ -771,20 +900,28 @@ export async function reviewFarmerFile(req, res) {
 export async function assignSuppliers(req, res) {
   try {
     const { id } = req.params;
-    const { supplier_ids } = req.body; // array of supplier IDs
+    const { supplier_ids } = req.body;
     const reviewerId = req.user.licenseId;
 
-    const result = await adminBuyerService.assignSuppliersToRequest(
-      id,
-      supplier_ids,
-      reviewerId,
-    );
+    const inserts = supplier_ids.map((sid) => ({
+      buyer_request_id: id,
+      supplier_id: sid,
+      assigned_by: reviewerId,
+      assigned_at: new Date(),
+    }));
 
-    res.json({
-      message: "تامین‌کنندگان با موفقیت تخصیص یافتند.",
-      assigned: result,
+    await db.transaction(async (trx) => {
+      for (const row of inserts) {
+        await trx("buyer_request_suppliers")
+          .insert(row)
+          .onConflict(["buyer_request_id", "supplier_id"])
+          .merge({ assigned_at: new Date(), assigned_by: reviewerId });
+      }
     });
+
+    res.json({ message: "Suppliers assigned successfully" });
   } catch (err) {
+    console.error("assignSuppliers error:", err);
     res.status(400).json({ error: err.message });
   }
 }
@@ -913,6 +1050,214 @@ export const deleteTicket = async (req, res) => {
   }
 };
 
+/* -------------------- List Containers by Request -------------------- */
+export const listContainersByRequestId = async (req, res) => {
+  try {
+    const { requestId } = req.query;
+    if (!requestId)
+      return res.status(400).json({ error: "Missing requestId parameter" });
+
+    // 1️⃣ Fetch buyer request
+    const buyerReq = await db("buyer_requests")
+      .select("id", "container_amount")
+      .where("id", requestId)
+      .first();
+
+    if (!buyerReq)
+      return res.status(404).json({ error: "Buyer request not found" });
+
+    // 2️⃣ Reuse or create farmer_plan (one per buyer_request)
+    let plan = await db("farmer_plans")
+      .where({ request_id: buyerReq.id })
+      .first();
+
+    if (!plan) {
+      const [newPlan] = await db("farmer_plans")
+        .insert({
+          request_id: buyerReq.id,
+          status: "submitted",
+          plan_date: new Date(),
+        })
+        .returning("*");
+      plan = newPlan;
+    }
+
+    // 3️⃣ Create missing containers only once
+    const existingCount = await db("farmer_plan_containers")
+      .where({ plan_id: plan.id })
+      .count("* as count")
+      .first();
+
+    if (Number(existingCount.count) === 0 && buyerReq.container_amount > 0) {
+      const inserts = Array.from(
+        { length: buyerReq.container_amount },
+        (_, i) => ({
+          plan_id: plan.id,
+          container_no: i + 1,
+          status: "submitted",
+          buyer_request_id: buyerReq.id,
+        }),
+      );
+
+      try {
+        await db("farmer_plan_containers").insert(inserts);
+      } catch (err) {
+        if (err.message.includes("duplicate key value")) {
+          console.warn(
+            "⚠️ Containers already exist, skipping duplicate inserts",
+          );
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    // 4️⃣ Fetch enriched container list with supplier info
+    const containers = await db("farmer_plan_containers as c")
+      .leftJoin("users as u", "c.supplier_id", "u.id")
+      .select(
+        "c.id as container_id",
+        "c.container_no",
+        "c.status as container_status",
+        "c.created_at as container_created_at",
+        "c.supplier_id",
+        "u.name as supplier_name",
+        "u.mobile as supplier_mobile",
+      )
+      .where("c.plan_id", plan.id)
+      .orderBy("c.container_no", "asc");
+
+    res.json({ containers });
+  } catch (err) {
+    console.error("listContainersByRequestId error:", err);
+    res.status(500).json({ error: "Failed to load containers" });
+  }
+};
+
+/* -------------------- List ALL Containers (for Admin) -------------------- */
+export const listAllContainersWithTracking = async (req, res) => {
+  try {
+    const containers = await db("farmer_plan_containers as c")
+      .leftJoin("farmer_plans as fp", "c.plan_id", "fp.id")
+      .leftJoin("buyer_requests as br", "fp.request_id", "br.id")
+      .leftJoin("users as supplier", "c.supplier_id", "supplier.id") // Use supplier_id from farmer_plan_containers table
+      .leftJoin("users as buyer", "br.buyer_id", "buyer.id")
+      .leftJoin(
+        db("container_tracking_statuses as t")
+          .select("container_id")
+          .max("created_at as latest_time")
+          .groupBy("container_id")
+          .as("last"),
+        "c.id",
+        "last.container_id",
+      )
+      .leftJoin("container_tracking_statuses as ct", function () {
+        this.on("ct.container_id", "=", "c.id").andOn(
+          "ct.created_at",
+          "=",
+          "last.latest_time",
+        );
+      })
+      .select(
+        "c.id as container_id",
+        "c.container_no",
+        "c.status as container_status",
+        "c.created_at",
+        "c.updated_at",
+        "supplier.name as supplier_name", // Changed from farmer_name to supplier_name
+        "buyer.name as buyer_name",
+        "br.import_country",
+        "br.product_type",
+        "br.egg_type",
+        "br.cartons",
+        "ct.tracking_code",
+        "ct.status as latest_status",
+        "ct.note as latest_note",
+        "ct.created_at as latest_tracking_time",
+      )
+      .orderBy("c.created_at", "desc");
+
+    res.json(containers);
+  } catch (err) {
+    console.error("listAllContainersWithTracking error:", err);
+    res.status(500).json({ error: "Failed to load all containers" });
+  }
+};
+
+/* -------------------- Assign Containers to Suppliers -------------------- */
+
+export const assignContainersToSuppliers = async (req, res) => {
+  try {
+    const { requestId, assignments } = req.body;
+
+    if (!requestId || !Array.isArray(assignments) || assignments.length === 0) {
+      return res.status(400).json({ error: "Invalid payload" });
+    }
+
+    // 🧩 Deduplicate + sanitize
+    const seen = new Set();
+    const uniqueAssignments = assignments
+      .filter((a) => a.container_id && a.supplier_id)
+      .map((a) => ({
+        container_id: Number(a.container_id),
+        supplier_id: Number(a.supplier_id),
+      }))
+      .filter((a) => {
+        const key = `${a.container_id}-${a.supplier_id}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
+    if (uniqueAssignments.length === 0) {
+      return res.status(400).json({ error: "No valid container assignments" });
+    }
+
+    // 🔒 Run all updates inside one transaction
+    await db.transaction(async (trx) => {
+      for (const { supplier_id, container_id } of uniqueAssignments) {
+        await trx.raw(
+          `
+          UPDATE farmer_plan_containers AS c
+          SET supplier_id = ?, updated_at = CURRENT_TIMESTAMP
+          FROM farmer_plans AS fp
+          WHERE fp.id = c.plan_id
+            AND fp.request_id = ?
+            AND c.id = ?
+          `,
+          [supplier_id, requestId, container_id],
+        );
+      }
+    });
+
+    // 🧾 Return updated list for frontend
+    const updatedContainers = await db("farmer_plan_containers as c")
+      .join("farmer_plans as fp", "fp.id", "c.plan_id")
+      .leftJoin("users as u", "c.supplier_id", "u.id")
+      .where("fp.request_id", requestId)
+      .select(
+        "c.id as container_id",
+        "c.container_no",
+        "c.status as container_status",
+        "u.id as supplier_id",
+        "u.name as supplier_name",
+        "u.mobile as supplier_mobile",
+      )
+      .orderBy("c.id", "asc");
+
+    res.json({
+      success: true,
+      message: "✅ تخصیص تامین‌کنندگان با موفقیت انجام شد",
+      updatedContainers,
+    });
+  } catch (err) {
+    console.error("assignContainersToSuppliers error:", err);
+    res.status(500).json({
+      error: err.message || "Failed to assign suppliers",
+    });
+  }
+};
+
 /* -------------------- Update deadline -------------------- */
 export const updateBuyerRequestDeadline = async (req, res) => {
   try {
@@ -999,10 +1344,198 @@ export const completeBuyerRequest = async (req, res) => {
     const { id } = req.params;
     const adminId = req.user.id;
 
-    const result = await adminService.toggleRequestCompletion(id, adminId);
-    res.json(result);
+    await db.transaction(async (trx) => {
+      const [updated] = await trx("buyer_requests")
+        .where({ id })
+        .update({ status: "completed", updated_at: trx.fn.now() })
+        .returning("*");
+
+      await trx("farmer_plan_containers")
+        .whereIn(
+          "plan_id",
+          trx("farmer_plans").select("id").where("request_id", id),
+        )
+        .update({ is_completed: true, completed_at: trx.fn.now() });
+
+      await NotificationService.create(updated.buyer_id, "completed", id, {
+        request_id: id,
+        status: "completed",
+      });
+
+      res.json({
+        message: "Request and containers marked completed",
+        request: updated,
+      });
+    });
   } catch (err) {
     console.error("completeBuyerRequest error:", err);
     res.status(400).json({ error: err.message });
+  }
+};
+
+/* -------------------- Toggle In-Progress -------------------- */
+export async function toggleInProgress(req, res) {
+  try {
+    const { id } = req.params;
+    const result = await adminService.toggleInProgress(id, req.user.id);
+    res.json(result);
+  } catch (err) {
+    console.error("toggleInProgress error:", err);
+    res.status(400).json({ error: err.message });
+  }
+}
+/* -------------------- ADMIN: Mark Container as Completed -------------------- */
+export async function markContainerCompleted(req, res) {
+  try {
+    const { id } = req.params;
+    const user = req.user; // assuming authenticate middleware attaches user info
+
+    if (!user || !user.roles?.includes("admin")) {
+      return res
+        .status(403)
+        .json({ error: "Unauthorized: Admin access required" });
+    }
+
+    const result = await adminService.markContainerCompleted(id, user.id);
+    res.json(result);
+  } catch (err) {
+    console.error("markContainerCompleted error:", err);
+    res.status(400).json({ error: err.message });
+  }
+}
+/**
+ * Get full container details with related buyer request, farmer, supplier, files, and tracking info
+ */
+export const getContainerById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // 1️⃣ Get main container with plan + request + user info
+    const container = await db("farmer_plan_containers as c")
+      .leftJoin("farmer_plans as fp", "c.plan_id", "fp.id")
+      .leftJoin("buyer_requests as br", "fp.request_id", "br.id")
+      .leftJoin("users as farmer", "fp.farmer_id", "farmer.id")
+      .leftJoin("users as supplier", "c.supplier_id", "supplier.id")
+      .leftJoin("users as buyer", "br.buyer_id", "buyer.id")
+      .select(
+        "c.*",
+
+        // 🧩 Plan info
+        "fp.id as plan_id",
+        "fp.plan_date",
+        "fp.status as plan_status",
+
+        // 🧾 Buyer Request - include all columns from buyer_requests
+        "br.id as buyer_request_id",
+        "br.buyer_id",
+        "br.status as buyer_request_status",
+        "br.reviewed_by",
+        "br.reviewed_at",
+        "br.created_at as buyer_request_created_at",
+        "br.updated_at as buyer_request_updated_at",
+        "br.size",
+        "br.expiration_date",
+        "br.certificates",
+        "br.import_country",
+        "br.entry_border",
+        "br.exit_border",
+        "br.preferred_supplier_name",
+        "br.preferred_supplier_id",
+        "br.packaging",
+        "br.egg_type",
+        "br.container_amount",
+        "br.expiration_days",
+        "br.transport_type",
+        "br.product_type",
+        "br.cartons",
+        "br.description",
+        "br.creator_id",
+        "br.admin_extra_files",
+        "br.deadline_start",
+        "br.deadline_end",
+
+        // 👨‍🌾 Farmer Info
+        "farmer.id as farmer_id",
+        "farmer.name as farmer_name",
+        "farmer.email as farmer_email",
+        "farmer.mobile as farmer_mobile",
+
+        // 🏢 Supplier Info
+        "supplier.id as supplier_id",
+        "supplier.name as supplier_name",
+        "supplier.email as supplier_email",
+        "supplier.mobile as supplier_mobile",
+
+        // 🧍 Buyer Info
+        "buyer.id as buyer_id",
+        "buyer.name as buyer_name",
+        "buyer.email as buyer_email",
+        "buyer.mobile as buyer_mobile",
+      )
+      .where("c.id", id)
+      .first();
+
+    if (!container) {
+      return res.status(404).json({ error: "Container not found" });
+    }
+
+    // 2️⃣ Get all suppliers assigned to this buyer request
+    const buyerSuppliers = await db("buyer_request_suppliers as brs")
+      .leftJoin("users as s", "brs.supplier_id", "s.id")
+      .select(
+        "brs.id",
+        "brs.buyer_request_id",
+        "brs.supplier_id",
+        "brs.share_percentage",
+        "brs.assigned_at",
+        "s.name as supplier_name",
+        "s.email as supplier_email",
+      )
+      .where("brs.buyer_request_id", container.buyer_request_id);
+
+    // 3️⃣ Fetch all related files for this container
+    const files = await db("farmer_plan_files")
+      .where("container_id", id)
+      .select(
+        "id",
+        "original_name",
+        "mime_type",
+        "path",
+        "status",
+        "review_note",
+        "type",
+        "created_at",
+      )
+      .orderBy("created_at", "desc");
+
+    // 4️⃣ Container tracking timeline
+    const tracking = await db("container_tracking_statuses as t")
+      .leftJoin("users as u", "t.created_by", "u.id")
+      .select(
+        "t.id",
+        "t.status",
+        "t.note",
+        "t.created_at",
+        "u.name as created_by_name",
+      )
+      .where("t.container_id", id)
+      .orderBy("t.created_at", "asc");
+
+    // 5️⃣ Other containers in the same plan
+    const siblingContainers = await db("farmer_plan_containers")
+      .where("plan_id", container.plan_id)
+      .select("id", "container_no", "status");
+
+    // ✅ Final response — everything enriched
+    res.json({
+      ...container,
+      buyer_request_suppliers: buyerSuppliers,
+      files,
+      tracking,
+      sibling_containers: siblingContainers,
+    });
+  } catch (err) {
+    console.error("getContainerById error:", err);
+    res.status(500).json({ error: "Failed to fetch container details" });
   }
 };

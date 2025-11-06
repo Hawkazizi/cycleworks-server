@@ -7,11 +7,14 @@ import upload from "../middleware/upload.js";
 
 const router = Router();
 
-/* -------------------- Auth -------------------- */
-// Admin (Manager) login
+/* =======================================================================
+   🔐 AUTHENTICATION & PROFILE
+======================================================================= */
+
+// Login
 router.post("/login", adminController.loginWithLicense);
 
-// Admin (Manager) prsofile
+// Profile
 router.get(
   "/profile",
   authenticate,
@@ -25,7 +28,7 @@ router.patch(
   adminController.updateProfile,
 );
 
-// 🆕 Profile Picture (Admin / Manager)
+// Profile picture
 router.post(
   "/profile/picture",
   authenticate,
@@ -40,18 +43,22 @@ router.get(
   adminController.getProfilePicture,
 );
 
-// 🧹 Delete admin/manager profile
+// Delete profile
 router.delete(
   "/profile",
   authenticate,
   authorize("admin", "manager"),
   adminController.deleteProfile,
 );
-/* -------------------- Users -------------------- */
+
+/* =======================================================================
+   👥 USER MANAGEMENT
+======================================================================= */
+
 router.post(
   "/users",
   authenticate,
-  authorize("admin"),
+  authorize("admin", "manager"),
   adminController.createUser,
 );
 router.get(
@@ -60,11 +67,11 @@ router.get(
   authorize("admin", "manager"),
   adminController.listUsers,
 );
-router.patch(
-  "/users/:id/status",
+router.get(
+  "/users/:id",
   authenticate,
-  authorize("admin"),
-  adminController.banOrUnbanUser,
+  authorize("admin", "manager", "buyer", "user"),
+  adminController.getUserById,
 );
 router.get(
   "/users/:id/picture",
@@ -72,70 +79,32 @@ router.get(
   authorize("admin", "manager"),
   adminController.getUserProfilePicture,
 );
-
-router.get(
-  "/users/:id",
+router.patch(
+  "/users/:id/status",
   authenticate,
-  authorize("admin", "manager", "buyer", "user"),
-  adminController.getUserById,
+  authorize("admin", "manager"),
+  adminController.banOrUnbanUser,
 );
 router.delete(
   "/users/:id",
   authenticate,
-  authorize("admin"),
+  authorize("admin", "manager"),
   adminController.deleteUser,
 );
 
-/* -------------------- Reports -------------------- */
+/* =======================================================================
+   🧩 ROLES & SETTINGS
+======================================================================= */
+
+// Roles
 router.get(
-  "/reports/export-csv",
+  "/roles",
   authenticate,
   authorize("admin", "manager"),
-  adminController.exportReportsCSV,
+  adminController.getRoles,
 );
 
-/* -------------------- Applications -------------------- */
-router.get(
-  "/applications",
-  authenticate,
-  authorize("admin", "manager"),
-  adminController.getApplications,
-);
-router.get(
-  "/applications/user/:userId",
-  authenticate,
-  authorize("admin", "manager", "user"),
-  adminController.getApplicationsByUser,
-);
-
-router.patch(
-  "/applications/:id",
-  authenticate,
-  authorize("admin", "manager", "user"),
-  upload.fields([
-    { name: "biosecurity", maxCount: 1 },
-    { name: "vaccination", maxCount: 1 },
-    { name: "emergency", maxCount: 1 },
-    { name: "food_safety", maxCount: 1 },
-    { name: "description", maxCount: 1 },
-    { name: "farm_biosecurity", maxCount: 1 },
-  ]),
-  adminController.updateApplication,
-);
-router.post(
-  "/applications/:id/review",
-  authenticate,
-  authorize("admin"),
-  adminController.reviewApplication,
-);
-router.patch(
-  "/applications/:id/final-review",
-  authenticate,
-  authorize("admin", "manager"),
-  adminController.finalizeApplicationReview,
-);
-
-/* -------------------- Settings -------------------- */
+// Settings
 router.get(
   "/settings",
   authenticate,
@@ -145,11 +114,14 @@ router.get(
 router.patch(
   "/settings/:key",
   authenticate,
-  authorize("admin"),
+  authorize("admin", "manager"),
   adminController.updateSetting,
 );
 
-/* -------------------- License Keys -------------------- */
+/* =======================================================================
+   🔑 LICENSE KEYS
+======================================================================= */
+
 router.get(
   "/license-keys",
   authenticate,
@@ -181,61 +153,140 @@ router.delete(
   adminController.deleteLicenseKey,
 );
 
-/* -------------------- Roles -------------------- */
+/* =======================================================================
+   📋 APPLICATIONS
+======================================================================= */
+
 router.get(
-  "/roles",
+  "/applications",
   authenticate,
   authorize("admin", "manager"),
-  adminController.getRoles,
+  adminController.getApplications,
+);
+router.get(
+  "/applications/user/:userId",
+  authenticate,
+  authorize("admin", "manager", "user"),
+  adminController.getApplicationsByUser,
+);
+router.patch(
+  "/applications/:id",
+  authenticate,
+  authorize("admin", "manager", "user"),
+  upload.fields([
+    { name: "biosecurity", maxCount: 1 },
+    { name: "vaccination", maxCount: 1 },
+    { name: "emergency", maxCount: 1 },
+    { name: "food_safety", maxCount: 1 },
+    { name: "description", maxCount: 1 },
+    { name: "farm_biosecurity", maxCount: 1 },
+  ]),
+  adminController.updateApplication,
+);
+router.post(
+  "/applications/:id/review",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.reviewApplication,
+);
+router.patch(
+  "/applications/:id/final-review",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.finalizeApplicationReview,
 );
 
-/* -------------------- Buyer Requests -------------------- */
+/* =======================================================================
+   💼 BUYER REQUESTS
+======================================================================= */
+
 router.get(
   "/buyer-requests",
   authenticate,
   authorize("admin", "manager"),
   adminController.getBuyerRequests,
 );
-router.post(
-  "/buyer-requests/:id/review",
-  authenticate,
-  authorize("admin"),
-  adminController.reviewBuyerRequest,
-);
-router.post(
-  "/buyer-requests/:id/admin-docs",
-  authenticate,
-  authorize("admin"),
-  upload.array("files"),
-  adminController.addAdminDocs,
-);
-router.patch(
-  "/buyer-requests/:id",
-  authenticate,
-  authorize("admin"),
-  adminController.updateBuyerRequest,
-);
-router.post(
-  "/buyer-requests/:id/final-status",
-  authenticate,
-  authorize("admin"),
-  adminController.toggleFinalStatus,
-);
-
 router.get(
   "/buyer-requests/:id",
   authenticate,
   authorize("admin", "manager"),
   adminController.getBuyerRequestById,
 );
-
-// Review farmer files
-router.post(
-  "/farmer-files/:fileId/review",
+router.patch(
+  "/buyer-requests/:id",
   authenticate,
-  authorize("admin"),
-  adminController.reviewFarmerFile,
+  authorize("admin", "manager"),
+  adminController.updateBuyerRequest,
 );
+router.post(
+  "/buyer-requests/:id/review",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.reviewBuyerRequest,
+);
+router.post(
+  "/buyer-requests/:id/admin-docs",
+  authenticate,
+  authorize("admin", "manager"),
+  upload.array("files"),
+  adminController.addAdminDocs,
+);
+router.post(
+  "/buyer-requests/:id/final-status",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.toggleFinalStatus,
+);
+router.post(
+  "/buyer-requests/:id/assign-suppliers",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.assignSuppliers,
+);
+router.patch(
+  "/buyer-requests/:id/update-deadline",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.updateBuyerRequestDeadline,
+);
+
+/* =======================================================================
+   🚚 CONTAINERS
+======================================================================= */
+
+// 🔸 List all containers (must come before :id)
+router.get(
+  "/containers/all",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.listAllContainersWithTracking,
+);
+
+// 🔸 Get single container details
+router.get(
+  "/containers/:id",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.getContainerById,
+);
+
+// 🔸 List containers by Buyer Request
+router.get(
+  "/containers",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.listContainersByRequestId,
+);
+
+// 🔸 Assign containers to suppliers
+router.post(
+  "/containers/assign",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.assignContainersToSuppliers,
+);
+
+// 🔸 Review / Update metadata
 router.patch(
   "/containers/:id/metadata-review",
   authenticate,
@@ -249,14 +300,54 @@ router.patch(
   adminController.updateContainerAdminMetadataController,
 );
 
-router.post(
-  "/buyer-requests/:id/assign-suppliers",
+// 🔸 Container tracking operations
+router.get(
+  "/containers-with-tracking",
   authenticate,
-  authorize("admin"),
-  adminController.assignSuppliers,
+  authorize("admin", "manager"),
+  adminTrackingCtrl.listAllContainersWithTracking,
+);
+router.get(
+  "/containers/:id/files",
+  authenticate,
+  authorize("admin", "manager"),
+  adminTrackingCtrl.getContainerFiles,
+);
+router.get(
+  "/tracking-code/:code",
+  authenticate,
+  authorize("admin", "manager"),
+  adminTrackingCtrl.findByTrackingCode,
+);
+router.patch(
+  "/containers/:id/toggle-progress",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.toggleInProgress,
+);
+router.patch(
+  "/containers/:id/complete",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.markContainerCompleted,
 );
 
-/* -------------------- Tickets -------------------- */
+/* =======================================================================
+   📂 FILES & REVIEWS
+======================================================================= */
+
+// Review farmer file
+router.post(
+  "/farmer-files/:fileId/review",
+  authenticate,
+  authorize("admin"),
+  adminController.reviewFarmerFile,
+);
+
+/* =======================================================================
+   🎟️ TICKETS
+======================================================================= */
+
 router.get(
   "/tickets",
   authenticate,
@@ -282,43 +373,26 @@ router.post(
   authorize("admin", "manager"),
   adminController.closeTicket,
 );
-
 router.delete(
   "/tickets/:id",
   authenticate,
   authorize("admin", "manager"),
-
   adminController.deleteTicket,
 );
 
-/* -------------------- Update deadline -------------------- */
+/* =======================================================================
+   📊 REPORTS & COMPLETION
+======================================================================= */
 
-router.patch(
-  "/buyer-requests/:id/update-deadline",
-  authenticate,
-  authorize("admin"), // only admin allowed
-  adminController.updateBuyerRequestDeadline,
-);
-/* -------------------- Container Tracking -------------------- */
+// Reports export
 router.get(
-  "/containers-with-tracking",
+  "/reports/export-csv",
   authenticate,
   authorize("admin", "manager"),
-  adminTrackingCtrl.listAllContainersWithTracking,
+  adminController.exportReportsCSV,
 );
-router.get(
-  "/containers/:id/files",
-  authenticate,
-  authorize("admin", "manager"),
-  adminTrackingCtrl.getContainerFiles,
-);
-router.get(
-  "/tracking-code/:code",
-  authenticate,
-  authorize("admin", "manager"),
-  adminTrackingCtrl.findByTrackingCode,
-);
-/* -------------------- Completion -------------------- */
+
+// Mark buyer request complete
 router.put(
   "/buyer-requests/:id/complete",
   authenticate,

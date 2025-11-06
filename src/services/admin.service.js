@@ -1,12 +1,21 @@
 import db from "../db/knex.js";
 import jwt from "jsonwebtoken";
-import { JWT_SECRET, JWT_EXPIRES_IN } from "../config/jwt.js";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
+import { JWT_SECRET, JWT_EXPIRES_IN } from "../config/jwt.js";
 import { NotificationService } from "./notification.service.js";
+
 const BASE_URL = process.env.BASE_URL || "http://localhost:5000";
 
-/* -------------------- Auth -------------------- */
+/* =======================================================================
+   🔐 AUTHENTICATION
+======================================================================= */
+
+/**
+ * Login using admin/manager license key.
+ * @param {string} licenseKey - License key string
+ * @param {"admin"|"manager"} role - Optional expected role
+ */
 export const loginWithLicense = async (licenseKey, role) => {
   const license = await db("admin_license_keys")
     .where({ key: licenseKey, is_active: true })
@@ -18,20 +27,16 @@ export const loginWithLicense = async (licenseKey, role) => {
   const roleRow = await db("roles").where("id", license.role_id).first();
   if (!roleRow) throw new Error("Role not found for this license");
 
-  const licenseRole = roleRow.name.toLowerCase(); // "admin" | "manager"
-
-  if (role && licenseRole !== role.toLowerCase()) {
+  const licenseRole = roleRow.name.toLowerCase();
+  if (role && licenseRole !== role.toLowerCase())
     throw new Error("Role mismatch for this license");
-  }
 
   const user = await db("users")
-    .where("id", license.assigned_to)
-    .andWhere("status", "active")
+    .where({ id: license.assigned_to, status: "active" })
     .first();
 
-  if (!user) {
+  if (!user)
     throw new Error(`No active ${licenseRole} user found for this license`);
-  }
 
   const payload = {
     id: user.id,
@@ -49,7 +54,10 @@ export const loginWithLicense = async (licenseKey, role) => {
   };
 };
 
-/* -------------------- Profile -------------------- */
+/* =======================================================================
+   👤 PROFILE MANAGEMENT
+======================================================================= */
+
 export const getAdminProfile = async (userId) => {
   const admin = await db("users")
     .leftJoin("user_roles", "users.id", "user_roles.user_id")
@@ -63,17 +71,13 @@ export const getAdminProfile = async (userId) => {
       "users.created_at",
       "roles.name as role",
     )
-    .where("users.id", userId)
-    .andWhere("users.status", "active")
+    .where({ "users.id": userId, "users.status": "active" })
     .first();
 
-  if (!admin) {
-    throw new Error("Admin/Manager not found");
-  }
+  if (!admin) throw new Error("Admin/Manager not found");
 
   const license = await db("admin_license_keys")
-    .where("assigned_to", userId)
-    .andWhere("is_active", true)
+    .where({ assigned_to: userId, is_active: true })
     .first();
 
   return {
@@ -86,38 +90,31 @@ export const getAdminProfile = async (userId) => {
 };
 
 export const updateAdminProfile = async (userId, data) => {
-  // 🧩 Extract fields
   const { email, mobile, name } = data;
 
-  // 🛑 Check for duplicate email
+  // Uniqueness checks
   if (email) {
     const existingEmail = await db("users")
-      .where("email", email)
+      .where({ email })
       .andWhereNot("id", userId)
       .first();
-
-    if (existingEmail) {
+    if (existingEmail)
       throw new Error("این ایمیل قبلاً توسط کاربر دیگری استفاده شده است.");
-    }
   }
 
-  // 🛑 Optional: also check duplicate mobile (if needed)
   if (mobile) {
     const existingMobile = await db("users")
-      .where("mobile", mobile)
+      .where({ mobile })
       .andWhereNot("id", userId)
       .first();
-
-    if (existingMobile) {
+    if (existingMobile)
       throw new Error(
         "این شماره موبایل قبلاً توسط کاربر دیگری استفاده شده است.",
       );
-    }
   }
 
-  // ✅ Proceed to update safely
   const [updated] = await db("users")
-    .where("id", userId)
+    .where({ id: userId })
     .update(
       {
         ...(name && { name }),
@@ -129,11 +126,13 @@ export const updateAdminProfile = async (userId, data) => {
     );
 
   if (!updated) throw new Error("Profile update failed");
-
   return updated;
 };
 
-/* -------------------- Users -------------------- */
+/* =======================================================================
+   👥 USER MANAGEMENT
+======================================================================= */
+
 export const createUserWithRole = async ({
   name,
   email,
@@ -141,41 +140,30 @@ export const createUserWithRole = async ({
   role_id,
 }) => {
   return db.transaction(async (trx) => {
-    // check if email already exists
     const exists = await trx("users").where({ email }).first();
     if (exists) throw new Error("ایمیل قبلاً استفاده شده است.");
 
-    // hash password
     const password_hash = await bcrypt.hash(password, 10);
 
-    // create user
     const [user] = await trx("users")
-      .insert({
-        name,
-        email,
-        password_hash,
-        status: "active",
-      })
+      .insert({ name, email, password_hash, status: "active" })
       .returning(["id", "name", "email", "status", "created_at"]);
 
-    // assign role
     if (role_id) {
-      await trx("user_roles").insert({
-        user_id: user.id,
-        role_id,
-      });
+      await trx("user_roles").insert({ user_id: user.id, role_id });
     }
 
     return user;
   });
 };
+
 export const getAllUsers = async () => {
   return db("users as u")
     .leftJoin("user_roles as ur", "u.id", "ur.user_id")
     .leftJoin("roles as r", "ur.role_id", "r.id")
-    .leftJoin("farmer_plans as fp", "fp.farmer_id", "u.id") // 👈 Link user → farmer plans
-    .leftJoin("farmer_plan_containers as c", "c.plan_id", "fp.id") // 👈 Link plans → containers
-    .groupBy("u.id", "r.name") // 👈 Needed for aggregate queries
+    .leftJoin("farmer_plans as fp", "fp.farmer_id", "u.id")
+    .leftJoin("farmer_plan_containers as c", "c.plan_id", "fp.id")
+    .groupBy("u.id", "r.name")
     .select(
       "u.id",
       "u.name",
@@ -183,15 +171,13 @@ export const getAllUsers = async () => {
       "u.status",
       "u.created_at",
       "r.name as role_name",
-      db.raw("COUNT(c.id) AS containers_count"), // 👈 Add container count
+      db.raw("COUNT(c.id) AS containers_count"),
     )
     .orderBy("u.id", "asc");
 };
 
 export const toggleUserStatus = async (targetUserId, action, adminId) => {
-  if (targetUserId === adminId) {
-    throw new Error("Admins cannot ban themselves");
-  }
+  if (targetUserId === adminId) throw new Error("Admins cannot ban themselves");
 
   const user = await db("users")
     .select("id", "status", "name", "email", "created_at")
@@ -200,83 +186,61 @@ export const toggleUserStatus = async (targetUserId, action, adminId) => {
 
   if (!user) throw new Error("User not found");
 
-  if (action === "ban" && user.status === "inactive") {
+  if (action === "ban" && user.status === "inactive")
     throw new Error("User is already inactive");
-  }
-  if (action === "unban" && user.status === "active") {
+  if (action === "unban" && user.status === "active")
     throw new Error("User is already active");
-  }
 
-  const status = action === "ban" ? "inactive" : "active";
-  const [updatedUser] = await db("users")
+  const newStatus = action === "ban" ? "inactive" : "active";
+  const [updated] = await db("users")
     .where({ id: targetUserId })
-    .update({ status }, ["id", "name", "email", "status", "created_at"]);
+    .update({ status: newStatus })
+    .returning(["id", "name", "email", "status", "created_at"]);
 
-  return updatedUser;
+  return updated;
 };
 
 export const deleteUser = async (userId) => {
   return db.transaction(async (trx) => {
-    // Delete from user_roles
     await trx("user_roles").where({ user_id: userId }).del();
-
-    // Delete from user_applications
     await trx("user_applications").where({ user_id: userId }).del();
-
-    // Unassign from license keys
     await trx("admin_license_keys")
       .where({ assigned_to: userId })
       .update({ assigned_to: null });
 
-    // Finally delete the user
     const deleted = await trx("users").where({ id: userId }).del();
-
     if (!deleted) throw new Error("User not found");
     return true;
   });
 };
-/* -------------------- Applications -------------------- */
-/* -------------------- Applications (All) -------------------- */
+
+/* =======================================================================
+   🧾 APPLICATIONS
+======================================================================= */
+
+/** 🗂️ Get all user applications (with attached files and review info) */
 export const getApplications = async () => {
-  const rows = await db("user_applications")
-    .join("users", "user_applications.user_id", "users.id")
-    .leftJoin(
-      "users as reviewer",
-      "user_applications.reviewed_by",
-      "reviewer.id",
-    )
-    .leftJoin(
-      "users as final_reviewer",
-      "user_applications.final_reviewed_by",
-      "final_reviewer.id",
-    )
-    .select(
-      "user_applications.id",
-      "users.name",
-      "users.email",
-      "users.mobile",
-      "user_applications.reason",
-      "user_applications.status",
-      "user_applications.biosecurity",
-      "user_applications.vaccination",
-      "user_applications.emergency",
-      "user_applications.food_safety",
-      "user_applications.description",
-      "user_applications.farm_biosecurity",
-      "user_applications.created_at",
-      "user_applications.supplier_name",
+  const rows = await baseApplicationQuery();
+  return rows.map(enrichApplicationFiles);
+};
 
-      // 🆕 Second phase fields
-      "user_applications.final_approved",
-      "user_applications.final_admin_comment",
-      "user_applications.final_reviewed_by",
-      "user_applications.final_reviewed_at",
-      db.raw("reviewer.name as reviewed_by_name"),
-      db.raw("final_reviewer.name as final_reviewed_by_name"),
-    )
-    .orderBy("user_applications.created_at", "desc");
+/** 🧍 Get applications belonging to a single user */
+export const getApplicationsByUser = async (userId) => {
+  const rows = await baseApplicationQuery().where(
+    "user_applications.user_id",
+    userId,
+  );
+  return rows.map(enrichApplicationFiles);
+};
 
-  const fileFields = [
+/** 🔧 Update application (by admin or user) */
+export const updateApplication = async (id, updates, userId, role) => {
+  const existing = await db("user_applications").where({ id }).first();
+  if (!existing) throw new Error("Application not found");
+
+  const userEditable = [
+    "reason",
+    "supplier_name",
     "biosecurity",
     "vaccination",
     "emergency",
@@ -285,39 +249,74 @@ export const getApplications = async () => {
     "farm_biosecurity",
   ];
 
-  return rows.map((row) => {
-    const files = {};
-    fileFields.forEach((field) => {
-      if (row[field]) {
-        try {
-          const parsed =
-            typeof row[field] === "string"
-              ? JSON.parse(row[field])
-              : row[field];
-          files[field] = {
-            ...parsed,
-            url: parsed?.path
-              ? `${BASE_URL}${parsed.path.startsWith("/") ? parsed.path : `/${parsed.path}`}`
-              : null,
-          };
-        } catch {
-          files[field] = null;
-        }
-      } else {
-        files[field] = null;
-      }
-    });
+  const adminEditable = [
+    "status",
+    "reviewed_by",
+    "reviewed_at",
+    "notes",
+    "admin_comment",
+    "final_approved",
+    "final_admin_comment",
+  ];
 
-    return {
-      ...row,
-      files,
-    };
-  });
+  let allowed = [];
+  if (["admin", "manager"].includes(role))
+    allowed = [...userEditable, ...adminEditable];
+  else if (["user", "farmer"].includes(role)) allowed = [...userEditable];
+
+  const updateData = Object.fromEntries(
+    Object.entries(updates).filter(([key]) => allowed.includes(key)),
+  );
+
+  if (!Object.keys(updateData).length)
+    throw new Error("No valid fields to update");
+
+  // Phase 1: Status approval
+  if (updateData.status && ["admin", "manager"].includes(role)) {
+    const userStatus = updateData.status === "approved" ? "active" : "pending";
+    await db("users")
+      .where({ id: existing.user_id })
+      .update({ status: userStatus });
+  }
+
+  // Phase 2: Final review
+  if ("final_approved" in updates && ["admin", "manager"].includes(role)) {
+    updateData.final_reviewed_by = userId;
+    updateData.final_reviewed_at = db.fn.now();
+
+    const message = updates.final_approved
+      ? "Your application has been fully approved."
+      : "Your application requires further changes.";
+
+    try {
+      await NotificationService.create({
+        user_id: existing.user_id,
+        title: "Final Application Review",
+        message,
+      });
+    } catch (err) {
+      console.warn("Notification failed:", err.message);
+    }
+  }
+
+  const [updated] = await db("user_applications")
+    .where({ id })
+    .update(
+      {
+        ...updateData,
+        ...(role !== "user"
+          ? { reviewed_by: userId, reviewed_at: db.fn.now() }
+          : {}),
+      },
+      "*",
+    );
+
+  return { message: "Application updated", application: updated };
 };
 
-/* -------------------- Applications by User -------------------- */
-export const getApplicationsByUser = async (userId) => {
-  const rows = await db("user_applications")
+/* -------------------- Internal: Base Application Query -------------------- */
+function baseApplicationQuery() {
+  return db("user_applications")
     .join("users", "user_applications.user_id", "users.id")
     .leftJoin(
       "users as reviewer",
@@ -335,18 +334,13 @@ export const getApplicationsByUser = async (userId) => {
       "users.email",
       "users.mobile",
       "users.status as user_status",
-
-      // 🆕 Second phase fields
-      "user_applications.final_approved",
-      "user_applications.final_admin_comment",
-      "user_applications.final_reviewed_by",
-      "user_applications.final_reviewed_at",
       db.raw("reviewer.name as reviewed_by_name"),
       db.raw("final_reviewer.name as final_reviewed_by_name"),
     )
-    .where("user_applications.user_id", userId)
     .orderBy("user_applications.created_at", "desc");
+}
 
+function enrichApplicationFiles(row) {
   const fileFields = [
     "biosecurity",
     "vaccination",
@@ -355,137 +349,31 @@ export const getApplicationsByUser = async (userId) => {
     "description",
     "farm_biosecurity",
   ];
-
-  return rows.map((row) => {
-    const files = {};
-    fileFields.forEach((field) => {
-      if (row[field]) {
-        try {
-          const parsed =
-            typeof row[field] === "string"
-              ? JSON.parse(row[field])
-              : row[field];
-          files[field] = {
-            ...parsed,
-            url: parsed?.path
-              ? `${BASE_URL}${parsed.path.startsWith("/") ? parsed.path : `/${parsed.path}`}`
-              : null,
-          };
-        } catch {
-          files[field] = null;
-        }
-      } else {
+  const files = {};
+  for (const field of fileFields) {
+    if (row[field]) {
+      try {
+        const parsed =
+          typeof row[field] === "string" ? JSON.parse(row[field]) : row[field];
+        files[field] = {
+          ...parsed,
+          url: parsed?.path
+            ? `${BASE_URL}${parsed.path.startsWith("/") ? parsed.path : `/${parsed.path}`}`
+            : null,
+        };
+      } catch {
         files[field] = null;
       }
-    });
-
-    return {
-      ...row,
-      files,
-    };
-  });
-};
-
-export const updateApplication = async (id, updates, userId, role) => {
-  // Validate existence
-  const existing = await db("user_applications").where({ id }).first();
-  if (!existing) throw new Error("Application not found");
-
-  // Fields users can update (their application details)
-  const userEditableFields = [
-    "reason",
-    "supplier_name",
-    "biosecurity",
-    "vaccination",
-    "emergency",
-    "food_safety",
-    "description",
-    "farm_biosecurity",
-  ];
-
-  // Fields admins can update for reviews + approvals
-  const adminOnlyFields = [
-    "status",
-    "reviewed_by",
-    "reviewed_at",
-    "notes",
-    "admin_comment",
-    "final_approved",
-    "final_admin_comment",
-  ];
-
-  // ✅ Admins and managers can edit both sets of fields
-  let allowedFields = [];
-  if (role === "admin" || role === "manager") {
-    allowedFields = [...userEditableFields, ...adminOnlyFields];
-  } else if (role === "user" || role === "farmer") {
-    allowedFields = [...userEditableFields];
+    } else files[field] = null;
   }
+  return { ...row, files };
+}
 
-  // Filter only allowed fields
-  const updateData = {};
-  for (const key in updates) {
-    if (allowedFields.includes(key)) {
-      updateData[key] = updates[key];
-    }
-  }
+/* =======================================================================
+   ⚙️ SETTINGS
+======================================================================= */
 
-  if (Object.keys(updateData).length === 0) {
-    throw new Error("No valid fields to update");
-  }
-
-  /* -------------------- First-Phase Approval -------------------- */
-  if (updateData.status && (role === "admin" || role === "manager")) {
-    const userStatus = updateData.status === "approved" ? "active" : "pending";
-    await db("users")
-      .where({ id: existing.user_id })
-      .update({ status: userStatus });
-  }
-
-  /* -------------------- Second-Phase Review -------------------- */
-  if (
-    updates.final_approved !== undefined &&
-    (role === "admin" || role === "manager")
-  ) {
-    updateData.final_reviewed_by = userId;
-    updateData.final_reviewed_at = db.fn.now();
-
-    const msg = updates.final_approved
-      ? "Your application has been fully approved."
-      : "Your application requires further changes.";
-
-    // Optional notification (if you have NotificationService)
-    try {
-      await NotificationService.create({
-        user_id: existing.user_id,
-        title: "Final Application Review",
-        message: msg,
-      });
-    } catch (err) {
-      console.warn("Notification failed:", err.message);
-    }
-  }
-
-  /* -------------------- Apply Update -------------------- */
-  const [updated] = await db("user_applications")
-    .where({ id })
-    .update(
-      {
-        ...updateData,
-        ...(role !== "user"
-          ? { reviewed_by: userId, reviewed_at: db.fn.now() }
-          : {}),
-      },
-      "*",
-    );
-
-  return { message: "Application updated", application: updated };
-};
-
-/* -------------------- Settings -------------------- */
-export const getAllSettings = async () => {
-  return db("settings").select("*");
-};
+export const getAllSettings = async () => db("settings").select("*");
 
 export const updateSetting = async (key, value) => {
   const existing = await db("settings").where({ key }).first();
@@ -499,7 +387,10 @@ export const updateSetting = async (key, value) => {
   return updated;
 };
 
-/* -------------------- License Keys -------------------- */
+/* =======================================================================
+   🪪 LICENSE KEYS
+======================================================================= */
+
 export const getAllLicenseKeys = async () => {
   return db("admin_license_keys as alk")
     .leftJoin("roles as r", "alk.role_id", "r.id")
@@ -516,8 +407,8 @@ export const getAllLicenseKeys = async () => {
 export const createLicenseKey = async ({ key, role_id, assigned_to, user }) => {
   let userId = assigned_to;
 
-  if (user && user.name) {
-    // Generate random safe values for required columns
+  // Auto-create user if not provided
+  if (user?.name) {
     const random = Math.floor(Math.random() * 1000000);
     const fakeEmail = `admin_${random}@system.local`;
     const fakeMobile = `09${random}`.padEnd(11, "0");
@@ -535,8 +426,6 @@ export const createLicenseKey = async ({ key, role_id, assigned_to, user }) => {
       .returning("*");
 
     userId = newUser.id;
-
-    // enforce role
     await db("user_roles").where({ user_id: userId }).del();
     await db("user_roles").insert({ user_id: userId, role_id });
   }
@@ -558,10 +447,7 @@ export const updateLicenseKey = async ({ id, key, role_id, assigned_to }) => {
 
   if (assigned_to && role_id) {
     await db("user_roles").where({ user_id: assigned_to }).del();
-    await db("user_roles").insert({
-      user_id: assigned_to,
-      role_id,
-    });
+    await db("user_roles").insert({ user_id: assigned_to, role_id });
   }
 
   return updated;
@@ -585,12 +471,17 @@ export const deleteLicenseKey = async (id) => {
   return true;
 };
 
-/* -------------------- Roles -------------------- */
+/* =======================================================================
+   🧱 ROLES
+======================================================================= */
+
 export const getAllRoles = async () => {
   return db("roles").select("id", "name").orderBy("id", "asc");
 };
 
-/* -------------------- request completion -------------------- */
+/* =======================================================================
+   🏁 REQUEST COMPLETION TOGGLE
+======================================================================= */
 
 export async function toggleRequestCompletion(requestId, adminId) {
   const existing = await db("buyer_requests").where({ id: requestId }).first();
@@ -602,11 +493,10 @@ export async function toggleRequestCompletion(requestId, adminId) {
     .where({ id: requestId })
     .update({
       is_completed: newStatus,
-      completed_at: newStatus ? db.fn.now() : null, // ✅ timestamp logic
+      completed_at: newStatus ? db.fn.now() : null,
       updated_at: db.fn.now(),
     });
 
-  // ✅ Send notification to buyer
   await NotificationService.create(
     existing.buyer_id,
     "buyer_request_toggle_completion",
@@ -630,4 +520,51 @@ export async function toggleRequestCompletion(requestId, adminId) {
     is_completed: newStatus,
     completed_at: newStatus ? new Date().toISOString() : null,
   };
+}
+
+/* -------------------- Toggle In Progress -------------------- */
+export async function toggleInProgress(containerId, adminId) {
+  const container = await db("farmer_plan_containers")
+    .where({ id: containerId })
+    .first();
+  if (!container) throw new Error("Container not found");
+
+  const newState = !container.in_progress;
+
+  await db("farmer_plan_containers").where({ id: containerId }).update({
+    in_progress: newState,
+    updated_at: db.fn.now(),
+  });
+
+  return {
+    message: `Container progress ${newState ? "started" : "stopped"}`,
+    in_progress: newState,
+  };
+}
+
+export async function markContainerCompleted(containerId, adminId) {
+  if (!containerId) throw new Error("Container ID is required");
+
+  const container = await db("farmer_plan_containers")
+    .where({ id: containerId })
+    .first();
+
+  if (!container) throw new Error("Container not found");
+
+  // Already completed?
+  if (container.is_completed) {
+    return { message: "Container is already marked as completed" };
+  }
+
+  await db("farmer_plan_containers").where({ id: containerId }).update({
+    is_completed: true,
+    in_progress: false,
+    status: "completed",
+    updated_at: db.fn.now(),
+    completed_at: db.fn.now(),
+    admin_metadata_reviewed_by: adminId,
+    admin_metadata_reviewed_at: db.fn.now(),
+  });
+
+  return { message: "Container marked as completed successfully" };
 }

@@ -5,7 +5,11 @@ import { authorize } from "../middleware/authorize.js";
 
 const router = express.Router();
 
-/* -------------------- USER & ADMIN -------------------- */
+/* =======================================================================
+   🚚 CONTAINER TRACKING
+======================================================================= */
+
+// ➕ Add a new tracking update for a container
 router.post(
   "/:id/tracking",
   authenticate,
@@ -13,6 +17,7 @@ router.post(
   trackingCtrl.addTracking,
 );
 
+// 📜 List all tracking records for a container
 router.get(
   "/:id/tracking",
   authenticate,
@@ -20,12 +25,23 @@ router.get(
   trackingCtrl.listTracking,
 );
 
+/* =======================================================================
+   📦 CONTAINER OVERVIEWS
+======================================================================= */
+
+// 🧾 Get all containers (for current user / manager / admin) with tracking
 router.get(
   "/my-containers-with-tracking",
   authenticate,
   authorize("user", "manager", "admin"),
   trackingCtrl.myContainersWithTracking,
 );
+
+/* =======================================================================
+   🆔 TY NUMBER MANAGEMENT
+======================================================================= */
+
+// ✏️ Update TY (tracking code) number for a container
 router.patch(
   "/:id/ty-number",
   authenticate,

@@ -8,7 +8,11 @@ import { JWT_SECRET, JWT_EXPIRES_IN } from "../config/jwt.js";
 
 const BASE_URL = process.env.BASE_URL || "http://localhost:5000";
 
-/* -------------------- Helpers -------------------- */
+/* =======================================================================
+   🧩 HELPERS
+======================================================================= */
+
+/** Safely parse JSON values from DB (handles text arrays or objects). */
 function safeParseJSON(value, fallback) {
   if (!value) return fallback;
   if (Array.isArray(value)) return value;
@@ -20,9 +24,12 @@ function safeParseJSON(value, fallback) {
   }
 }
 
+/** Normalize a buyer request row (hydrate doc URLs, etc.) */
 function normalizeRequest(row) {
   return {
     ...row,
+    size: safeParseJSON(row.size, []),
+    certificates: safeParseJSON(row.certificates, []),
     farmer_docs: safeParseJSON(row.farmer_docs, []).map((doc) => ({
       ...doc,
       filename: doc.filename || doc.original_name || "-",
@@ -37,6 +44,7 @@ function normalizeRequest(row) {
   };
 }
 
+/** Hydrate all farmer plans and containers for a buyer request. */
 async function hydratePlans(requestId) {
   const plans = await knex("farmer_plans as fp")
     .select("fp.*")
@@ -64,31 +72,33 @@ async function hydratePlans(requestId) {
 
   return plans;
 }
-/* ------------------------------------------------------------------
- * 🆕 Master Buyer Flow: Create Request (with optional new buyer)
- * ------------------------------------------------------------------ */
+
+/* =======================================================================
+   🧾 MASTER BUYER FLOW: Create Request (with optional new Buyer)
+======================================================================= */
+
+/**
+ * Create a buyer request — supports both existing and newly created buyers.
+ * Automatically assigns roles, generates a license key, and issues notifications.
+ */
 export async function createRequestWithBuyerAndLicense({
   creatorId,
   existingBuyerId,
   newBuyer,
   requestData,
 }) {
-  // 🔹 If neither existingBuyerId nor newBuyer provided → fallback to normal buyer flow
-  if (!existingBuyerId && !newBuyer) {
-    // creatorId is the buyer in this case
+  // If neither existingBuyerId nor newBuyer provided, fallback to normal buyer flow
+  if (!existingBuyerId && !newBuyer)
     return await createRequest(creatorId, requestData);
-  }
 
   return knex.transaction(async (trx) => {
     let buyerId = existingBuyerId;
 
-    /* 1️⃣ Create a new buyer if needed */
-    if (!buyerId && newBuyer && newBuyer.name) {
+    /* ---------- 1️⃣ Create new buyer if necessary ---------- */
+    if (!buyerId && newBuyer?.name) {
       const random = crypto.randomBytes(4).toString("hex");
       const randomEmail = `buyer_${random}@auto.local`;
-      const randomMobile = `09${Math.floor(
-        100000000 + Math.random() * 900000000,
-      )}`;
+      const randomMobile = `09${Math.floor(100000000 + Math.random() * 900000000)}`;
       const randomPassword = crypto.randomBytes(8).toString("hex");
       const passwordHash = await bcrypt.hash(randomPassword, 10);
 
@@ -114,10 +124,7 @@ export async function createRequestWithBuyerAndLicense({
       });
 
       // Generate license key
-      const licenseKey = `BUY-${crypto
-        .randomBytes(6)
-        .toString("hex")
-        .toUpperCase()}`;
+      const licenseKey = `BUY-${crypto.randomBytes(6).toString("hex").toUpperCase()}`;
       const [license] = await trx("admin_license_keys")
         .insert({
           key: licenseKey,
@@ -127,14 +134,14 @@ export async function createRequestWithBuyerAndLicense({
         })
         .returning("*");
 
-      // Optional JWT for immediate use (if needed)
-      const payload = {
+      // Optional: create a JWT for immediate access
+      const tokenPayload = {
         id: buyerId,
         email: buyer.email,
         licenseId: license.id,
         roles: ["buyer"],
       };
-      const token = jwt.sign(payload, JWT_SECRET, {
+      const token = jwt.sign(tokenPayload, JWT_SECRET, {
         expiresIn: JWT_EXPIRES_IN,
       });
 
@@ -142,35 +149,37 @@ export async function createRequestWithBuyerAndLicense({
       newBuyer.generatedToken = token;
     }
 
-    if (!buyerId) {
-      throw new Error("You must choose or create a buyer.");
-    }
+    if (!buyerId) throw new Error("You must choose or create a buyer.");
 
-    /* 2️⃣ Create the buyer request */
+    /* ---------- 2️⃣ Create the buyer request ---------- */
     const [req] = await trx("buyer_requests")
       .insert({
-        buyer_id: buyerId,
-        creator_id: creatorId,
+        buyer_id: buyerId, // Assigned customer
+        creator_id: creatorId || buyerId, // Creator is the operator (fallback if direct buyer created)
         product_type: requestData.product_type || "eggs",
         packaging: requestData.packaging || null,
-        size: Array.isArray(requestData.size) ? requestData.size : [],
         egg_type: requestData.egg_type || null,
         expiration_days: requestData.expiration_days
           ? parseInt(requestData.expiration_days, 10)
           : null,
-        certificates: Array.isArray(requestData.certificates)
-          ? requestData.certificates
-          : [],
+        certificates:
+          typeof requestData.certificates === "string"
+            ? JSON.parse(requestData.certificates || "[]")
+            : Array.isArray(requestData.certificates)
+              ? requestData.certificates
+              : [],
+        size:
+          typeof requestData.size === "string"
+            ? JSON.parse(requestData.size || "[]")
+            : Array.isArray(requestData.size)
+              ? requestData.size
+              : [],
         container_amount: requestData.container_amount || null,
         cartons: requestData.cartons ? parseInt(requestData.cartons, 10) : null,
 
-        // ✅ NEW: start and end dates
-        deadline_start_date: requestData.deadline_start_date || null,
-        deadline_end_date: requestData.deadline_end_date || null,
-
-        // (optional) keep for backward compatibility
-        deadline_date:
-          requestData.deadline_end_date || requestData.deadline_date || null,
+        // ✅ FIXED HERE
+        deadline_start: requestData.deadline_start_date || null,
+        deadline_end: requestData.deadline_end_date || null,
 
         transport_type: requestData.transport_type || null,
         import_country: requestData.import_country || null,
@@ -178,32 +187,32 @@ export async function createRequestWithBuyerAndLicense({
         exit_border: requestData.exit_border || null,
         preferred_supplier_name: requestData.preferred_supplier_name || null,
         preferred_supplier_id: requestData.preferred_supplier_id || null,
-        status: "pending",
         description: requestData.description,
+        status: "pending",
       })
       .returning("*");
 
-    /* 3️⃣ Notify Admins/Managers (using same trx for FK safety) */
-    const adminAndManagerUsers = await trx("users")
+    /* ---------- 3️⃣ Notify all active admins/managers ---------- */
+    const adminManagers = await trx("users")
       .join("user_roles", "users.id", "user_roles.user_id")
       .join("roles", "user_roles.role_id", "roles.id")
       .whereIn("roles.name", ["admin", "manager"])
       .where("users.status", "active")
       .select("users.id");
 
-    for (const u of adminAndManagerUsers) {
+    for (const u of adminManagers) {
       await NotificationService.create(
         u.id,
         "new_request",
         req.id,
         { buyerName: newBuyer?.name || "Existing Buyer" },
-        trx, // ✅ pass transaction here
+        trx,
       );
     }
 
-    /* 4️⃣ Return response */
+    /* ---------- 4️⃣ Return enriched response ---------- */
     return {
-      request: req,
+      request: normalizeRequest(req),
       newBuyer: newBuyer?.name
         ? {
             id: buyerId,
@@ -216,15 +225,16 @@ export async function createRequestWithBuyerAndLicense({
   });
 }
 
-/* ------------------------------------------------------------------
- *  Legacy Buyer CRUD (still works for individual buyers)
- * ------------------------------------------------------------------ */
+/* =======================================================================
+   📦 INDIVIDUAL BUYER CRUD FLOW
+======================================================================= */
+
+/** Create a new request (single buyer mode). */
 export async function createRequest(userId, data) {
-  // Simple single-buyer submission flow (non-transactional)
   const [req] = await knex("buyer_requests")
     .insert({
+      creator_id: userId,
       buyer_id: userId,
-      creator_id: null,
       product_type: data.product_type || "eggs",
       packaging: data.packaging || null,
       size: Array.isArray(data.size) ? data.size : [],
@@ -236,10 +246,9 @@ export async function createRequest(userId, data) {
       container_amount: data.container_amount || null,
       cartons: data.cartons ? parseInt(data.cartons, 10) : null,
 
-      // ✅ NEW
-      deadline_start_date: data.deadline_start_date || null,
-      deadline_end_date: data.deadline_end_date || null,
-      deadline_date: data.deadline_end_date || data.deadline_date || null,
+      // ✅ FIXED HERE
+      deadline_start: data.deadline_start_date || null,
+      deadline_end: data.deadline_end_date || null,
 
       transport_type: data.transport_type || null,
       import_country: data.import_country || null,
@@ -247,19 +256,19 @@ export async function createRequest(userId, data) {
       exit_border: data.exit_border || null,
       preferred_supplier_name: data.preferred_supplier_name || null,
       preferred_supplier_id: data.preferred_supplier_id || null,
-      status: "pending",
       description: data.description,
+      status: "pending",
     })
     .returning("*");
 
-  const adminAndManagerUsers = await knex("users")
+  const adminManagers = await knex("users")
     .join("user_roles", "users.id", "user_roles.user_id")
     .join("roles", "user_roles.role_id", "roles.id")
     .whereIn("roles.name", ["admin", "manager"])
     .where("users.status", "active")
     .select("users.id");
 
-  for (const u of adminAndManagerUsers) {
+  for (const u of adminManagers) {
     await NotificationService.create(u.id, "new_request", req.id, {
       buyerName: "Buyer",
     });
@@ -268,11 +277,12 @@ export async function createRequest(userId, data) {
   return normalizeRequest(req);
 }
 
-/* ------------------------------------------------------------------
- *  Existing Buyer CRUD & History
- * ------------------------------------------------------------------ */
+/* =======================================================================
+   📜 BUYER REQUEST HISTORY & RETRIEVAL
+======================================================================= */
+
+/** List all requests created or owned by a buyer (with optional search). */
 export async function getMyRequests(userId, search = "", roles = []) {
-  // If user is a master buyer → show all requests they created or belong to them
   const query = knex("buyer_requests as br")
     .join("users as u", "br.buyer_id", "u.id")
     .select(
@@ -289,7 +299,6 @@ export async function getMyRequests(userId, search = "", roles = []) {
     });
   }
 
-  // Filtering (buyer name, product type, country)
   if (search) {
     query.andWhere((builder) => {
       builder
@@ -301,7 +310,6 @@ export async function getMyRequests(userId, search = "", roles = []) {
 
   const rows = await query;
 
-  // Hydrate plans and normalize JSON fields
   return Promise.all(
     rows.map(async (row) => {
       const normalized = normalizeRequest(row);
@@ -311,12 +319,11 @@ export async function getMyRequests(userId, search = "", roles = []) {
   );
 }
 
+/** Get one specific buyer request (authorized to user). */
 export async function getRequestById(userId, id) {
   const row = await knex("buyer_requests")
     .where("id", id)
-    .andWhere((builder) => {
-      builder.where("buyer_id", userId).orWhere("creator_id", userId);
-    })
+    .andWhere((b) => b.where("buyer_id", userId).orWhere("creator_id", userId))
     .first();
 
   if (!row) return null;
@@ -326,6 +333,10 @@ export async function getRequestById(userId, id) {
   return normalized;
 }
 
+/* =======================================================================
+   ✏️ BUYER REQUEST UPDATE / CANCEL
+======================================================================= */
+
 export async function updateRequest(userId, requestId, data) {
   const req = await knex("buyer_requests")
     .where({ id: requestId, buyer_id: userId })
@@ -333,7 +344,6 @@ export async function updateRequest(userId, requestId, data) {
   if (!req) throw new Error("Request not found");
   if (req.status !== "pending")
     throw new Error("Only pending requests can be updated");
-
   const [updated] = await knex("buyer_requests")
     .where({ id: requestId })
     .update({
@@ -344,11 +354,9 @@ export async function updateRequest(userId, requestId, data) {
       certificates: data.certificates ?? req.certificates,
       container_amount: data.container_amount ?? req.container_amount,
 
-      // ✅ NEW
-      deadline_start_date: data.deadline_start_date ?? req.deadline_start_date,
-      deadline_end_date: data.deadline_end_date ?? req.deadline_end_date,
-      deadline_date:
-        data.deadline_end_date ?? data.deadline_date ?? req.deadline_date,
+      // ✅ FIXED HERE
+      deadline_start: data.deadline_start_date ?? req.deadline_start,
+      deadline_end: data.deadline_end_date ?? req.deadline_end,
 
       transport_type: data.transport_type ?? req.transport_type,
       import_country: data.import_country ?? req.import_country,
@@ -377,10 +385,7 @@ export async function cancelRequest(userId, requestId) {
 
   const [updated] = await knex("buyer_requests")
     .where({ id: requestId })
-    .update({
-      status: "cancelled",
-      updated_at: knex.fn.now(),
-    })
+    .update({ status: "cancelled", updated_at: knex.fn.now() })
     .returning("*");
 
   const normalized = normalizeRequest(updated);
@@ -388,9 +393,14 @@ export async function cancelRequest(userId, requestId) {
   return normalized;
 }
 
-/* ------------------------------------------------------------------
- *  Admin Updates for Requests
- * ------------------------------------------------------------------ */
+/* =======================================================================
+   🛠️ ADMIN REQUEST MANAGEMENT
+======================================================================= */
+
+/**
+ * Update or review a buyer request (admin or manager).
+ * Handles approval, rejection, and supplier notifications.
+ */
 export async function adminUpdateRequest(requestId, updateData, reviewerId) {
   const oldRequest = await knex("buyer_requests")
     .where("id", requestId)
@@ -407,6 +417,7 @@ export async function adminUpdateRequest(requestId, updateData, reviewerId) {
     })
     .returning("*");
 
+  // Notify supplier if newly accepted
   if (updateData.status === "accepted" && oldRequest.status !== "accepted") {
     const supplierId =
       updateData.preferred_supplier_id || updatedRequest.preferred_supplier_id;
@@ -415,25 +426,20 @@ export async function adminUpdateRequest(requestId, updateData, reviewerId) {
         supplierId,
         "request_accepted",
         requestId,
-        { buyerName: "Buyer" },
+        {
+          buyerName: "Buyer",
+        },
       );
     }
   }
 
-  const statusChanged =
-    (updateData.final_status &&
-      updateData.final_status !== oldRequest.final_status) ||
-    (updateData.farmer_status &&
-      updateData.farmer_status !== oldRequest.farmer_status);
-  if (statusChanged) {
+  // Notify buyer if status changed
+  if (updateData.status && updateData.status !== oldRequest.status) {
     await NotificationService.create(
       updatedRequest.buyer_id,
       "status_updated",
       requestId,
-      {
-        final_status: updateData.final_status,
-        farmer_status: updateData.farmer_status,
-      },
+      { status: updateData.status },
     );
   }
 

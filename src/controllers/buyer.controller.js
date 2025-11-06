@@ -1,17 +1,20 @@
 import path from "path";
 import fs from "fs";
 import db from "../db/knex.js";
+
 import * as buyerReqService from "../services/buyerRequest.service.js";
 import * as adminService from "../services/admin.service.js";
 import * as buyerService from "../services/buyer.service.js";
 import * as ticketService from "../services/ticket.service.js";
 
-import knex from "../db/knex.js";
+/* =======================================================================
+   👤 BUYER PROFILE MANAGEMENT
+======================================================================= */
 
-/* -------------------- Get Buyer Profile -------------------- */
+/** 🔍 Get buyer profile */
 export async function getProfile(req, res) {
   try {
-    const me = await knex("users").where({ id: req.user.id }).first();
+    const me = await db("users").where({ id: req.user.id }).first();
     if (!me) return res.status(404).json({ error: "Profile not found" });
     res.json(me);
   } catch (err) {
@@ -20,40 +23,31 @@ export async function getProfile(req, res) {
   }
 }
 
-/* -------------------- Update Buyer Profile -------------------- */
+/** ✏️ Update buyer profile */
 export async function updateProfile(req, res) {
   try {
     const updated = await buyerService.updateProfile(req.user.id, req.body);
     res.json(updated);
-  } catch (e) {
-    console.error("updateProfile (buyer) error:", e);
-    res.status(400).json({ error: e.message });
+  } catch (err) {
+    console.error("updateProfile (buyer) error:", err);
+    res.status(400).json({ error: err.message });
   }
 }
 
-/* -------------------- Upload Buyer Profile Picture -------------------- */
+/** 🖼️ Upload buyer profile picture */
 export const uploadProfilePicture = async (req, res) => {
   try {
     const buyerId = req.user.id;
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
 
-    if (!req.file) {
-      return res.status(400).json({ error: "No file uploaded" });
-    }
-
-    // Ensure /uploads/profiles directory exists
     const dir = path.join("uploads", "profiles");
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
-    // Move from /uploads/temp → /uploads/profiles
     const newFilePath = `/uploads/profiles/${req.file.filename}`;
     fs.renameSync(req.file.path, path.join(dir, req.file.filename));
 
-    // Get existing user record
-    const buyer = await knex("users").where({ id: buyerId }).first();
-
-    // 🧹 Delete old profile picture if exists
+    // Delete old profile picture
+    const buyer = await db("users").where({ id: buyerId }).first();
     if (buyer?.profile_picture) {
       const oldPath = path.join(
         process.cwd(),
@@ -61,7 +55,6 @@ export const uploadProfilePicture = async (req, res) => {
           ? buyer.profile_picture.slice(1)
           : buyer.profile_picture,
       );
-
       if (fs.existsSync(oldPath)) {
         try {
           fs.unlinkSync(oldPath);
@@ -72,8 +65,7 @@ export const uploadProfilePicture = async (req, res) => {
       }
     }
 
-    // 🧠 Update DB
-    await knex("users").where({ id: buyerId }).update({
+    await db("users").where({ id: buyerId }).update({
       profile_picture: newFilePath,
       updated_at: new Date(),
     });
@@ -88,20 +80,18 @@ export const uploadProfilePicture = async (req, res) => {
   }
 };
 
-/* -------------------- Get Buyer Profile Picture -------------------- */
+/** 🖼️ Get buyer profile picture */
 export const getProfilePicture = async (req, res) => {
   try {
     const buyerId = req.user.id;
-    const buyer = await knex("users")
+    const buyer = await db("users")
       .select("profile_picture")
       .where({ id: buyerId })
       .first();
 
-    if (!buyer || !buyer.profile_picture) {
+    if (!buyer?.profile_picture)
       return res.status(404).json({ error: "Profile picture not found" });
-    }
 
-    // Build absolute path
     const filePath = path.join(
       process.cwd(),
       buyer.profile_picture.startsWith("/")
@@ -109,11 +99,9 @@ export const getProfilePicture = async (req, res) => {
         : buyer.profile_picture,
     );
 
-    if (!fs.existsSync(filePath)) {
+    if (!fs.existsSync(filePath))
       return res.status(404).json({ error: "File not found on server" });
-    }
 
-    // Detect file type (jpeg/png/webp/jpg)
     const ext = path.extname(filePath).toLowerCase();
     const mimeType =
       ext === ".png"
@@ -130,42 +118,50 @@ export const getProfilePicture = async (req, res) => {
   }
 };
 
-/* -------------------- Delete Buyer Profile -------------------- */
+/** ❌ Delete buyer profile */
 export const deleteProfile = async (req, res) => {
   try {
-    const buyerId = req.user.id;
+    await db.transaction(async (trx) => {
+      // Optionally mark related buyer requests as cancelled
+      await trx("buyer_requests")
+        .where({ buyer_id: req.user.id })
+        .update({ status: "cancelled", updated_at: trx.fn.now() });
 
-    // 🧹 Delete from DB
-    await knex("users").where({ id: buyerId }).del();
-
+      // Delete buyer
+      await trx("users").where({ id: req.user.id }).del();
+    });
     res.json({ message: "Buyer profile deleted successfully" });
   } catch (err) {
     console.error("deleteProfile (buyer) error:", err);
     res.status(500).json({ error: "Failed to delete buyer profile" });
   }
 };
-//////////////////////////// Reqs ///////////////////////////////////
 
+/* =======================================================================
+   📦 BUYER REQUEST MANAGEMENT
+======================================================================= */
+
+/** 🆕 Create new buyer request */
 export const createRequest = async (req, res) => {
   try {
     const creatorId = req.user.id;
     const {
       existingBuyerId,
       newBuyer,
-      deadline_start_date,
-      deadline_end_date,
+      deadline_start,
+      deadline_end,
       ...requestData
     } = req.body;
 
-    // 🧭 Validate deadline order
+    // Validate deadline order
     if (
-      deadline_start_date &&
-      deadline_end_date &&
-      new Date(deadline_start_date) > new Date(deadline_end_date)
+      deadline_start &&
+      deadline_end &&
+      new Date(deadline_start) > new Date(deadline_end)
     ) {
-      return res.status(400).json({
-        error: "Start date cannot be after end date",
-      });
+      return res
+        .status(400)
+        .json({ error: "Start date cannot be after end date" });
     }
 
     const result = await buyerReqService.createRequestWithBuyerAndLicense({
@@ -174,38 +170,50 @@ export const createRequest = async (req, res) => {
       newBuyer,
       requestData: {
         ...requestData,
-        deadline_start_date,
-        deadline_end_date,
+        deadline_start,
+        deadline_end,
       },
     });
 
     res.json(result);
-  } catch (error) {
-    console.error("❌ createRequest error:", error);
-    res.status(400).json({ error: error.message });
+  } catch (err) {
+    console.error("❌ createRequest error:", err);
+    res.status(400).json({ error: err.message });
   }
 };
 
+/** 📋 List buyer’s own requests */
 export async function getMyRequests(req, res) {
   try {
     const { search = "" } = req.query;
-    const userId = req.user.id;
-    const roles = req.user.roles || [];
-
-    const list = await buyerReqService.getMyRequests(userId, search, roles);
+    const list = await buyerReqService.getMyRequests(
+      req.user.id,
+      search,
+      req.user.roles || [],
+    );
     res.json(list);
-  } catch (error) {
-    console.error("❌ getMyRequests error:", error);
+  } catch (err) {
+    console.error("❌ getMyRequests error:", err);
     res.status(500).json({ error: "Failed to fetch requests" });
   }
 }
 
+/** 🔍 Get single buyer request by ID */
 export async function getRequestById(req, res) {
-  const item = await buyerReqService.getRequestById(req.user.id, req.params.id);
-  if (!item) return res.status(404).json({ error: "Not found" });
-  res.json(item);
+  try {
+    const item = await buyerReqService.getRequestById(
+      req.user.id,
+      req.params.id,
+    );
+    if (!item) return res.status(404).json({ error: "Request not found" });
+    res.json(item);
+  } catch (err) {
+    console.error("getRequestById error:", err);
+    res.status(400).json({ error: "Failed to load request" });
+  }
 }
 
+/** ✏️ Update buyer request */
 export async function updateRequest(req, res) {
   try {
     const updated = await buyerReqService.updateRequest(
@@ -214,11 +222,12 @@ export async function updateRequest(req, res) {
       req.body,
     );
     res.json(updated);
-  } catch (e) {
-    res.status(400).json({ error: e.message });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
   }
 }
 
+/** ❌ Cancel buyer request */
 export async function cancelRequest(req, res) {
   try {
     const cancelled = await buyerReqService.cancelRequest(
@@ -226,35 +235,25 @@ export async function cancelRequest(req, res) {
       req.params.id,
     );
     res.json(cancelled);
-  } catch (e) {
-    res.status(400).json({ error: e.message });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
   }
 }
 
-export const getMinimalUsers = async (req, res) => {
-  try {
-    const users = await adminService.getAllUsers();
-    res.json(users);
-  } catch (err) {
-    console.error("Error fetching minimal users:", err);
-    res.status(500).json({ error: "Failed to fetch users" });
-  }
-};
+/* =======================================================================
+   🎟️ BUYER TICKETS
+======================================================================= */
 
-/* -------------------- Buyer Tickets -------------------------- */
-
-/* -------------------- Create Buyer Ticket -------------------- */
+/** 🆕 Create buyer ticket */
 export const createBuyerTicket = async (req, res) => {
   try {
     const { subject, message } = req.body;
-    const buyerId = req.user.id; // from authenticate middleware
+    const buyerId = req.user.id;
     const role = "buyer";
 
-    if (!message) {
-      return res.status(400).json({ error: "متن تیکت الزامی است" });
-    }
+    if (!message) return res.status(400).json({ error: "متن تیکت الزامی است" });
 
-    // handle file upload (if exists)
+    // Handle optional file upload
     let fileInfo = null;
     if (req.file) {
       const buyerDir = path.join(
@@ -293,11 +292,10 @@ export const createBuyerTicket = async (req, res) => {
   }
 };
 
-/* -------------------- List Buyer Tickets -------------------- */
+/** 📋 List buyer tickets */
 export const getMyBuyerTickets = async (req, res) => {
   try {
-    const buyerId = req.user.id;
-    const tickets = await ticketService.getUserTickets(buyerId);
+    const tickets = await ticketService.getUserTickets(req.user.id);
     res.json(tickets);
   } catch (err) {
     console.error("GET BUYER TICKETS ERROR:", err);
@@ -305,7 +303,7 @@ export const getMyBuyerTickets = async (req, res) => {
   }
 };
 
-/* -------------------- Update Buyer Ticket -------------------- */
+/** ✏️ Update buyer ticket */
 export const updateBuyerTicket = async (req, res) => {
   try {
     const ticketId = req.params.id;
@@ -350,24 +348,40 @@ export const updateBuyerTicket = async (req, res) => {
   }
 };
 
-////////////Extras
+/* =======================================================================
+   🧰 UTILITIES (LISTS)
+======================================================================= */
+
+/** 👥 Minimal user list (all roles) */
+export const getMinimalUsers = async (req, res) => {
+  try {
+    const users = await adminService.getAllUsers();
+    res.json(users);
+  } catch (err) {
+    console.error("Error fetching minimal users:", err);
+    res.status(500).json({ error: "Failed to fetch users" });
+  }
+};
+
+/** 👥 Minimal buyer list (active buyers only) */
 export const getMinimalBuyers = async (req, res) => {
   try {
     const buyers = await db("users as u")
       .join("user_roles as ur", "u.id", "ur.user_id")
       .join("roles as r", "ur.role_id", "r.id")
-      .where("r.name", "buyer") // ✅ only buyers
+      .whereRaw("LOWER(r.name) = 'buyer'")
       .andWhere("u.status", "active")
       .select("u.id", "u.name", "u.email", "u.mobile")
       .orderBy("u.name", "asc");
 
     res.json(buyers);
-  } catch (error) {
-    console.error("❌ getMinimalBuyers error:", error);
+  } catch (err) {
+    console.error("❌ getMinimalBuyers error:", err);
     res.status(500).json({ error: "Failed to fetch buyers list" });
   }
 };
 
+/** 👤 List users who have the 'user' role */
 export async function listUserRoleUsers(req, res) {
   try {
     const users = await buyerService.getUsersWithUserRole();

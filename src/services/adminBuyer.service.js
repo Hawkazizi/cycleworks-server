@@ -3,57 +3,107 @@ import { NotificationService } from "./notification.service.js";
 
 const BASE_URL = process.env.BASE_URL || "http://localhost:5000";
 
-/* -------------------- Buyer Requests -------------------- */
+/* =======================================================================
+   📦 BUYER REQUEST MANAGEMENT (ADMIN / MANAGER)
+======================================================================= */
+/** 📋 Get all buyer requests (with supplier + plans + assigned suppliers + creator) */
 export async function getBuyerRequests() {
   const rows = await db("buyer_requests as br")
-    .leftJoin("users as u", "br.buyer_id", "u.id")
-    .leftJoin("users as s", "br.preferred_supplier_id", "s.id")
+    // 🔹 Join buyer (assigned customer)
+    .leftJoin("users as buyer", "br.buyer_id", "buyer.id")
+    // 🔹 Join creator (operator)
+    .leftJoin("users as creator", "br.creator_id", "creator.id")
+    // 🔹 Join preferred supplier
+    .leftJoin("users as supplier", "br.preferred_supplier_id", "supplier.id")
     .select(
-      "br.*",
-      "u.name as buyer_name",
-      "u.email as buyer_email",
-      "u.mobile as buyer_mobile",
-      "s.name as supplier_name",
-      "s.mobile as supplier_mobile",
+      "br.id",
+      "br.status",
+      "br.expiration_date",
+      "br.expiration_days",
+      "br.deadline_start",
+      "br.deadline_end",
+      "br.transport_type",
+      "br.product_type",
+      "br.import_country",
+      "br.entry_border",
+      "br.exit_border",
+      "br.packaging",
+      "br.egg_type",
+      "br.cartons",
+      "br.container_amount",
+      "br.description",
+      "br.created_at",
+
+      // 🔹 Buyer (assigned customer)
+      "buyer.id as buyer_id",
+      "buyer.name as buyer_name",
+      "buyer.email as buyer_email",
+      "buyer.mobile as buyer_mobile",
+
+      // 🔹 Creator (operator)
+      "creator.id as creator_id",
+      "creator.name as creator_name",
+      "creator.email as creator_email",
+      "creator.mobile as creator_mobile",
+
+      // 🔹 Supplier
+      "supplier.id as supplier_id",
+      "supplier.name as supplier_name",
+      "supplier.mobile as supplier_mobile",
     )
     .orderBy("br.created_at", "desc");
 
   const results = [];
   for (const row of rows) {
+    // Normalize the request
     const normalized = normalizeRequest(row);
+
+    // Attach related data
     normalized.farmer_plans = await getPlansWithContainers(row.id);
     normalized.assigned_suppliers = await getAssignedSuppliers(row.id);
+
+    // 🔹 Optional: clear distinction between creator and buyer
+    normalized.creator = {
+      id: row.creator_id,
+      name: row.creator_name,
+      email: row.creator_email,
+      mobile: row.creator_mobile,
+    };
+    normalized.buyer = {
+      id: row.buyer_id,
+      name: row.buyer_name,
+      email: row.buyer_email,
+      mobile: row.buyer_mobile,
+    };
+    normalized.supplier = {
+      id: row.supplier_id,
+      name: row.supplier_name,
+      mobile: row.supplier_mobile,
+    };
+
     results.push(normalized);
   }
 
   return results;
 }
 
+/** 🔍 Get a single buyer request by ID (with all details) */
 export async function getBuyerRequestById(id) {
   const row = await db("buyer_requests as br")
-    // Buyer of the request
-    .leftJoin("users as u", "br.buyer_id", "u.id")
-    // Preferred supplier (optional)
-    .leftJoin("users as s", "br.preferred_supplier_id", "s.id")
-    // ✅ Creator of the request (admin/manager/user who created it)
-    .leftJoin("users as c", "br.creator_id", "c.id")
+    .leftJoin("users as buyer", "br.buyer_id", "buyer.id")
+    .leftJoin("users as supplier", "br.preferred_supplier_id", "supplier.id")
+    .leftJoin("users as creator", "br.creator_id", "creator.id")
     .select(
       "br.*",
-
-      // Buyer (request owner)
-      "u.name as buyer_name",
-      "u.email as buyer_email",
-      "u.mobile as buyer_mobile",
-
-      // Preferred supplier
-      "s.name as supplier_name",
-      "s.mobile as supplier_mobile",
-
-      // ✅ Creator fields
-      "c.id as created_by_user_id",
-      "c.name as created_by_name",
-      "c.email as created_by_email",
-      "c.mobile as created_by_mobile",
+      "buyer.name as buyer_name",
+      "buyer.email as buyer_email",
+      "buyer.mobile as buyer_mobile",
+      "supplier.name as supplier_name",
+      "supplier.mobile as supplier_mobile",
+      "creator.id as created_by_user_id",
+      "creator.name as created_by_name",
+      "creator.email as created_by_email",
+      "creator.mobile as created_by_mobile",
     )
     .where("br.id", id)
     .first();
@@ -67,7 +117,11 @@ export async function getBuyerRequestById(id) {
   return normalized;
 }
 
-/* -------------------- Review Buyer Request -------------------- */
+/* =======================================================================
+   ✅ REVIEW / APPROVAL
+======================================================================= */
+
+/** ✏️ Review a buyer request (status, final status, farmer status) */
 export async function reviewBuyerRequest(
   id,
   { status, final_status, farmer_status, reviewerId },
@@ -79,8 +133,6 @@ export async function reviewBuyerRequest(
     .where({ id })
     .update({
       status,
-      final_status: final_status ?? oldRequest.final_status,
-      farmer_status: farmer_status ?? oldRequest.farmer_status,
       reviewed_by: reviewerId,
       reviewed_at: db.fn.now(),
       updated_at: db.fn.now(),
@@ -91,90 +143,31 @@ export async function reviewBuyerRequest(
 
   const normalized = normalizeRequest(updated);
 
-  /* -------------------- 🔔 NOTIFICATION LOGIC -------------------- */
-
-  // 1️⃣ If status → 'accepted' → Notify supplier + buyer + managers
-  if (status === "accepted" && oldRequest.status !== "accepted") {
-    const supplierId = updated.preferred_supplier_id;
-
-    // ✅ Notify supplier
-    if (supplierId) {
-      await NotificationService.create(supplierId, "request_accepted", id, {
-        buyerName: normalized.buyer_name || "Buyer",
-      });
-    }
-
-    // ✅ Notify buyer
-    if (updated.buyer_id) {
-      await NotificationService.create(updated.buyer_id, "status_updated", id, {
-        status: "accepted",
-        message: `درخواست شما با شناسه ${id} توسط ادمین تأیید شد ✅`,
-      });
-    }
-
-    // ✅ Notify all managers
-    const managers = await db("users")
-      .join("user_roles", "users.id", "user_roles.user_id")
-      .join("roles", "user_roles.role_id", "roles.id")
-      .whereRaw("LOWER(roles.name) = 'manager'")
-      .where("users.status", "active")
-      .select("users.id");
-
-    for (const m of managers) {
-      await NotificationService.create(m.id, "status_updated", id, {
-        status: "accepted",
-        message: `درخواست #${id} توسط ادمین تأیید و به تامین‌کننده ارسال شد.`,
-      });
-    }
-  }
-
-  // 2️⃣ If final_status → 'completed' → Notify buyer + manager
-  if (final_status === "completed" && oldRequest.final_status !== "completed") {
-    const notificationData = {
-      final_status: "completed",
-      message: `درخواست با شناسه ${id} با موفقیت تکمیل شد ✅`,
-    };
-
-    // ✅ Notify Buyer
-    if (updated.buyer_id) {
-      await NotificationService.create(
-        updated.buyer_id,
-        "status_updated",
-        id,
-        notificationData,
-      );
-    }
-
-    // ✅ Notify Managers
-    const managers = await db("users")
-      .join("user_roles", "users.id", "user_roles.user_id")
-      .join("roles", "user_roles.role_id", "roles.id")
-      .whereRaw("LOWER(roles.name) = 'manager'")
-      .where("users.status", "active")
-      .select("users.id");
-
-    for (const m of managers) {
-      await NotificationService.create(
-        m.id,
-        "status_updated",
-        id,
-        notificationData,
-      );
-    }
-  }
+  // 🔔 Notify relevant parties
+  await handleBuyerRequestNotifications(
+    id,
+    oldRequest,
+    updated,
+    normalized,
+    status,
+    final_status,
+  );
 
   return normalized;
 }
 
-/* -------------------- Assign Suppliers -------------------- */
+/* =======================================================================
+   🧑‍🤝‍🧑 SUPPLIER ASSIGNMENT
+======================================================================= */
+
+/** 🧭 Assign suppliers to a buyer request */
 export async function assignSuppliersToRequest(
   requestId,
   supplierIds,
   reviewerId,
 ) {
-  if (!Array.isArray(supplierIds) || supplierIds.length === 0) {
+  if (!Array.isArray(supplierIds) || supplierIds.length === 0)
     throw new Error("لیست تامین‌کنندگان الزامی است.");
-  }
 
   const request = await db("buyer_requests").where({ id: requestId }).first();
   if (!request) throw new Error("درخواست یافت نشد.");
@@ -183,95 +176,143 @@ export async function assignSuppliersToRequest(
     .whereIn("id", supplierIds)
     .andWhere("status", "active");
 
-  if (validSuppliers.length !== supplierIds.length) {
+  if (validSuppliers.length !== supplierIds.length)
     throw new Error("برخی از تامین‌کنندگان معتبر یا فعال نیستند.");
-  }
 
   await db("buyer_request_suppliers")
     .where({ buyer_request_id: requestId })
     .del();
 
-  const inserted = await db("buyer_request_suppliers")
-    .insert(
-      supplierIds.map((sid) => ({
+  const inserted = [];
+  for (const sid of supplierIds) {
+    const [record] = await db("buyer_request_suppliers")
+      .insert({
         buyer_request_id: requestId,
         supplier_id: sid,
         assigned_by: reviewerId,
-      })),
-    )
-    .returning("*");
+        assigned_at: new Date(),
+      })
+      .onConflict(["buyer_request_id", "supplier_id"])
+      .merge(["assigned_by", "assigned_at"])
+      .returning("*");
+    inserted.push(record);
+  }
 
   await db("buyer_requests").where({ id: requestId }).update({
     preferred_supplier_id: supplierIds[0],
     updated_at: db.fn.now(),
   });
 
-  // 🔔 Notify newly assigned suppliers
-  for (const sid of supplierIds) {
-    await NotificationService.create(sid, "new_request", requestId, {
-      message: `درخواست جدیدی (#${requestId}) به شما تخصیص داده شد.`,
-    });
-  }
-
-  // 🔔 Notify buyer
-  if (request.buyer_id) {
-    await NotificationService.create(
-      request.buyer_id,
-      "status_updated",
-      requestId,
-      {
-        message: `درخواست شما (#${requestId}) به تامین‌کنندگان تخصیص داده شد.`,
-      },
-    );
-  }
-
-  // 🔔 Notify managers
-  const managers = await db("users")
-    .join("user_roles", "users.id", "user_roles.user_id")
-    .join("roles", "user_roles.role_id", "roles.id")
-    .whereRaw("LOWER(roles.name) = 'manager'")
-    .where("users.status", "active")
-    .select("users.id");
-
-  for (const m of managers) {
-    await NotificationService.create(m.id, "status_updated", requestId, {
-      message: `درخواست #${requestId} توسط ادمین به تامین‌کنندگان تخصیص داده شد.`,
-    });
-  }
+  // 🔔 Notify suppliers, buyer, and managers
+  await notifyAssignments(requestId, request.buyer_id, supplierIds);
 
   return inserted;
 }
 
-/* -------------------- Update deadline -------------------- */
+/* =======================================================================
+   🚚 CONTAINER ASSIGNMENT
+======================================================================= */
+
+export async function assignContainersToSuppliers(
+  requestId,
+  assignments,
+  adminId,
+) {
+  if (!Array.isArray(assignments) || assignments.length === 0)
+    throw new Error("لیست تخصیص کانتینر الزامی است.");
+
+  return db.transaction(async (trx) => {
+    const request = await trx("buyer_requests")
+      .where({ id: requestId })
+      .first();
+    if (!request) throw new Error("درخواست یافت نشد.");
+
+    // ✅ Filter out invalid/null supplier assignments
+    const validAssignments = assignments.filter(
+      (a) => a.supplier_id && a.container_id,
+    );
+
+    if (validAssignments.length === 0)
+      throw new Error("هیچ کانتینر معتبری برای تخصیص وجود ندارد.");
+
+    const supplierIds = [
+      ...new Set(validAssignments.map((a) => a.supplier_id)),
+    ];
+
+    // ✅ Check that all suppliers are valid/active
+    const validSuppliers = await trx("users")
+      .whereIn("id", supplierIds)
+      .andWhere("status", "active");
+
+    if (validSuppliers.length !== supplierIds.length)
+      throw new Error("برخی از تامین‌کنندگان معتبر یا فعال نیستند.");
+
+    // ✅ Update containers and insert supplier history
+    for (const { container_id, supplier_id } of validAssignments) {
+      await trx("farmer_plan_containers")
+        .where({ id: container_id })
+        .update({ supplier_id, updated_at: db.fn.now() });
+
+      await trx("buyer_request_suppliers")
+        .insert({
+          buyer_request_id: requestId,
+          supplier_id,
+          container_id,
+          assigned_by: adminId,
+          assigned_at: new Date(),
+        })
+        .onConflict(["buyer_request_id", "supplier_id", "container_id"])
+        .merge({ assigned_by: adminId, assigned_at: new Date() });
+    }
+
+    // ✅ Remove any history rows with supplier_id = NULL (cleanup)
+    await trx("buyer_request_suppliers")
+      .where({ buyer_request_id: requestId })
+      .whereNull("supplier_id")
+      .del();
+
+    // 🔔 Notify active suppliers
+    for (const sid of supplierIds) {
+      await NotificationService.create(
+        sid,
+        "container_assigned",
+        requestId,
+        {
+          message: `تعدادی کانتینر جدید از درخواست #${requestId} به شما تخصیص یافت.`,
+        },
+        trx,
+      );
+    }
+
+    return {
+      success: true,
+      message: "تخصیص کانتینرها با موفقیت انجام شد (بدون مقادیر NULL).",
+    };
+  });
+}
+
+/* =======================================================================
+   ⏰ DEADLINE MANAGEMENT
+======================================================================= */
+
+/** 🗓️ Update buyer request deadlines */
 export async function updateBuyerRequestDeadline(requestId, data, updatedBy) {
   const { new_deadline_start, new_deadline_end, new_deadline_date } = data;
 
-  // 🧩 Validate input
-  if (!new_deadline_start && !new_deadline_end && !new_deadline_date) {
+  if (!new_deadline_start && !new_deadline_end && !new_deadline_date)
     throw new Error("حداقل یکی از تاریخ‌های جدید الزامی است.");
-  }
 
   const request = await db("buyer_requests").where({ id: requestId }).first();
   if (!request) throw new Error("Buyer request not found");
-
-  if (["accepted", "rejected"].includes(request.status)) {
+  if (["accepted", "rejected"].includes(request.status))
     throw new Error("Cannot change deadline after review");
-  }
 
-  // 🧠 Build update object dynamically
-  const updateData = {
-    updated_at: db.fn.now(),
-  };
+  const updateData = { updated_at: db.fn.now() };
+  if (new_deadline_start) updateData.deadline_start = new_deadline_start;
+  if (new_deadline_end) updateData.deadline_end = new_deadline_end;
+  if (new_deadline_date && !new_deadline_start && !new_deadline_end)
+    updateData.deadline_start = new_deadline_date; // legacy fallback
 
-  if (new_deadline_start) updateData.deadline_start_date = new_deadline_start;
-  if (new_deadline_end) updateData.deadline_end_date = new_deadline_end;
-
-  // 🧱 Backward compatibility: legacy field
-  if (new_deadline_date && !new_deadline_start && !new_deadline_end) {
-    updateData.deadline_date = new_deadline_date;
-  }
-
-  // ⚙️ Update database
   const [updated] = await db("buyer_requests")
     .where({ id: requestId })
     .update(updateData)
@@ -279,65 +320,17 @@ export async function updateBuyerRequestDeadline(requestId, data, updatedBy) {
 
   if (!updated) throw new Error("Update failed");
 
-  // 🔔 Notifications
-  const notifications = [];
-
-  const readableDates = [];
-  if (updateData.deadline_start_date)
-    readableDates.push(`شروع: ${updateData.deadline_start_date}`);
-  if (updateData.deadline_end_date)
-    readableDates.push(`پایان: ${updateData.deadline_end_date}`);
-
-  const formattedMsg =
-    readableDates.length > 0
-      ? `بازه تحویل جدید (${readableDates.join(" / ")}) تنظیم شد.`
-      : `تاریخ تحویل جدید (${new_deadline_date}) تنظیم شد.`;
-
-  if (request.buyer_id) {
-    notifications.push(
-      NotificationService.create(
-        request.buyer_id,
-        "status_updated",
-        requestId,
-        { message: formattedMsg },
-      ),
-    );
-  }
-
-  if (request.preferred_supplier_id) {
-    notifications.push(
-      NotificationService.create(
-        request.preferred_supplier_id,
-        "status_updated",
-        requestId,
-        { message: formattedMsg },
-      ),
-    );
-  }
-
-  const managers = await db("users")
-    .join("user_roles", "users.id", "user_roles.user_id")
-    .join("roles", "user_roles.role_id", "roles.id")
-    .whereRaw("LOWER(roles.name) = 'manager'")
-    .where("users.status", "active")
-    .select("users.id");
-
-  for (const m of managers) {
-    notifications.push(
-      NotificationService.create(m.id, "status_updated", requestId, {
-        message: `ادمین بازه تحویل درخواست #${requestId} را تغییر داد: ${formattedMsg}`,
-      }),
-    );
-  }
-
-  await Promise.allSettled(notifications);
+  await notifyDeadlineChange(request, requestId, updateData);
 
   return updated;
 }
 
-/* -------------------- Fetch Assigned Suppliers -------------------- */
-export async function getAssignedSuppliers(requestId) {
-  const rows = await db("buyer_request_suppliers as brs")
+/* =======================================================================
+   📤 HELPERS
+======================================================================= */
+
+async function getAssignedSuppliers(requestId) {
+  return db("buyer_request_suppliers as brs")
     .leftJoin("users as u", "brs.supplier_id", "u.id")
     .select(
       "brs.*",
@@ -347,14 +340,10 @@ export async function getAssignedSuppliers(requestId) {
     )
     .where("brs.buyer_request_id", requestId)
     .orderBy("brs.id", "asc");
-
-  return rows;
 }
 
-/* -------------------- Helpers -------------------- */
-function safeParseJSON(value, fallback) {
+function safeParseJSON(value, fallback = []) {
   if (!value) return fallback;
-  if (Array.isArray(value)) return value;
   if (typeof value === "object") return value;
   try {
     return JSON.parse(value);
@@ -382,7 +371,8 @@ function normalizeRequest(row) {
   };
 }
 
-/* -------------------- Hydration: Plans → Containers → Files -------------------- */
+/** 🔄 Hydrate plans → containers → files */
+/** 🔄 Hydrate plans → containers → files */
 async function getPlansWithContainers(requestId) {
   const plans = await db("farmer_plans as fp")
     .leftJoin("users as f", "fp.farmer_id", "f.id")
@@ -391,10 +381,29 @@ async function getPlansWithContainers(requestId) {
     .orderBy("fp.plan_date", "asc");
 
   for (const plan of plans) {
+    // ✅ Include buyer_requests (br) join through farmer_plans (fp)
     plan.containers = await db("farmer_plan_containers as c")
+      .leftJoin("farmer_plans as p", "c.plan_id", "p.id")
+      .leftJoin("buyer_requests as br", "p.request_id", "br.id") // ✅ Added missing join
+      .leftJoin("users as s", "c.supplier_id", "s.id")
+      .select(
+        "c.*",
+        "s.name as supplier_name",
+        "s.email as supplier_email",
+        // ✅ Now safely access buyer request fields
+        "br.import_country",
+        "br.egg_type",
+        "br.cartons",
+        "br.container_amount",
+        // ✅ Optional admin metadata (if you use it)
+        "c.admin_metadata",
+        "c.admin_metadata_status",
+        "c.admin_metadata_review_note",
+      )
       .where("c.plan_id", plan.id)
       .orderBy("c.container_no", "asc");
 
+    // 🔁 Attach file URLs to each container
     for (const container of plan.containers) {
       const files = await db("farmer_plan_files")
         .where({ container_id: container.id })
@@ -402,10 +411,162 @@ async function getPlansWithContainers(requestId) {
 
       container.files = files.map((f) => ({
         ...f,
-        path: f.path?.startsWith("http") ? f.path : `${BASE_URL}${f.path}`,
+        path:
+          f.path?.startsWith("http") || !f.path
+            ? f.path
+            : `${BASE_URL}${f.path}`,
       }));
     }
   }
 
   return plans;
+}
+
+/* =======================================================================
+   🔔 NOTIFICATION HELPERS
+======================================================================= */
+
+async function handleBuyerRequestNotifications(
+  id,
+  oldRequest,
+  updated,
+  normalized,
+  status,
+  final_status,
+) {
+  // 1️⃣ Request accepted
+  if (status === "accepted" && oldRequest.status !== "accepted") {
+    const supplierId = updated.preferred_supplier_id;
+
+    if (supplierId)
+      await NotificationService.create(supplierId, "request_accepted", id, {
+        buyerName: normalized.buyer_name || "Buyer",
+      });
+
+    if (updated.buyer_id)
+      await NotificationService.create(updated.buyer_id, "status_updated", id, {
+        status: "accepted",
+        message: `درخواست شما با شناسه ${id} توسط ادمین تأیید شد ✅`,
+      });
+
+    const managers = await getActiveManagers();
+    for (const m of managers) {
+      await NotificationService.create(m.id, "status_updated", id, {
+        status: "accepted",
+        message: `درخواست #${id} توسط ادمین تأیید و به تامین‌کننده ارسال شد.`,
+      });
+    }
+  }
+
+  // 2️⃣ Request completed
+  if (status === "completed" && oldRequest.status !== "completed") {
+    const notificationData = {
+      final_status: "completed",
+      message: `درخواست با شناسه ${id} با موفقیت تکمیل شد ✅`,
+    };
+
+    if (updated.buyer_id)
+      await NotificationService.create(
+        updated.buyer_id,
+        "status_updated",
+        id,
+        notificationData,
+      );
+
+    const managers = await getActiveManagers();
+    for (const m of managers) {
+      await NotificationService.create(
+        m.id,
+        "status_updated",
+        id,
+        notificationData,
+      );
+    }
+  }
+}
+
+async function notifyAssignments(requestId, buyerId, supplierIds) {
+  // Suppliers
+  for (const sid of supplierIds) {
+    await NotificationService.create(sid, "buyer_request_assigned", requestId, {
+      message: `درخواست جدیدی (#${requestId}) به شما تخصیص داده شد.`,
+    });
+  }
+
+  // Buyer
+  if (buyerId) {
+    await NotificationService.create(
+      buyerId,
+      "buyer_request_updated",
+      requestId,
+      {
+        message: `درخواست شما (#${requestId}) به تامین‌کنندگان تخصیص داده شد.`,
+      },
+    );
+  }
+
+  // Managers
+  const managers = await getActiveManagers();
+  for (const m of managers) {
+    await NotificationService.create(m.id, "status_updated", requestId, {
+      message: `درخواست #${requestId} توسط ادمین به تامین‌کنندگان تخصیص داده شد.`,
+    });
+  }
+}
+
+async function notifyDeadlineChange(request, requestId, updateData) {
+  const notifications = [];
+
+  const readableDates = [];
+  if (updateData.deadline_start)
+    readableDates.push(`شروع: ${updateData.deadline_start}`);
+  if (updateData.deadline_end)
+    readableDates.push(`پایان: ${updateData.deadline_end}`);
+
+  const formattedMsg =
+    readableDates.length > 0
+      ? `بازه تحویل جدید (${readableDates.join(" / ")}) تنظیم شد.`
+      : `تاریخ تحویل جدید (${updateData.deadline_date}) تنظیم شد.`;
+
+  if (request.buyer_id)
+    notifications.push(
+      NotificationService.create(
+        request.buyer_id,
+        "status_updated",
+        requestId,
+        {
+          message: formattedMsg,
+        },
+      ),
+    );
+
+  if (request.preferred_supplier_id)
+    notifications.push(
+      NotificationService.create(
+        request.preferred_supplier_id,
+        "status_updated",
+        requestId,
+        { message: formattedMsg },
+      ),
+    );
+
+  const managers = await getActiveManagers();
+  for (const m of managers) {
+    notifications.push(
+      NotificationService.create(m.id, "status_updated", requestId, {
+        message: `ادمین بازه تحویل درخواست #${requestId} را تغییر داد: ${formattedMsg}`,
+      }),
+    );
+  }
+
+  await Promise.allSettled(notifications);
+}
+
+async function getActiveManagers() {
+  return db("users")
+    .join("user_roles", "users.id", "user_roles.user_id")
+    .join("roles", "user_roles.role_id", "roles.id")
+    .whereRaw("LOWER(roles.name) = 'manager'")
+    .where("users.status", "active")
+    .select("users.id");
 }

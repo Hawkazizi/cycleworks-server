@@ -3,9 +3,14 @@ import * as buyerController from "../controllers/buyer.controller.js";
 import { authenticate } from "../middleware/authenticate.js";
 import { authorize } from "../middleware/authorize.js";
 import upload from "../middleware/upload.js";
+
 const router = Router();
 
-// 🧠 Buyer Profile
+/* =======================================================================
+   👤 PROFILE MANAGEMENT
+======================================================================= */
+
+// Get profile
 router.get(
   "/profile",
   authenticate,
@@ -13,6 +18,7 @@ router.get(
   buyerController.getProfile,
 );
 
+// Update profile
 router.put(
   "/profile",
   authenticate,
@@ -20,7 +26,7 @@ router.put(
   buyerController.updateProfile,
 );
 
-// 🖼️ Buyer Profile Picture
+// Profile picture upload & fetch
 router.post(
   "/profile/picture",
   authenticate,
@@ -35,7 +41,7 @@ router.get(
   buyerController.getProfilePicture,
 );
 
-// 🧹 Delete Buyer Profile
+// Delete profile
 router.delete(
   "/profile",
   authenticate,
@@ -43,7 +49,11 @@ router.delete(
   buyerController.deleteProfile,
 );
 
-// Create request
+/* =======================================================================
+   📦 BUYER REQUESTS
+======================================================================= */
+
+// Create new buyer request
 router.post(
   "/requests",
   authenticate,
@@ -51,7 +61,7 @@ router.post(
   buyerController.createRequest,
 );
 
-// List my requests
+// List buyer’s own requests
 router.get(
   "/requests",
   authenticate,
@@ -59,7 +69,7 @@ router.get(
   buyerController.getMyRequests,
 );
 
-// Get single request
+// Get single request (with details)
 router.get(
   "/requests/:id",
   authenticate,
@@ -75,7 +85,7 @@ router.patch(
   buyerController.updateRequest,
 );
 
-// Cancel buyer request (soft delete = status=cancelled)
+// Cancel buyer request (soft delete → status=cancelled)
 router.delete(
   "/requests/:id",
   authenticate,
@@ -83,46 +93,62 @@ router.delete(
   buyerController.cancelRequest,
 );
 
-// Minimal users (for buyer to select farmer)
+/* =======================================================================
+   👥 USER & ROLE UTILITIES
+======================================================================= */
+
+// Minimal user list (for buyer to select farmer)
 router.get(
   "/users/minimal",
   authenticate,
   authorize("buyer"),
   buyerController.getMinimalUsers,
 );
-/* -------------------- Tickets -------------------- */
-router.post(
-  "/tickets",
-  authenticate,
-  upload.single("attachment"),
-  authorize("buyer"),
-  buyerController.createBuyerTicket,
-);
 
-router.get(
-  "/tickets",
-  authenticate,
-  authorize("buyer"),
-  buyerController.getMyBuyerTickets,
-);
-router.patch(
-  "/tickets/:id",
-  authenticate,
-  upload.single("attachment"),
-  buyerController.updateBuyerTicket,
-);
-
-/////////Extra
+// Minimal buyer list (extra endpoint)
 router.get(
   "/minimal",
   authenticate,
   authorize("buyer"),
   buyerController.getMinimalBuyers,
 );
+
+// List users by role "user"
 router.get(
   "/roles/user",
   authenticate,
   authorize("buyer"),
   buyerController.listUserRoleUsers,
 );
+
+/* =======================================================================
+   🎟️ TICKETS
+======================================================================= */
+
+// Create buyer ticket
+router.post(
+  "/tickets",
+  authenticate,
+  authorize("buyer"),
+  upload.single("attachment"),
+  buyerController.createBuyerTicket,
+);
+
+// Get all buyer’s tickets
+router.get(
+  "/tickets",
+  authenticate,
+  authorize("buyer"),
+  buyerController.getMyBuyerTickets,
+);
+
+// Update buyer ticket
+router.patch(
+  "/tickets/:id",
+  authenticate,
+  authorize("buyer"),
+  upload.single("attachment"),
+  buyerController.updateBuyerTicket,
+);
+
 export default router;

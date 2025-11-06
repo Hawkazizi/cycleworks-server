@@ -1,17 +1,20 @@
 import fs from "fs";
 import path from "path";
 import db from "../db/knex.js";
-import * as userService from "../services/user.service.js";
-import jwt from "jsonwebtoken";
 import { sendMail } from "../config/mailer.js";
+import * as userService from "../services/user.service.js";
 import * as farmerPlansService from "../services/farmerPlans.service.js";
-import * as farmerBuyerService from "../services/farmerBuyer.service.js";
 import * as ticketService from "../services/ticket.service.js";
-/* -------------------- Auth -------------------- */
+
+/* =======================================================================
+   🔐 AUTHENTICATION
+======================================================================= */
+
+/** 📝 Register new farmer (user) + upload application files */
 export const register = async (req, res) => {
   try {
     const { name, mobile, password, reason, supplier_name, role } = req.body;
-    // validate required fields
+
     if (!mobile || !password) {
       return res
         .status(400)
@@ -20,7 +23,7 @@ export const register = async (req, res) => {
 
     const chosenRole = role || "user";
 
-    // create user + application
+    // Create user and application record
     const { user, application } = await userService.registerUser({
       name,
       mobile,
@@ -30,7 +33,7 @@ export const register = async (req, res) => {
       role: chosenRole,
     });
 
-    // prepare target folder
+    // Prepare user folder
     const userDir = path.join(
       "uploads",
       "users",
@@ -39,7 +42,7 @@ export const register = async (req, res) => {
     );
     fs.mkdirSync(userDir, { recursive: true });
 
-    // helper to move files
+    // Helper: move files
     const saveFile = (file) => {
       if (!file) return null;
       const newPath = path.join(userDir, file.originalname);
@@ -51,7 +54,7 @@ export const register = async (req, res) => {
       };
     };
 
-    // pick files from multer
+    // Collect uploaded files
     const fileInfos = {
       biosecurity: saveFile(req.files?.biosecurity?.[0]),
       vaccination: saveFile(req.files?.vaccination?.[0]),
@@ -61,7 +64,7 @@ export const register = async (req, res) => {
       farm_biosecurity: saveFile(req.files?.farmBiosecurity?.[0]),
     };
 
-    // update application with file metadata
+    // Update application with file info
     await db("user_applications")
       .where({ id: application.id })
       .update(fileInfos);
@@ -77,14 +80,14 @@ export const register = async (req, res) => {
   }
 };
 
+/** 🔑 Farmer login */
 export const login = async (req, res) => {
   try {
     const { mobile, password } = req.body;
-    if (!mobile || !password) {
+    if (!mobile || !password)
       return res
         .status(400)
         .json({ error: "شماره موبایل و رمز عبور الزامی است" });
-    }
 
     const result = await userService.loginUser({ mobile, password });
     res.json(result);
@@ -93,47 +96,44 @@ export const login = async (req, res) => {
   }
 };
 
+/* =======================================================================
+   👤 PROFILE MANAGEMENT
+======================================================================= */
+
+/** 👀 Get farmer profile */
 export const getProfile = async (req, res) => {
   try {
-    const userId = req.user.id;
-    const profile = await userService.getUserProfile(userId);
+    const profile = await userService.getUserProfile(req.user.id);
     res.json({ profile });
   } catch (err) {
     res.status(404).json({ error: err.message });
   }
 };
 
+/** ✏️ Update farmer profile */
 export async function updateProfile(req, res) {
   try {
     const updated = await userService.updateProfileById(req.user.id, req.body);
     res.json({ profile: updated });
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: "Failed to update profile" });
   }
 }
 
+/** 🖼️ Upload profile picture */
 export const uploadProfilePicture = async (req, res) => {
   try {
     const userId = req.user.id;
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
 
-    if (!req.file) {
-      return res.status(400).json({ error: "No file uploaded" });
-    }
-
-    // Ensure /uploads/profiles directory exists
     const dir = path.join("uploads", "profiles");
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
-    // Move from /uploads/temp → /uploads/profiles
     const newFilePath = `/uploads/profiles/${req.file.filename}`;
     fs.renameSync(req.file.path, path.join(dir, req.file.filename));
 
-    // Get existing user record
+    // Delete old image if exists
     const user = await db("users").where({ id: userId }).first();
-
-    // 🧹 Delete old profile picture if exists
     if (user?.profile_picture) {
       const oldPath = path.join(
         process.cwd(),
@@ -141,25 +141,22 @@ export const uploadProfilePicture = async (req, res) => {
           ? user.profile_picture.slice(1)
           : user.profile_picture,
       );
-
       if (fs.existsSync(oldPath)) {
         try {
           fs.unlinkSync(oldPath);
-          console.log(`🧹 Deleted old profile picture: ${oldPath}`);
         } catch (err) {
           console.warn("⚠ Failed to delete old picture:", err.message);
         }
       }
     }
 
-    // 🧠 Update DB
     await db("users").where({ id: userId }).update({
       profile_picture: newFilePath,
       updated_at: new Date(),
     });
 
     res.json({
-      message: "Profile picture updated successfully",
+      message: "Profile picture updated",
       profile_picture: newFilePath,
     });
   } catch (err) {
@@ -168,31 +165,26 @@ export const uploadProfilePicture = async (req, res) => {
   }
 };
 
+/** 📸 Get profile picture */
 export const getProfilePicture = async (req, res) => {
   try {
-    const userId = req.user.id;
     const user = await db("users")
       .select("profile_picture")
-      .where({ id: userId })
+      .where({ id: req.user.id })
       .first();
 
-    if (!user || !user.profile_picture) {
+    if (!user?.profile_picture)
       return res.status(404).json({ error: "Profile picture not found" });
-    }
 
-    // Build absolute path
     const filePath = path.join(
       process.cwd(),
       user.profile_picture.startsWith("/")
         ? user.profile_picture.slice(1)
         : user.profile_picture,
     );
-
-    if (!fs.existsSync(filePath)) {
+    if (!fs.existsSync(filePath))
       return res.status(404).json({ error: "File not found on server" });
-    }
 
-    // Detect file type (jpeg/png/webp/jpg)
     const ext = path.extname(filePath).toLowerCase();
     const mimeType =
       ext === ".png"
@@ -203,22 +195,26 @@ export const getProfilePicture = async (req, res) => {
 
     res.setHeader("Content-Type", mimeType);
     fs.createReadStream(filePath).pipe(res);
-  } catch (err) {
-    console.error("getProfilePicture error:", err);
+  } catch {
     res.status(500).json({ error: "Failed to fetch profile picture" });
   }
 };
 
+/** ❌ Delete farmer profile */
 export async function deleteProfile(req, res) {
   try {
     await userService.deleteProfileById(req.user.id);
     res.json({ message: "User deleted" });
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: "Failed to delete user" });
   }
 }
-/* -------------------- email verification -------------------- */
 
+/* =======================================================================
+   📧 EMAIL VERIFICATION & PASSWORD
+======================================================================= */
+
+/** 📮 Request verification code */
 export async function requestEmailVerification(req, res) {
   try {
     const { email } = req.body;
@@ -228,12 +224,10 @@ export async function requestEmailVerification(req, res) {
       req.user.id,
       email,
     );
-
     await sendMail({
       to: email,
       subject: "کد تایید ایمیل",
-      text: `کد تایید شما: ${code}`,
-      html: `<h2>کد تایید شما</h2><p style="font-size:20px;font-weight:bold">${code}</p><p>این کد به مدت ۱۵ دقیقه معتبر است.</p>`,
+      html: `<h2>کد تایید شما</h2><p style="font-size:20px;font-weight:bold">${code}</p>`,
     });
 
     res.json({ message: "کد تایید ارسال شد" });
@@ -242,80 +236,69 @@ export async function requestEmailVerification(req, res) {
   }
 }
 
+/** ✅ Verify email */
 export async function verifyEmail(req, res) {
   try {
     const { code } = req.body;
     if (!code) return res.status(400).json({ error: "کد الزامی است" });
 
     const user = await userService.verifyEmailCode(req.user.id, code);
-    res.json({ profile: user, message: "ایمیل با موفقیت تایید شد" });
+    res.json({ profile: user, message: "ایمیل تایید شد" });
   } catch (err) {
-    res.status(400).json({ error: err.message || "خطا در تایید ایمیل" });
+    res.status(400).json({ error: err.message });
   }
 }
-/* -------------------- Change Password -------------------- */
 
+/** 🔐 Change password */
 export async function changePassword(req, res) {
   try {
     const { currentPassword, newPassword } = req.body;
-    if (!currentPassword || !newPassword) {
+    if (!currentPassword || !newPassword)
       return res.status(400).json({ error: "تمامی فیلدها الزامی است" });
-    }
+
     await userService.changePassword(req.user.id, currentPassword, newPassword);
     res.json({ message: "رمز عبور تغییر یافت" });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 }
-/* -------------------- Reqs -------------------- */
 
-export async function createPlan(req, res) {
+/* =======================================================================
+   📦 CONTAINERS & FILES
+======================================================================= */
+
+export async function updatePlanDate(req, res) {
   try {
-    const { requestId } = req.params;
-    const { planDate, containerAmount } = req.body;
-    const farmerId = req.user.id;
+    const { id } = req.params;
+    const { plan_date } = req.body;
+    const userId = req.user.id;
 
-    const plan = await farmerPlansService.createPlan({
-      requestId,
-      farmerId,
-      planDate,
-      containerAmount: Number(containerAmount),
-    });
-
-    res.status(201).json(plan);
+    const result = await farmerPlansService.setContainerPlanDate(
+      id,
+      plan_date,
+      userId,
+    );
+    res.json(result);
   } catch (err) {
+    console.error("updatePlanDate error:", err);
     res.status(400).json({ error: err.message });
   }
 }
 
-export async function listPlans(req, res) {
+export async function getPlanDate(req, res) {
   try {
-    const { requestId } = req.params;
-    const farmerId = req.user.id;
+    const { id } = req.params;
+    const userId = req.user.id;
 
-    const result = await farmerPlansService.listPlansWithContainers(
-      requestId,
-      farmerId,
-    );
-
+    const result = await farmerPlansService.getContainerPlanDate(id, userId);
     res.json(result);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("getPlanDate error:", err);
+    res.status(400).json({ error: err.message });
   }
 }
 
-/* ---------- Containers ---------- */
-export async function listContainers(req, res) {
-  try {
-    const { planId } = req.params;
-    const containers = await farmerPlansService.getContainersByPlan(planId);
-    res.json(containers);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-}
-
-/* ---------- Files ---------- */
+/** 📤 Upload container file */
 export async function uploadFile(req, res) {
   try {
     const { containerId } = req.params;
@@ -342,6 +325,7 @@ export async function uploadFile(req, res) {
   }
 }
 
+/** 📂 List files of a container */
 export async function listFiles(req, res) {
   try {
     const { containerId } = req.params;
@@ -352,72 +336,134 @@ export async function listFiles(req, res) {
   }
 }
 
-/* ---------- Farmer Requests ---------- */
-export async function listFarmerRequests(req, res) {
+/** 🔍 Get container metadata */
+export const getContainerMetadata = async (req, res) => {
   try {
-    const farmerId = req.user.id;
-    const requests = await farmerBuyerService.getFarmerRequests(farmerId);
-    res.json(requests);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-}
-
-export async function getFarmerRequest(req, res) {
-  try {
-    const farmerId = req.user.id;
     const { id } = req.params;
-    const request = await farmerBuyerService.getFarmerRequestById(farmerId, id);
-    if (!request) return res.status(404).json({ error: "Request not found" });
-    res.json(request);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-}
-export async function updateFarmerRequestStatus(req, res) {
-  try {
-    const { farmer_status } = req.body;
+    const supplierId = req.user.id;
 
-    const updated = await userService.updateFarmerRequestStatus(
-      req.user.id,
+    const container = await db("farmer_plan_containers as c")
+      .join("farmer_plans as p", "c.plan_id", "p.id")
+      .where("c.id", id)
+      .where((q) =>
+        q.where("c.supplier_id", supplierId).orWhere("p.farmer_id", supplierId),
+      )
+      .select("c.*")
+      .first();
+
+    if (!container)
+      return res.status(404).json({ error: "Container not found" });
+
+    const metadata = container.metadata ? JSON.parse(container.metadata) : {};
+    res.json({ metadata, metadata_status: container.metadata_status });
+  } catch {
+    res.status(500).json({ error: "Failed to fetch container metadata" });
+  }
+};
+
+/** ✏️ Update container metadata */
+export async function updateContainerMetadataController(req, res) {
+  try {
+    const result = await farmerPlansService.updateContainerMetadata(
       req.params.id,
-      farmer_status,
+      req.body,
+      req.user.id,
+      req.user.roles || [],
     );
 
-    res.json({
-      message:
-        farmer_status === "rejected"
-          ? "درخواست با موفقیت رد شد."
-          : "درخواست تایید شد.",
-      request: updated,
-    });
+    res.json(result);
   } catch (err) {
-    console.log("🔍 ERROR:", err.message); // 🚨 ADD THIS
+    res.status(400).json({ message: err.message });
+  }
+}
+
+/** 📋 List containers assigned to supplier */
+export async function listAssignedContainers(req, res) {
+  try {
+    const containers = await farmerPlansService.listAssignedPlansWithContainers(
+      req.user.id,
+    );
+    res.json(containers);
+  } catch (err) {
     res.status(400).json({ error: err.message });
   }
 }
-/* -------------------- Tickets -------------------------- */
 
-/* -------------------- Create Ticket -------------------- */
+/** 🔄 Update container status */
+export async function updateContainerStatusController(req, res) {
+  try {
+    const result = await farmerPlansService.updateContainerStatus(
+      req.params.id,
+      req.user.id,
+      req.body,
+    );
+    res.json({
+      message: "Container status updated successfully",
+      container: result,
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+}
+
+/* =======================================================================
+   🧭 CONTAINER TRACKING
+======================================================================= */
+
+/** 📜 List container tracking history */
+export async function listContainerTracking(req, res) {
+  try {
+    const history = await farmerPlansService.getContainerTracking(
+      req.params.id,
+      req.user.id,
+    );
+    res.json(history);
+  } catch {
+    res.status(500).json({ error: "Failed to fetch tracking history" });
+  }
+}
+
+/** ➕ Add new tracking status */
+export async function addContainerTracking(req, res) {
+  try {
+    const { id } = req.params;
+    const { status, note, tracking_code } = req.body;
+    if (!status) return res.status(400).json({ error: "Status is required" });
+
+    const result = await farmerPlansService.addContainerTracking({
+      containerId: id,
+      supplierId: req.user.id,
+      status,
+      note,
+      tracking_code,
+    });
+    res.status(201).json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+}
+
+/* =======================================================================
+   🎟️ TICKETS
+======================================================================= */
+
+/** 🆕 Create support ticket */
 export const createTicket = async (req, res) => {
   try {
     const { subject, message } = req.body;
-    const userId = req.user.id; // from authenticate middleware
-    const role = req.user.role || "user";
+    if (!message) return res.status(400).json({ error: "متن تیکت الزامی است" });
 
-    if (!message) {
-      return res.status(400).json({ error: "متن تیکت الزامی است" });
-    }
+    const userId = req.user.id;
+    const role = (req.user.roles && req.user.roles[0]) || "user";
 
-    // handle file upload (if exists)
+    // Optional file upload
     let fileInfo = null;
     if (req.file) {
-      const userDir = path.join("uploads", "users", String(userId), "tickets");
-      fs.mkdirSync(userDir, { recursive: true });
+      const dir = path.join("uploads", "users", String(userId), "tickets");
+      fs.mkdirSync(dir, { recursive: true });
 
-      const filePath = path.join(userDir, req.file.originalname);
+      const filePath = path.join(dir, req.file.originalname);
       fs.renameSync(req.file.path, filePath);
-
       fileInfo = {
         path: "/" + filePath.replace(/\\/g, "/"),
         originalname: req.file.originalname,
@@ -433,42 +479,35 @@ export const createTicket = async (req, res) => {
       file: fileInfo,
     });
 
-    res.status(201).json({
-      message: "تیکت با موفقیت ارسال شد",
-      ticket,
-    });
+    res.status(201).json({ message: "تیکت ارسال شد", ticket });
   } catch (err) {
-    console.error("CREATE TICKET ERROR:", err);
     res.status(400).json({ error: err.message });
   }
 };
 
-/* -------------------- List User Tickets -------------------- */
+/** 📋 List user tickets */
 export const getMyTickets = async (req, res) => {
   try {
-    const userId = req.user.id;
-    const tickets = await ticketService.getUserTickets(userId);
+    const tickets = await ticketService.getUserTickets(req.user.id);
     res.json(tickets);
   } catch (err) {
-    console.error("GET TICKETS ERROR:", err);
     res.status(400).json({ error: err.message });
   }
 };
 
-/* -------------------- Update User Tickets -------------------- */
+/** ✏️ Update ticket */
 export const updateTicket = async (req, res) => {
   try {
-    const ticketId = req.params.id;
-    const userId = req.user.id;
+    const { id } = req.params;
     const { subject, message } = req.body;
 
     let fileInfo = null;
     if (req.file) {
-      const userDir = path.join("uploads", "users", String(userId), "tickets");
-      fs.mkdirSync(userDir, { recursive: true });
-      const filePath = path.join(userDir, req.file.originalname);
-      fs.renameSync(req.file.path, filePath);
+      const dir = path.join("uploads", "users", String(req.user.id), "tickets");
+      fs.mkdirSync(dir, { recursive: true });
 
+      const filePath = path.join(dir, req.file.originalname);
+      fs.renameSync(req.file.path, filePath);
       fileInfo = {
         path: "/" + filePath.replace(/\\/g, "/"),
         originalname: req.file.originalname,
@@ -477,48 +516,29 @@ export const updateTicket = async (req, res) => {
     }
 
     const updated = await ticketService.updateTicket({
-      ticketId,
-      userId,
+      ticketId: id,
+      userId: req.user.id,
       subject,
       message,
       file: fileInfo,
     });
 
-    res.json({
-      message: "تیکت با موفقیت به‌روزرسانی شد",
-      ticket: updated,
-    });
+    res.json({ message: "تیکت به‌روزرسانی شد", ticket: updated });
   } catch (err) {
-    console.error("UPDATE TICKET ERROR:", err);
     res.status(400).json({ error: err.message });
   }
 };
 
+/* =======================================================================
+   🧰 UTILITIES
+======================================================================= */
+
+/** 👥 Minimal user list */
 export async function getMinimalUsers(req, res) {
   try {
-    const role = req.query.role || null;
-    const users = await userService.getMinimalUsers(role);
+    const users = await userService.getMinimalUsers(req.query.role || null);
     res.json(users);
   } catch (err) {
-    console.error("❌ Error fetching minimal users:", err);
     res.status(500).json({ error: "Failed to fetch users." });
-  }
-}
-
-export async function updateContainerMetadataController(req, res) {
-  try {
-    const { id } = req.params; // container id
-    const userId = req.user.id;
-    const { metadata } = req.body;
-
-    const result = await farmerPlansService.updateContainerMetadata(
-      id,
-      metadata,
-      userId,
-    );
-    res.json(result);
-  } catch (err) {
-    console.error("updateContainerMetadata error:", err);
-    res.status(400).json({ message: err.message });
   }
 }
