@@ -145,10 +145,14 @@ router.patch(
 // Container metadata (GET + PATCH)
 router
   .route("/containers/:id/metadata")
-  .get(authenticate, authorize("user"), userController.getContainerMetadata)
+  .get(
+    authenticate,
+    authorize("user", "admin", "manager"),
+    userController.getContainerMetadata,
+  )
   .patch(
     authenticate,
-    authorize("user"),
+    authorize("user", "manager", "admin"),
     userController.updateContainerMetadataController,
   );
 
