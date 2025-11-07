@@ -368,3 +368,97 @@ export async function getMinimalUsers(roleName) {
 
   return query.orderBy("users.name", "asc");
 }
+/**
+ * Fetch detailed info for a single container owned by the logged-in supplier (farmer user).
+ */
+export async function getContainerDetails(containerId, userId) {
+  // --- 1️⃣ Fetch container and all linked info
+  const container = await db("farmer_plan_containers as c")
+    .leftJoin("farmer_plans as p", "c.plan_id", "p.id")
+    .leftJoin("buyer_requests as br", "p.request_id", "br.id")
+    .leftJoin("users as buyer", "br.buyer_id", "buyer.id")
+    .leftJoin("users as supplier", "c.supplier_id", "supplier.id") // ✅ use supplier_id for ownership
+    .select(
+      "c.id as container_id",
+      "c.tracking_code",
+      "c.metadata",
+      "c.is_completed",
+      "c.in_progress",
+      "c.metadata_status as container_status",
+      "c.supplier_id",
+      "c.created_at as container_created_at",
+      "c.updated_at as container_updated_at",
+      "p.id as plan_id",
+
+      // 🧾 Buyer Request Details (form fields)
+      "br.id as request_id",
+      "br.status as request_status",
+      "br.import_country",
+      "br.entry_border",
+      "br.exit_border",
+      "br.packaging",
+      "br.egg_type",
+      "br.product_type",
+      "br.transport_type",
+      "br.size",
+      "br.certificates",
+      "br.cartons",
+      "br.container_amount",
+      "br.expiration_date",
+      "br.expiration_days",
+      "br.description as buyer_description",
+      "br.preferred_supplier_name",
+      "br.deadline_start as buyer_deadline_start",
+      "br.deadline_end as buyer_deadline_end",
+
+      // 👥 Buyer + Supplier Info
+      "buyer.name as buyer_name",
+      "buyer.mobile as buyer_mobile",
+      "supplier.name as supplier_name",
+      "supplier.mobile as supplier_mobile",
+    )
+    .where("c.id", containerId)
+    .first();
+
+  if (!container) throw new Error("Container not found");
+
+  // --- 2️⃣ Authorization: check supplier ownership
+  if (Number(container.supplier_id) !== Number(userId)) {
+    throw new Error("Unauthorized access to this container");
+  }
+
+  // --- 5️⃣ Normalize arrays and JSON fields safely
+  const normalized = {
+    ...container,
+    metadata:
+      typeof container.metadata === "string"
+        ? JSON.parse(container.metadata)
+        : container.metadata || {}, // ✅ fix: only parse if string
+    size: Array.isArray(container.size)
+      ? container.size
+      : safeParseArray(container.size),
+    certificates: Array.isArray(container.certificates)
+      ? container.certificates
+      : safeParseArray(container.certificates),
+  };
+
+  return normalized;
+}
+
+// Helper to safely parse Postgres arrays
+function safeParseArray(val) {
+  if (!val) return [];
+  try {
+    if (typeof val === "string") {
+      if (val.startsWith("[") && val.endsWith("]")) return JSON.parse(val);
+      return val
+        .replace(/[{}]/g, "")
+        .split(",")
+        .map((v) => v.trim())
+        .filter(Boolean);
+    }
+    return Array.isArray(val) ? val : [];
+  } catch {
+    return [];
+  }
+}

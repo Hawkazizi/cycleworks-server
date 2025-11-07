@@ -1185,52 +1185,67 @@ export const listAllContainersWithTracking = async (req, res) => {
 };
 
 /* -------------------- Assign Containers to Suppliers -------------------- */
-
 export const assignContainersToSuppliers = async (req, res) => {
   try {
     const { requestId, assignments } = req.body;
 
-    if (!requestId || !Array.isArray(assignments) || assignments.length === 0) {
-      return res.status(400).json({ error: "Invalid payload" });
+    if (!requestId) {
+      return res.status(400).json({ error: "Missing requestId" });
     }
 
-    // 🧩 Deduplicate + sanitize
+    // Allow empty array to mean “clear all assignments”
+    const isClearAll = !Array.isArray(assignments) || assignments.length === 0;
+
+    // Sanitize and deduplicate
     const seen = new Set();
-    const uniqueAssignments = assignments
-      .filter((a) => a.container_id && a.supplier_id)
-      .map((a) => ({
-        container_id: Number(a.container_id),
-        supplier_id: Number(a.supplier_id),
-      }))
-      .filter((a) => {
-        const key = `${a.container_id}-${a.supplier_id}`;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
+    const uniqueAssignments = Array.isArray(assignments)
+      ? assignments
+          .filter((a) => a.container_id)
+          .map((a) => ({
+            container_id: Number(a.container_id),
+            supplier_id: a.supplier_id ? Number(a.supplier_id) : null,
+          }))
+          .filter((a) => {
+            const key = a.container_id;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          })
+      : [];
 
-    if (uniqueAssignments.length === 0) {
-      return res.status(400).json({ error: "No valid container assignments" });
-    }
-
-    // 🔒 Run all updates inside one transaction
     await db.transaction(async (trx) => {
-      for (const { supplier_id, container_id } of uniqueAssignments) {
-        await trx.raw(
-          `
-          UPDATE farmer_plan_containers AS c
-          SET supplier_id = ?, updated_at = CURRENT_TIMESTAMP
-          FROM farmer_plans AS fp
-          WHERE fp.id = c.plan_id
-            AND fp.request_id = ?
-            AND c.id = ?
-          `,
-          [supplier_id, requestId, container_id],
-        );
+      // 🧹 Step 1: Clear all existing supplier assignments for this request
+      await trx.raw(
+        `
+        UPDATE farmer_plan_containers AS c
+        SET supplier_id = NULL, updated_at = CURRENT_TIMESTAMP
+        FROM farmer_plans AS fp
+        WHERE fp.id = c.plan_id
+          AND fp.request_id = ?
+        `,
+        [requestId],
+      );
+
+      // 🧩 Step 2: Apply new assignments if provided
+      if (!isClearAll && uniqueAssignments.length > 0) {
+        for (const { supplier_id, container_id } of uniqueAssignments) {
+          if (!supplier_id) continue;
+          await trx.raw(
+            `
+            UPDATE farmer_plan_containers AS c
+            SET supplier_id = ?, updated_at = CURRENT_TIMESTAMP
+            FROM farmer_plans AS fp
+            WHERE fp.id = c.plan_id
+              AND fp.request_id = ?
+              AND c.id = ?
+            `,
+            [supplier_id, requestId, container_id],
+          );
+        }
       }
     });
 
-    // 🧾 Return updated list for frontend
+    // 🔄 Return fresh state
     const updatedContainers = await db("farmer_plan_containers as c")
       .join("farmer_plans as fp", "fp.id", "c.plan_id")
       .leftJoin("users as u", "c.supplier_id", "u.id")
@@ -1245,9 +1260,13 @@ export const assignContainersToSuppliers = async (req, res) => {
       )
       .orderBy("c.id", "asc");
 
+    const message = isClearAll
+      ? "✅ تمام تامین‌کنندگان از این درخواست حذف شدند"
+      : "✅ تخصیص تامین‌کنندگان با موفقیت بروزرسانی شد";
+
     res.json({
       success: true,
-      message: "✅ تخصیص تامین‌کنندگان با موفقیت انجام شد",
+      message,
       updatedContainers,
     });
   } catch (err) {
@@ -1389,12 +1408,6 @@ export async function markContainerCompleted(req, res) {
   try {
     const { id } = req.params;
     const user = req.user; // assuming authenticate middleware attaches user info
-
-    if (!user || !user.roles?.includes("admin")) {
-      return res
-        .status(403)
-        .json({ error: "Unauthorized: Admin access required" });
-    }
 
     const result = await adminService.markContainerCompleted(id, user.id);
     res.json(result);

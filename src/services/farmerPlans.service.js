@@ -402,6 +402,10 @@ export async function listFiles(containerId) {
  * List all buyer requests and containers assigned to a supplier.
  * Returns grouped data with latest tracking info.
  */
+/**
+ * List all buyer requests and containers assigned to a supplier.
+ * Only show containers when the parent buyer request is 'accepted'.
+ */
 export async function listAssignedPlansWithContainers(supplierId) {
   const rows = await db("farmer_plan_containers as c")
     .join("farmer_plans as fp", "fp.id", "c.plan_id")
@@ -425,9 +429,9 @@ export async function listAssignedPlansWithContainers(supplierId) {
     })
     .select(
       "br.id as request_id",
+      "br.status as request_status",
       "br.import_country",
       "br.exit_border",
-      "br.status as request_status",
       "br.deadline_start as deadline_start_date",
       "br.deadline_end as deadline_end_date",
 
@@ -455,9 +459,13 @@ export async function listAssignedPlansWithContainers(supplierId) {
       "buyer.mobile as buyer_mobile",
     )
     .where("c.supplier_id", supplierId)
+    .andWhere("br.status", "accepted") // ✅ Only accepted buyer requests
     .orderBy("fp.plan_date", "asc");
 
-  // Group containers by request
+  // If no rows, just return []
+  if (!rows.length) return [];
+
+  // Group containers by buyer request
   const grouped = {};
   for (const r of rows) {
     if (!grouped[r.request_id]) {
@@ -475,6 +483,7 @@ export async function listAssignedPlansWithContainers(supplierId) {
         containers: [],
       };
     }
+
     let meta = {};
     try {
       meta =

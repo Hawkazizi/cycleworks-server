@@ -95,6 +95,13 @@ router.post(
    📦 CONTAINERS (SUPPLIER FOCUS)
 ======================================================================= */
 
+// 📦 Get single container details (for farmer)
+router.get(
+  "/containers/:id",
+  authenticate,
+  authorize("user"),
+  userController.getContainerDetails,
+);
 // ✅ New route — Get selected plan date
 router.get(
   "/containers/:id/plan-date",

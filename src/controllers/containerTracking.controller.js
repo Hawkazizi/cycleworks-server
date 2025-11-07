@@ -6,6 +6,7 @@ import db from "../db/knex.js";
 ======================================================================= */
 
 /** 🧾 List all containers with latest tracking, plans, files, and stats */
+/** 🧾 List all containers with latest tracking, plans, files, and stats */
 export async function listAllContainersWithTracking(req, res) {
   try {
     const rows = await db("farmer_plan_containers as c")
@@ -35,6 +36,7 @@ export async function listAllContainersWithTracking(req, res) {
         "c.id as container_id",
         "c.container_no",
         "c.status as container_status",
+        "c.is_completed",
         "c.created_at as container_created_at",
         "c.metadata",
         "c.metadata_status",
@@ -75,32 +77,26 @@ export async function listAllContainersWithTracking(req, res) {
         "ct.created_at as updated_at",
       )
       .orderBy("ct.created_at", "desc");
-
     if (!rows.length) {
       return res.json({
         stats: { totalContainers: 0, containersByCountry: {}, exitedIran: 0 },
         containers: [],
       });
     }
-
     // Optional supplier filter
     const { supplier_id } = req.query;
     const filteredRows = supplier_id
       ? rows.filter((r) => String(r.supplier_id) === String(supplier_id))
       : rows;
-
     const containerIds = filteredRows.map((r) => r.container_id);
-
     // Tracking history
     const histories = await db("container_tracking_statuses")
       .whereIn("container_id", containerIds)
       .orderBy("created_at", "desc");
-
     const historyByContainer = histories.reduce((acc, h) => {
       (acc[h.container_id] ||= []).push(h);
       return acc;
     }, {});
-
     // Files per container
     const files = await db("farmer_plan_files")
       .whereIn("container_id", containerIds)
@@ -115,7 +111,6 @@ export async function listAllContainersWithTracking(req, res) {
         "type",
         "created_at",
       );
-
     const filesByContainer = files.reduce((acc, f) => {
       (acc[f.container_id] ||= []).push(f);
       return acc;
@@ -127,7 +122,6 @@ export async function listAllContainersWithTracking(req, res) {
         return {};
       }
     }
-
     // Merge and compute stats
     const containers = filteredRows.map((c) => ({
       ...c,
@@ -139,22 +133,16 @@ export async function listAllContainersWithTracking(req, res) {
         typeof c.admin_metadata === "string"
           ? safeParseJSON(c.admin_metadata)
           : c.admin_metadata || {},
-
       tracking_history: historyByContainer[c.container_id] || [],
       files: filesByContainer[c.container_id] || [],
     }));
-
-    const exitedIranStatuses = ["loaded_on_ship", "delivered"];
     const containersByCountry = {};
     let exitedIran = 0;
-
     containers.forEach((c) => {
       const country = c.import_country?.trim() || "Unknown";
       containersByCountry[country] = (containersByCountry[country] || 0) + 1;
-      if (exitedIranStatuses.includes((c.latest_status || "").toLowerCase()))
-        exitedIran++;
+      if (c.is_completed) exitedIran++;
     });
-
     res.json({
       stats: {
         totalContainers: containers.length,

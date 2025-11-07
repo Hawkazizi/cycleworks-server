@@ -266,6 +266,20 @@ export async function changePassword(req, res) {
 /* =======================================================================
    📦 CONTAINERS & FILES
 ======================================================================= */
+/* -------------------- Get Container Details -------------------- */
+export const getContainerDetails = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+
+    const data = await userService.getContainerDetails(id, userId);
+
+    res.json(data);
+  } catch (err) {
+    console.error("getContainerDetails error:", err);
+    res.status(400).json({ error: err.message });
+  }
+};
 
 export async function updatePlanDate(req, res) {
   try {
