@@ -86,7 +86,6 @@ export async function reviewContainerMetadata(
       metadata_reviewed_by: reviewerId,
       metadata_reviewed_at: db.fn.now(),
       updated_at: db.fn.now(),
-      in_progress: false, // ✅ optional: ensure finalized state
     })
     .returning("*");
 
