@@ -372,11 +372,16 @@ export async function updateContainerMetadata(
     throw new Error("Not authorized to modify this container");
   }
 
-  // 3️⃣ Update metadata fields
+  // 3️⃣ Update metadata fields (JSONB merge)
+  const normalized =
+    metadata && typeof metadata.metadata === "object"
+      ? metadata.metadata // unwrap accidental nesting
+      : metadata;
+
   await db("farmer_plan_containers")
     .where({ id: containerId })
     .update({
-      metadata: JSON.stringify(metadata),
+      metadata: db.raw("metadata || ?", JSON.stringify(normalized)),
       metadata_status: "submitted",
       metadata_review_note: null,
       metadata_reviewed_by: null,

@@ -542,29 +542,67 @@ export async function toggleInProgress(containerId, adminId) {
   };
 }
 
+/* -------------------- ADMIN: Mark Container as Completed -------------------- */
 export async function markContainerCompleted(containerId, adminId) {
   if (!containerId) throw new Error("Container ID is required");
 
+  // Fetch container with fields we need for notification
   const container = await db("farmer_plan_containers")
+    .select(
+      "id",
+      "container_no",
+      "status",
+      "is_completed",
+      "supplier_id",
+      "buyer_request_id",
+    )
     .where({ id: containerId })
     .first();
 
   if (!container) throw new Error("Container not found");
-
-  // Already completed?
   if (container.is_completed) {
     return { message: "Container is already marked as completed" };
   }
 
-  await db("farmer_plan_containers").where({ id: containerId }).update({
-    is_completed: true,
-    in_progress: false,
-    status: "completed",
-    updated_at: db.fn.now(),
-    completed_at: db.fn.now(),
-    admin_metadata_reviewed_by: adminId,
-    admin_metadata_reviewed_at: db.fn.now(),
+  await db.transaction(async (trx) => {
+    // Core updates
+    await trx("farmer_plan_containers").where({ id: containerId }).update({
+      is_completed: true,
+      in_progress: false,
+      status: "completed",
+      updated_at: trx.fn.now(),
+      completed_at: trx.fn.now(),
+      admin_metadata_reviewed_by: adminId,
+      admin_metadata_reviewed_at: trx.fn.now(),
+    });
+
+    // Tracking entry: delivered
+    await trx("container_tracking_statuses").insert({
+      container_id: containerId,
+      status: "delivered",
+      note: "کانتینر به مقصد تحویل داده شد",
+      created_by: adminId || null,
+      created_at: trx.fn.now(),
+    });
+
+    // Notification to supplier (farmer) — use existing service signature
+    if (container.supplier_id) {
+      await NotificationService.create(
+        container.supplier_id, // userId (NUMBER) ✅
+        "container_tracking_update", // type (already supported) ✅
+        container.buyer_request_id || null, // relatedId (request id) ✅
+        {
+          status: "delivered",
+          containerId: container.id,
+          containerNo: container.container_no,
+        },
+        trx, // pass the KNEX trx ✅
+      );
+    }
   });
 
-  return { message: "Container marked as completed successfully" };
+  return {
+    message:
+      "کانتینر با موفقیت تکمیل شد و وضعیت 'در مقصد' ثبت گردید و اعلان ارسال شد ✅",
+  };
 }

@@ -282,7 +282,7 @@ router.get(
 router.post(
   "/containers/assign",
   authenticate,
-  authorize("admin", "manager"),
+  authorize("admin"),
   adminController.assignContainersToSuppliers,
 );
 

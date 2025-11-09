@@ -1140,8 +1140,9 @@ export const listAllContainersWithTracking = async (req, res) => {
     const containers = await db("farmer_plan_containers as c")
       .leftJoin("farmer_plans as fp", "c.plan_id", "fp.id")
       .leftJoin("buyer_requests as br", "fp.request_id", "br.id")
-      .leftJoin("users as supplier", "c.supplier_id", "supplier.id") // Use supplier_id from farmer_plan_containers table
-      .leftJoin("users as buyer", "br.buyer_id", "buyer.id")
+      .leftJoin("users as supplier", "c.supplier_id", "supplier.id") // supplier of container
+      .leftJoin("users as buyer", "br.buyer_id", "buyer.id") // assigned buyer (customer)
+      .leftJoin("users as operator", "br.creator_id", "operator.id") // main operator (creator)
       .leftJoin(
         db("container_tracking_statuses as t")
           .select("container_id")
@@ -1164,8 +1165,9 @@ export const listAllContainersWithTracking = async (req, res) => {
         "c.status as container_status",
         "c.created_at",
         "c.updated_at",
-        "supplier.name as supplier_name", // Changed from farmer_name to supplier_name
-        "buyer.name as buyer_name",
+        "supplier.name as supplier_name",
+        "buyer.name as buyer_name", // assigned customer
+        "operator.name as operator_name", // main buyer/operator
         "br.import_country",
         "br.product_type",
         "br.egg_type",
@@ -1226,22 +1228,47 @@ export const assignContainersToSuppliers = async (req, res) => {
         [requestId],
       );
 
-      // 🧩 Step 2: Apply new assignments if provided
-      if (!isClearAll && uniqueAssignments.length > 0) {
-        for (const { supplier_id, container_id } of uniqueAssignments) {
-          if (!supplier_id) continue;
-          await trx.raw(
-            `
-            UPDATE farmer_plan_containers AS c
-            SET supplier_id = ?, updated_at = CURRENT_TIMESTAMP
-            FROM farmer_plans AS fp
-            WHERE fp.id = c.plan_id
-              AND fp.request_id = ?
-              AND c.id = ?
-            `,
-            [supplier_id, requestId, container_id],
-          );
-        }
+      // If we're clearing all, we're done inside trx (no notifications)
+      if (isClearAll || uniqueAssignments.length === 0) return;
+
+      // 📋 Preload container_no for the containers we are assigning (for nicer notifications)
+      const ids = uniqueAssignments.map((a) => a.container_id);
+      const rows = await trx("farmer_plan_containers")
+        .whereIn("id", ids)
+        .select("id", "container_no");
+      const containerNoById = Object.fromEntries(
+        rows.map((r) => [r.id, r.container_no]),
+      );
+
+      // 🧩 Step 2: Apply new assignments + 🔔 notify each supplier
+      for (const { supplier_id, container_id } of uniqueAssignments) {
+        if (!supplier_id) continue;
+
+        // Update assignment
+        await trx.raw(
+          `
+          UPDATE farmer_plan_containers AS c
+          SET supplier_id = ?, updated_at = CURRENT_TIMESTAMP
+          FROM farmer_plans AS fp
+          WHERE fp.id = c.plan_id
+            AND fp.request_id = ?
+            AND c.id = ?
+          `,
+          [supplier_id, requestId, container_id],
+        );
+
+        // 🔔 Notify the supplier about this assignment
+        await NotificationService.create(
+          supplier_id,
+          "request_status_changed",
+          requestId,
+          {
+            status: "تخصیص شده",
+            container_id,
+            container_no: containerNoById[container_id] ?? null,
+          },
+          trx, // ensure atomicity with the assignment
+        );
       }
     });
 
