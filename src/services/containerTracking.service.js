@@ -118,7 +118,7 @@ export async function findByTrackingCode(code) {
    ✏️ UPDATE TY NUMBER (pure DB logic)
 ======================================================================= */
 export async function updateTyNumber(containerId, tyNumber, userId) {
-  // Ensure unique constraint handled properly
+  // ✅ 1. Add a history record in tracking statuses
   await db("container_tracking_statuses")
     .insert({
       container_id: containerId,
@@ -129,14 +129,31 @@ export async function updateTyNumber(containerId, tyNumber, userId) {
     .onConflict(["container_id", "tracking_code"])
     .ignore();
 
-  // Update metadata in farmer_plan_containers
+  // ✅ 2. Update main tracking_code and metadata (both ty_number & tracking_code)
   await db("farmer_plan_containers")
     .where({ id: containerId })
     .update({
-      metadata: db.raw("jsonb_set(metadata, '{tracking_code}', ?::jsonb)", [
-        `"${tyNumber}"`,
-      ]),
+      tracking_code: tyNumber, // main column
+      metadata: db.raw(
+        `
+        jsonb_set(
+          jsonb_set(
+            jsonb_set(
+              coalesce(metadata, '{}'::jsonb),
+              '{ty_number}', to_jsonb(?::text)
+            ),
+            '{tracking_code}', to_jsonb(?::text)
+          ),
+          '{updated_at}', to_jsonb(now()::text)
+        )
+      `,
+        [tyNumber, tyNumber],
+      ),
+      updated_at: db.fn.now(),
     });
 
-  return { success: true, message: "TY number recorded successfully" };
+  return {
+    success: true,
+    message: "TY number and tracking code updated successfully",
+  };
 }
