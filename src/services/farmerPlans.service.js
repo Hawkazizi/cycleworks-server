@@ -14,12 +14,10 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
  */
 export async function createPlan({
   requestId,
-  farmerId,
+  supplierId, // 🔹 renamed
   planDate,
   containerAmount,
 }) {
-  // Debugging logs to ensure farmerId is passed correctly
-  console.log("Creating plan with farmerId:", farmerId);
   if (!DATE_RE.test(planDate))
     throw new Error("Invalid planDate format, must be YYYY-MM-DD");
   if (!containerAmount || containerAmount <= 0)
@@ -31,7 +29,7 @@ export async function createPlan({
   if (!buyerRequest) throw new Error("Buyer request not found");
 
   return db.transaction(async (trx) => {
-    /* ---------- 1️⃣ Enforce deadline window ---------- */
+    // 1️⃣ Deadline window check
     let inWindow = true;
     if (buyerRequest.deadline_start_date && buyerRequest.deadline_end_date) {
       const [{ ok }] = await trx
@@ -43,11 +41,9 @@ export async function createPlan({
         .then((r) => r.rows);
       inWindow = ok;
     }
+    if (!inWindow) throw new Error("Plan date is outside the allowed period");
 
-    if (!inWindow)
-      throw new Error("Plan date is outside the allowed request period");
-
-    /* ---------- 2️⃣ Enforce container quota ---------- */
+    // 2️⃣ Quota check
     const { cnt: usedRaw } = await trx("farmer_plan_containers as c")
       .join("farmer_plans as p", "p.id", "c.plan_id")
       .where("p.request_id", requestId)
@@ -57,18 +53,12 @@ export async function createPlan({
     const used = Number(usedRaw || 0);
     const total = Number(buyerRequest.container_amount || 0);
     if (used + containerAmount > total) {
-      throw new Error(
-        `🚨 تعداد کانتینرها بیشتر از سقف ${total} است. شما تاکنون ${used} ثبت کرده‌اید.`,
-      );
+      throw new Error(`Exceeded container quota of ${total} (used ${used}).`);
     }
 
-    /* ---------- 3️⃣ Remove existing plan for same date ---------- */
+    // 3️⃣ Remove existing plan for same date (no farmer_id filter now)
     const existing = await trx("farmer_plans")
-      .where({
-        request_id: requestId,
-        farmer_id: farmerId,
-        plan_date: planDate,
-      })
+      .where({ request_id: requestId, plan_date: planDate })
       .first();
 
     if (existing) {
@@ -84,41 +74,38 @@ export async function createPlan({
       await trx("farmer_plans").where({ id: existing.id }).del();
     }
 
-    /* ---------- 4️⃣ Insert new plan ---------- */
-    // Log the plan insert to verify the farmer_id
-    console.log("Inserting new plan with farmerId:", farmerId);
+    // 4️⃣ Create new plan (no farmer_id column anymore)
     const [plan] = await trx("farmer_plans")
       .insert({
         request_id: requestId,
-        farmer_id: farmerId, // Ensure farmerId is being passed here
         plan_date: planDate,
         status: "submitted",
       })
       .returning("*");
 
-    /* ---------- 5️⃣ Insert containers ---------- */
+    // 5️⃣ Insert containers
     const containers = [];
     for (let i = 1; i <= containerAmount; i++) {
       const [c] = await trx("farmer_plan_containers")
         .insert({
           plan_id: plan.id,
           container_no: i,
-          supplier_id: farmerId, // Ensure supplierId is set correctly
+          supplier_id: supplierId,
           status: "submitted",
         })
         .returning("*");
       containers.push(c);
     }
 
-    /* ---------- 6️⃣ Auto-accept request if first plan ---------- */
+    // 6️⃣ Auto-accept buyer request (first plan trigger)
     const [{ count }] = await trx("farmer_plans")
-      .where({ request_id: requestId, farmer_id: farmerId })
+      .where({ request_id: requestId })
       .count("* as count");
+
     if (Number(count) === 1) {
-      await trx("buyer_requests").where({ id: requestId }).update({
-        status: "accepted",
-        updated_at: db.fn.now(),
-      });
+      await trx("buyer_requests")
+        .where({ id: requestId })
+        .update({ status: "accepted", updated_at: db.fn.now() });
     }
 
     plan.containers = containers;
@@ -130,12 +117,11 @@ export async function createPlan({
  * List all plans (and containers) for a specific buyer request & farmer.
  * Returns total/used/remaining quotas and attached file metadata.
  */
-export async function listPlansWithContainers(requestId, farmerId) {
+export async function listPlansWithContainers(requestId) {
   const plans = await db("farmer_plans")
     .select(
       "id",
       "request_id",
-      "farmer_id",
       db.raw("to_char(plan_date, 'YYYY-MM-DD') as plan_date"),
       "status",
       "reviewed_by",
@@ -143,7 +129,7 @@ export async function listPlansWithContainers(requestId, farmerId) {
       "created_at",
       "updated_at",
     )
-    .where({ request_id: requestId, farmer_id: farmerId })
+    .where({ request_id: requestId })
     .orderBy("plan_date", "asc");
 
   const buyerRequest = await db("buyer_requests")
@@ -281,15 +267,11 @@ export async function addFileToContainer(containerId, fileMeta) {
     })
     .returning("*");
 
-  const info = await db("farmer_plan_containers")
-    .join("farmer_plans", "farmer_plans.id", "farmer_plan_containers.plan_id")
-    .join("buyer_requests", "buyer_requests.id", "farmer_plans.request_id")
-    .where("farmer_plan_containers.id", containerId)
-    .select(
-      "farmer_plans.request_id",
-      "farmer_plans.farmer_id",
-      "buyer_requests.buyer_id",
-    )
+  const info = await db("farmer_plan_containers as c")
+    .join("farmer_plans as p", "p.id", "c.plan_id")
+    .join("buyer_requests as br", "br.id", "p.request_id")
+    .where("c.id", containerId)
+    .select("p.request_id", "br.buyer_id", "c.supplier_id")
     .first();
 
   if (!info) return file;
@@ -297,7 +279,7 @@ export async function addFileToContainer(containerId, fileMeta) {
   const {
     request_id: requestId,
     buyer_id: buyerId,
-    farmer_id: farmerId,
+    supplier_id: supplierId,
   } = info;
   const data = { fileId: file.id, containerId, type: fileMeta.type };
 
@@ -324,18 +306,21 @@ export async function addFileToContainer(containerId, fileMeta) {
   }
 
   // Notify buyer
-  if (buyerId) {
+  if (buyerId)
     promises.push(
       NotificationService.create(buyerId, "new_file_upload", requestId, data),
     );
-  }
 
-  // Notify farmer
-  if (farmerId) {
+  // Notify supplier
+  if (supplierId)
     promises.push(
-      NotificationService.create(farmerId, "new_file_upload", requestId, data),
+      NotificationService.create(
+        supplierId,
+        "new_file_upload",
+        requestId,
+        data,
+      ),
     );
-  }
 
   await Promise.allSettled(promises);
   return file;

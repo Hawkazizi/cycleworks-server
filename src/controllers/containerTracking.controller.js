@@ -4,18 +4,17 @@ import db from "../db/knex.js";
 /* =======================================================================
    📦 CONTAINER OVERVIEW (ADMIN)
 ======================================================================= */
-
 /** 🧾 List all containers with latest tracking, plans, files, and stats */
 /** 🧾 List all containers with latest tracking, plans, files, and stats */
 export async function listAllContainersWithTracking(req, res) {
   try {
     const rows = await db("farmer_plan_containers as c")
       .leftJoin("farmer_plans as p", "c.plan_id", "p.id")
-      .leftJoin("users as farmer", "p.farmer_id", "farmer.id")
+      // 🟢 supplier & buyer joins
       .leftJoin("users as supplier", "c.supplier_id", "supplier.id")
       .leftJoin("buyer_requests as br", "p.request_id", "br.id")
       .leftJoin("users as buyer", "br.buyer_id", "buyer.id")
-      // Last tracking entry per container
+      // 🟢 latest tracking join
       .leftJoin(
         db("container_tracking_statuses as t")
           .select("container_id")
@@ -32,6 +31,10 @@ export async function listAllContainersWithTracking(req, res) {
           "last.latest_time",
         );
       })
+      // 🧠 Fetch only containers that have a TY number in metadata
+      .whereRaw(
+        `c.metadata->>'ty_number' IS NOT NULL AND c.metadata->>'ty_number' <> ''`,
+      )
       .select(
         "c.id as container_id",
         "c.container_no",
@@ -60,10 +63,7 @@ export async function listAllContainersWithTracking(req, res) {
         "br.container_amount",
         "br.cartons",
         "br.status as buyer_status",
-        // Users
-        "farmer.id as farmer_id",
-        "farmer.name as farmer_name",
-        "farmer.email as farmer_email",
+        // Users (supplier / buyer)
         "supplier.id as supplier_id",
         "supplier.name as supplier_name",
         "supplier.email as supplier_email",
@@ -77,27 +77,34 @@ export async function listAllContainersWithTracking(req, res) {
         "ct.created_at as updated_at",
       )
       .orderBy("ct.created_at", "desc");
+
+    // 🔹 Handle no results
     if (!rows.length) {
       return res.json({
         stats: { totalContainers: 0, containersByCountry: {}, exitedIran: 0 },
         containers: [],
       });
     }
-    // Optional supplier filter
+
+    // 🧩 Optional filter by supplier_id query param
     const { supplier_id } = req.query;
     const filteredRows = supplier_id
       ? rows.filter((r) => String(r.supplier_id) === String(supplier_id))
       : rows;
+
     const containerIds = filteredRows.map((r) => r.container_id);
-    // Tracking history
+
+    // 🧾 Fetch all tracking history for visible containers
     const histories = await db("container_tracking_statuses")
       .whereIn("container_id", containerIds)
       .orderBy("created_at", "desc");
+
     const historyByContainer = histories.reduce((acc, h) => {
       (acc[h.container_id] ||= []).push(h);
       return acc;
     }, {});
-    // Files per container
+
+    // 📂 Fetch files per container
     const files = await db("farmer_plan_files")
       .whereIn("container_id", containerIds)
       .select(
@@ -111,10 +118,13 @@ export async function listAllContainersWithTracking(req, res) {
         "type",
         "created_at",
       );
+
     const filesByContainer = files.reduce((acc, f) => {
       (acc[f.container_id] ||= []).push(f);
       return acc;
     }, {});
+
+    // 🧠 Safe JSON parse helper
     function safeParseJSON(value) {
       try {
         return value ? JSON.parse(value) : {};
@@ -122,7 +132,8 @@ export async function listAllContainersWithTracking(req, res) {
         return {};
       }
     }
-    // Merge and compute stats
+
+    // 🧩 Merge everything together
     const containers = filteredRows.map((c) => ({
       ...c,
       metadata:
@@ -136,6 +147,8 @@ export async function listAllContainersWithTracking(req, res) {
       tracking_history: historyByContainer[c.container_id] || [],
       files: filesByContainer[c.container_id] || [],
     }));
+
+    // 📊 Compute stats
     const containersByCountry = {};
     let exitedIran = 0;
     containers.forEach((c) => {
@@ -143,6 +156,8 @@ export async function listAllContainersWithTracking(req, res) {
       containersByCountry[country] = (containersByCountry[country] || 0) + 1;
       if (c.is_completed) exitedIran++;
     });
+
+    // ✅ Response
     res.json({
       stats: {
         totalContainers: containers.length,
@@ -200,9 +215,8 @@ export async function addTracking(req, res) {
     // Ownership check for non-admins
     if (!roles.includes("admin") && !roles.includes("manager")) {
       const owns = await db("farmer_plan_containers as c")
-        .join("farmer_plans as p", "c.plan_id", "p.id")
         .where((builder) => {
-          builder.where("p.farmer_id", userId).orWhere("c.supplier_id", userId);
+          builder.where("c.supplier_id", userId);
         })
         .andWhere("c.id", id)
         .first();
@@ -234,9 +248,8 @@ export async function listTracking(req, res) {
     // Access control
     if (!roles.includes("admin") && !roles.includes("manager")) {
       const ownsContainer = await db("farmer_plan_containers as c")
-        .join("farmer_plans as p", "c.plan_id", "p.id")
         .where((builder) => {
-          builder.where("p.farmer_id", userId).orWhere("c.supplier_id", userId);
+          builder.where("c.supplier_id", userId);
         })
         .andWhere("c.id", id)
         .first();
@@ -415,9 +428,8 @@ export async function updateTyNumber(req, res) {
     // Ownership check for non-admins
     if (!roles.includes("admin") && !roles.includes("manager")) {
       const owns = await db("farmer_plan_containers as c")
-        .join("farmer_plans as p", "c.plan_id", "p.id")
         .where((builder) => {
-          builder.where("p.farmer_id", userId).orWhere("c.supplier_id", userId);
+          builder.where("c.supplier_id", userId);
         })
         .andWhere("c.id", id)
         .first();

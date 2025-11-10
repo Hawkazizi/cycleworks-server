@@ -31,17 +31,21 @@ export async function reviewFile(fileId, status, note, reviewerId) {
   // Optional: Notify farmer about file review
   try {
     // ✅ Fetch plan through container → plan relation
-    const plan = await db("farmer_plans as fp")
-      .join("farmer_plan_containers as c", "fp.id", "c.plan_id")
-      .where("c.id", updated.container_id)
-      .select("fp.id", "fp.request_id", "fp.farmer_id")
+    const container = await db("farmer_plan_containers")
+      .where("id", updated.container_id)
+      .select("supplier_id", "plan_id")
       .first();
 
-    if (plan?.farmer_id) {
+    if (container?.supplier_id) {
+      const plan = await db("farmer_plans")
+        .where({ id: container.plan_id })
+        .select("request_id")
+        .first();
+
       await NotificationService.create(
-        plan.farmer_id,
+        container.supplier_id,
         "file_reviewed",
-        plan.request_id,
+        plan?.request_id,
         { file_id: updated.id, status, note },
       );
     }
@@ -91,17 +95,23 @@ export async function reviewContainerMetadata(
 
   // 🔔 Notify farmer
   try {
-    const plan = await db("farmer_plans")
-      .where({ id: updated.plan_id })
+    const containerRecord = await db("farmer_plan_containers")
+      .where({ id: containerId })
+      .select("supplier_id", "plan_id")
       .first();
 
-    if (plan?.farmer_id) {
+    if (containerRecord?.supplier_id) {
+      const plan = await db("farmer_plans")
+        .where({ id: containerRecord.plan_id })
+        .select("request_id")
+        .first();
+
       await NotificationService.create(
-        plan.farmer_id,
+        containerRecord.supplier_id,
         "metadata_reviewed",
-        plan.request_id,
+        plan?.request_id,
         {
-          container_id: container.id,
+          container_id: containerId,
           metadata_status: status,
           note,
         },
@@ -172,15 +182,21 @@ export async function updateContainerAdminMetadata(
 
   // 🔔 Notify linked farmer (if exists)
   try {
-    const plan = await db("farmer_plans")
-      .where({ id: updated.plan_id })
+    const containerRecord = await db("farmer_plan_containers")
+      .where({ id: containerId })
+      .select("supplier_id", "plan_id")
       .first();
 
-    if (plan?.farmer_id) {
+    if (containerRecord?.supplier_id) {
+      const plan = await db("farmer_plans")
+        .where({ id: containerRecord.plan_id })
+        .select("request_id")
+        .first();
+
       await NotificationService.create(
-        plan.farmer_id,
+        containerRecord.supplier_id,
         "admin_metadata_updated",
-        plan.request_id,
+        plan?.request_id,
         {
           container_id: containerId,
           admin_metadata: filtered,

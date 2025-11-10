@@ -186,13 +186,13 @@ router.patch(
 router.post(
   "/applications/:id/review",
   authenticate,
-  authorize("admin", "manager"),
+  authorize("admin"),
   adminController.reviewApplication,
 );
 router.patch(
   "/applications/:id/final-review",
   authenticate,
-  authorize("admin", "manager"),
+  authorize("admin"),
   adminController.finalizeApplicationReview,
 );
 

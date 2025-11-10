@@ -372,11 +372,10 @@ function normalizeRequest(row) {
 }
 
 /** 🔄 Hydrate plans → containers → files */
-/** 🔄 Hydrate plans → containers → files */
 async function getPlansWithContainers(requestId) {
+  // 🔹 Fetch plans — no more join with users
   const plans = await db("farmer_plans as fp")
-    .leftJoin("users as f", "fp.farmer_id", "f.id")
-    .select("fp.*", "f.name as farmer_name", "f.mobile as farmer_mobile")
+    .select("fp.*")
     .where("fp.request_id", requestId)
     .orderBy("fp.plan_date", "asc");
 
@@ -384,18 +383,18 @@ async function getPlansWithContainers(requestId) {
     // ✅ Include buyer_requests (br) join through farmer_plans (fp)
     plan.containers = await db("farmer_plan_containers as c")
       .leftJoin("farmer_plans as p", "c.plan_id", "p.id")
-      .leftJoin("buyer_requests as br", "p.request_id", "br.id") // ✅ Added missing join
-      .leftJoin("users as s", "c.supplier_id", "s.id")
+      .leftJoin("buyer_requests as br", "p.request_id", "br.id")
+      .leftJoin("users as s", "c.supplier_id", "s.id") // supplier replaces farmer
       .select(
         "c.*",
         "s.name as supplier_name",
         "s.email as supplier_email",
-        // ✅ Now safely access buyer request fields
+        // ✅ Access buyer request fields
         "br.import_country",
         "br.egg_type",
         "br.cartons",
         "br.container_amount",
-        // ✅ Optional admin metadata (if you use it)
+        // ✅ Optional admin metadata
         "c.admin_metadata",
         "c.admin_metadata_status",
         "c.admin_metadata_review_note",

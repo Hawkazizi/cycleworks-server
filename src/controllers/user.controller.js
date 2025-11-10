@@ -351,26 +351,41 @@ export async function listFiles(req, res) {
 }
 
 /** 🔍 Get container metadata */
+/** 🔍 Get container metadata */
 export const getContainerMetadata = async (req, res) => {
   try {
     const { id } = req.params;
     const supplierId = req.user.id;
 
+    // 🟢 Only join the plan if you still need plan info (not farmer_id)
     const container = await db("farmer_plan_containers as c")
-      .join("farmer_plans as p", "c.plan_id", "p.id")
+      .leftJoin("farmer_plans as p", "c.plan_id", "p.id")
       .where("c.id", id)
-      .where((q) =>
-        q.where("c.supplier_id", supplierId).orWhere("p.farmer_id", supplierId),
-      )
+      .andWhere("c.supplier_id", supplierId)
       .select("c.*")
       .first();
 
     if (!container)
-      return res.status(404).json({ error: "Container not found" });
+      return res
+        .status(404)
+        .json({ error: "Container not found or unauthorized" });
 
-    const metadata = container.metadata ? JSON.parse(container.metadata) : {};
-    res.json({ metadata, metadata_status: container.metadata_status });
-  } catch {
+    let metadata = {};
+    try {
+      metadata =
+        typeof container.metadata === "string"
+          ? JSON.parse(container.metadata)
+          : container.metadata || {};
+    } catch {
+      metadata = {};
+    }
+
+    res.json({
+      metadata,
+      metadata_status: container.metadata_status,
+    });
+  } catch (err) {
+    console.error("getContainerMetadata error:", err);
     res.status(500).json({ error: "Failed to fetch container metadata" });
   }
 };

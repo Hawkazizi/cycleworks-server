@@ -161,8 +161,7 @@ export const getAllUsers = async () => {
   return db("users as u")
     .leftJoin("user_roles as ur", "u.id", "ur.user_id")
     .leftJoin("roles as r", "ur.role_id", "r.id")
-    .leftJoin("farmer_plans as fp", "fp.farmer_id", "u.id")
-    .leftJoin("farmer_plan_containers as c", "c.plan_id", "fp.id")
+    .leftJoin("farmer_plan_containers as c", "c.supplier_id", "u.id")
     .groupBy("u.id", "r.name")
     .select(
       "u.id",

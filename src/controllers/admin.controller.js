@@ -640,17 +640,7 @@ export const getBuyerRequestById = async (req, res) => {
 
     // 2️⃣ Fetch farmer plans linked to this buyer request
     const plans = await db("farmer_plans as fp")
-      .leftJoin("users as farmer", "fp.farmer_id", "farmer.id")
-      .select(
-        "fp.id",
-        "fp.plan_date",
-        "fp.created_at",
-        "fp.request_id",
-        "fp.farmer_id",
-        "farmer.name as farmer_name",
-        "farmer.email as farmer_email",
-        "farmer.mobile as farmer_mobile",
-      )
+      .select("fp.id", "fp.plan_date", "fp.created_at", "fp.request_id")
       .where("fp.request_id", id);
 
     // 3️⃣ Assigned suppliers (request-level)
@@ -1050,7 +1040,7 @@ export const deleteTicket = async (req, res) => {
   }
 };
 
-/* -------------------- List Containers by Request -------------------- */
+/* -------------------- List Containers by Request (Safe + Idempotent) -------------------- */
 export const listContainersByRequestId = async (req, res) => {
   try {
     const { requestId } = req.query;
@@ -1066,70 +1056,71 @@ export const listContainersByRequestId = async (req, res) => {
     if (!buyerReq)
       return res.status(404).json({ error: "Buyer request not found" });
 
-    // 2️⃣ Reuse or create farmer_plan (one per buyer_request)
-    let plan = await db("farmer_plans")
-      .where({ request_id: buyerReq.id })
-      .first();
-
-    if (!plan) {
-      const [newPlan] = await db("farmer_plans")
+    const containers = await db.transaction(async (trx) => {
+      /* ------------------------------------------------------------------
+         2️⃣ Ensure exactly ONE farmer_plan per buyer_request (idempotent)
+      ------------------------------------------------------------------ */
+      await trx("farmer_plans")
         .insert({
           request_id: buyerReq.id,
           status: "submitted",
           plan_date: new Date(),
         })
-        .returning("*");
-      plan = newPlan;
-    }
+        .onConflict("request_id")
+        .ignore();
 
-    // 3️⃣ Create missing containers only once
-    const existingCount = await db("farmer_plan_containers")
-      .where({ plan_id: plan.id })
-      .count("* as count")
-      .first();
+      const plan = await trx("farmer_plans")
+        .where({ request_id: buyerReq.id })
+        .first();
 
-    if (Number(existingCount.count) === 0 && buyerReq.container_amount > 0) {
-      const inserts = Array.from(
-        { length: buyerReq.container_amount },
-        (_, i) => ({
-          plan_id: plan.id,
-          container_no: i + 1,
-          status: "submitted",
-          buyer_request_id: buyerReq.id,
-        }),
-      );
+      /* ------------------------------------------------------------------
+         3️⃣ Ensure containers exist (safe even if double-called)
+      ------------------------------------------------------------------ */
+      const existingCount = await trx("farmer_plan_containers")
+        .where({ plan_id: plan.id })
+        .count("* as count")
+        .first();
 
-      try {
-        await db("farmer_plan_containers").insert(inserts);
-      } catch (err) {
-        if (err.message.includes("duplicate key value")) {
-          console.warn(
-            "⚠️ Containers already exist, skipping duplicate inserts",
-          );
-        } else {
-          throw err;
-        }
+      if (Number(existingCount.count) === 0 && buyerReq.container_amount > 0) {
+        const inserts = Array.from(
+          { length: buyerReq.container_amount },
+          (_, i) => ({
+            plan_id: plan.id,
+            container_no: i + 1,
+            status: "submitted",
+            buyer_request_id: buyerReq.id,
+          }),
+        );
+
+        await trx("farmer_plan_containers")
+          .insert(inserts)
+          .onConflict(["plan_id", "container_no"])
+          .ignore();
       }
-    }
 
-    // 4️⃣ Fetch enriched container list with supplier info
-    const containers = await db("farmer_plan_containers as c")
-      .leftJoin("users as u", "c.supplier_id", "u.id")
-      .select(
-        "c.id as container_id",
-        "c.container_no",
-        "c.status as container_status",
-        "c.created_at as container_created_at",
-        "c.supplier_id",
-        "u.name as supplier_name",
-        "u.mobile as supplier_mobile",
-      )
-      .where("c.plan_id", plan.id)
-      .orderBy("c.container_no", "asc");
+      /* ------------------------------------------------------------------
+         4️⃣ Return enriched container list with supplier info
+      ------------------------------------------------------------------ */
+      const rows = await trx("farmer_plan_containers as c")
+        .leftJoin("users as u", "c.supplier_id", "u.id")
+        .select(
+          "c.id as container_id",
+          "c.container_no",
+          "c.status as container_status",
+          "c.created_at as container_created_at",
+          "c.supplier_id",
+          "u.name as supplier_name",
+          "u.mobile as supplier_mobile",
+        )
+        .where("c.plan_id", plan.id)
+        .orderBy("c.container_no", "asc");
+
+      return rows;
+    });
 
     res.json({ containers });
   } catch (err) {
-    console.error("listContainersByRequestId error:", err);
+    console.error("listContainersByRequestId (safe) error:", err);
     res.status(500).json({ error: "Failed to load containers" });
   }
 };
@@ -1140,9 +1131,10 @@ export const listAllContainersWithTracking = async (req, res) => {
     const containers = await db("farmer_plan_containers as c")
       .leftJoin("farmer_plans as fp", "c.plan_id", "fp.id")
       .leftJoin("buyer_requests as br", "fp.request_id", "br.id")
-      .leftJoin("users as supplier", "c.supplier_id", "supplier.id") // supplier of container
-      .leftJoin("users as buyer", "br.buyer_id", "buyer.id") // assigned buyer (customer)
-      .leftJoin("users as operator", "br.creator_id", "operator.id") // main operator (creator)
+      .leftJoin("users as supplier", "c.supplier_id", "supplier.id")
+      .leftJoin("users as buyer", "br.buyer_id", "buyer.id")
+      .leftJoin("users as operator", "br.creator_id", "operator.id")
+      // 🧩 latest tracking join
       .leftJoin(
         db("container_tracking_statuses as t")
           .select("container_id")
@@ -1166,17 +1158,25 @@ export const listAllContainersWithTracking = async (req, res) => {
         "c.created_at",
         "c.updated_at",
         "supplier.name as supplier_name",
-        "buyer.name as buyer_name", // assigned customer
-        "operator.name as operator_name", // main buyer/operator
+        "buyer.name as buyer_name",
+        "operator.name as operator_name",
         "br.import_country",
         "br.product_type",
         "br.egg_type",
         "br.cartons",
-        "ct.tracking_code",
         "ct.status as latest_status",
         "ct.note as latest_note",
         "ct.created_at as latest_tracking_time",
+        // 🧠 derive TY number from either tracking_code or metadata (can be null)
+        db.raw(`
+          COALESCE(
+            NULLIF(TRIM(ct.tracking_code), ''),
+            NULLIF(TRIM(c.metadata->>'ty_number'), ''),
+            NULLIF(TRIM((c.metadata->'metadata'->>'ty_number')), '')
+          ) AS ty_number
+        `),
       )
+      // 🗑️ REMOVED the .whereRaw() filter here to include ALL containers
       .orderBy("c.created_at", "desc");
 
     res.json(containers);
@@ -1454,7 +1454,6 @@ export const getContainerById = async (req, res) => {
     const container = await db("farmer_plan_containers as c")
       .leftJoin("farmer_plans as fp", "c.plan_id", "fp.id")
       .leftJoin("buyer_requests as br", "fp.request_id", "br.id")
-      .leftJoin("users as farmer", "fp.farmer_id", "farmer.id")
       .leftJoin("users as supplier", "c.supplier_id", "supplier.id")
       .leftJoin("users as buyer", "br.buyer_id", "buyer.id")
       .select(
@@ -1493,12 +1492,6 @@ export const getContainerById = async (req, res) => {
         "br.admin_extra_files",
         "br.deadline_start",
         "br.deadline_end",
-
-        // 👨‍🌾 Farmer Info
-        "farmer.id as farmer_id",
-        "farmer.name as farmer_name",
-        "farmer.email as farmer_email",
-        "farmer.mobile as farmer_mobile",
 
         // 🏢 Supplier Info
         "supplier.id as supplier_id",
