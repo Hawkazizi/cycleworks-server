@@ -261,11 +261,9 @@ export async function myContainersWithTracking(req, res) {
   try {
     const userId = req.user.id;
 
-    // Select containers where this user is the supplier
     const rows = await db("farmer_plan_containers as c")
       .leftJoin("farmer_plans as p", "c.plan_id", "p.id")
       .leftJoin("buyer_requests as br", "p.request_id", "br.id")
-      // Latest tracking
       .leftJoin(
         db("container_tracking_statuses as t")
           .select("container_id")
@@ -287,6 +285,7 @@ export async function myContainersWithTracking(req, res) {
         "c.id as container_id",
         "c.container_no",
         "c.status as container_status",
+        "c.farmer_status", // 🟢 include farmer status
         "c.tracking_code",
         "c.updated_at",
         "c.is_completed",
@@ -312,7 +311,6 @@ export async function myContainersWithTracking(req, res) {
       )
       .orderBy("ct.created_at", "desc");
 
-    // Attach files + clean metadata
     const containers = await Promise.all(
       rows.map(async (c) => {
         const files = await db("farmer_plan_files")
@@ -339,6 +337,19 @@ export async function myContainersWithTracking(req, res) {
           metadata = {};
         }
 
+        // 🧩 Status priority logic
+        let finalStatus = "submitted";
+        if (c.is_completed) finalStatus = "completed";
+        else if (
+          c.farmer_status?.toLowerCase() === "rejected" ||
+          c.container_status?.toLowerCase() === "rejected"
+        )
+          finalStatus = "rejected";
+        else if (c.in_progress) finalStatus = "in_progress";
+        else if (c.latest_status) finalStatus = c.latest_status.toLowerCase();
+        else if (c.container_status)
+          finalStatus = c.container_status.toLowerCase();
+
         return {
           container_id: c.container_id,
           container_no: c.container_no,
@@ -346,11 +357,13 @@ export async function myContainersWithTracking(req, res) {
           buyer_request_id: c.buyer_request_id,
           import_country: c.import_country,
           tracking_code: c.tracking_code || c.latest_tracking_code,
-          status: c.latest_status || c.container_status || "submitted",
+          status: finalStatus,
           plan_date: c.plan_date,
           updated_at: c.tracking_updated_at || c.updated_at,
           is_completed: !!c.is_completed,
           in_progress: !!c.in_progress,
+          farmer_status: c.farmer_status || null,
+          container_status: c.container_status || null,
           metadata,
           metadata_status: c.metadata_status,
           metadata_review_note: c.metadata_review_note,
