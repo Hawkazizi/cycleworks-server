@@ -400,4 +400,14 @@ router.put(
   adminController.completeBuyerRequest,
 );
 
+///////////////
+// ⬇️ NEW: Excel import route
+router.post(
+  "/import-excel",
+  authenticate,
+  authorize("admin", "manager"),
+  upload.single("file"),
+  adminController.importExcelData,
+);
+
 export default router;

@@ -6,6 +6,8 @@ import * as adminTicketService from "../services/adminTicket.service.js";
 import db from "../db/knex.js";
 import path from "path";
 import fs from "fs";
+import xlsx from "xlsx";
+import bcrypt from "bcrypt";
 import { NotificationService } from "../services/notification.service.js";
 /* -------------------- Auth -------------------- */
 // Admin/Manager login
@@ -1572,5 +1574,225 @@ export const getContainerById = async (req, res) => {
   } catch (err) {
     console.error("getContainerById error:", err);
     res.status(500).json({ error: "Failed to fetch container details" });
+  }
+};
+
+/**
+ * Admin import Excel → creates buyer_request + containers + suppliers (auto-create if missing)
+ * Normalizes metadata keys, maps specific fields, converts dates, ensures tracking_code,
+ * and sets buyer_request properties (container_amount, expiration_days, product_type).
+ */
+export const importExcelData = async (req, res) => {
+  try {
+    if (!req.file) throw new Error("No Excel file uploaded");
+    const { buyer_id, import_country } = req.body;
+    if (!buyer_id) throw new Error("buyer_id is required");
+
+    const workbook = xlsx.readFile(req.file.path);
+    const firstSheetName = workbook.SheetNames[0];
+    const sheet = xlsx.utils.sheet_to_json(workbook.Sheets[firstSheetName], {
+      defval: null,
+    });
+
+    if (!sheet.length) throw new Error("Excel sheet is empty");
+
+    /* --------------------- Helpers --------------------- */
+
+    // Normalize keys to clean snake_case and apply custom mappings
+    const normalizeKeys = (obj) => {
+      const normalized = {};
+      for (const [key, value] of Object.entries(obj)) {
+        let newKey = key
+          .toString()
+          .trim()
+          .toLowerCase()
+          .replace(/[.\s/()]+/g, "_")
+          .replace(/_+/g, "_")
+          .replace(/^_+|_+$/g, "");
+
+        // 🔹 Custom key mappings
+        if (newKey === "brand") newKey = "egg_brand";
+        if (newKey === "commercial_card") newKey = "trade_card";
+        if (newKey === "zip_code") newKey = "zip_code_ex";
+        if (newKey === "veterinary_health_certificate_number")
+          newKey = "veterinary_health_certificate_no";
+
+        normalized[newKey] = value;
+      }
+      return normalized;
+    };
+
+    // Detect and format Excel or string dates into YYYY-MM-DD
+    const formatDate = (val) => {
+      if (!val) return null;
+      try {
+        // If Excel numeric date
+        if (typeof val === "number") {
+          const date = new Date((val - 25569) * 86400 * 1000);
+          return date.toISOString().split("T")[0];
+        }
+
+        if (typeof val === "string") {
+          let str = val.trim();
+
+          // Persian (Jalali) format 1404/05/05
+          if (
+            /^\d{4}\/\d{2}\/\d{2}$/.test(str) &&
+            (str.startsWith("13") || str.startsWith("14"))
+          ) {
+            const [jy, jm, jd] = str.split("/").map(Number);
+            const g = jalaali.toGregorian(jy, jm, jd);
+            return `${g.gy}-${String(g.gm).padStart(2, "0")}-${String(g.gd).padStart(2, "0")}`;
+          }
+
+          // DD/MM/YYYY or D/M/YYYY
+          if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(str)) {
+            const [d, m, y] = str.split("/").map(Number);
+            const date = new Date(y, m - 1, d);
+            return date.toISOString().split("T")[0];
+          }
+
+          // YYYY-MM-DD
+          if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+
+          // Try generic Date parsing
+          const date = new Date(str);
+          if (!isNaN(date)) return date.toISOString().split("T")[0];
+        }
+      } catch {
+        return null;
+      }
+      return null;
+    };
+
+    /* --------------------- Transaction --------------------- */
+
+    await db.transaction(async (trx) => {
+      // 🔹 Get 'user' role ID
+      const roleUser = await trx("roles").where("name", "user").first();
+      if (!roleUser) throw new Error("Role 'user' not found in roles table");
+
+      // 1️⃣ Create buyer_request
+      const [buyerRequest] = await trx("buyer_requests")
+        .insert({
+          buyer_id,
+          import_country: import_country || firstSheetName,
+          status: "pending",
+          container_amount: sheet.length, // ✅ total containers
+          expiration_days: 90, // ✅ fixed value
+          product_type: "eggs", // ✅ fixed product type
+          created_at: trx.fn.now(),
+          updated_at: trx.fn.now(),
+        })
+        .returning("*");
+
+      // 2️⃣ Create farmer_plan
+      const [plan] = await trx("farmer_plans")
+        .insert({
+          request_id: buyerRequest.id,
+          plan_date: trx.fn.now(),
+          status: "submitted",
+        })
+        .returning("*");
+
+      // 3️⃣ Load existing active suppliers
+      let suppliers = await trx("users")
+        .select("id", "name")
+        .where("status", "active");
+
+      const normalizeName = (str) =>
+        str ? str.toString().trim().toLowerCase().replace(/\s+/g, " ") : "";
+
+      // 4️⃣ Iterate through Excel rows
+      let containerIndex = 1;
+      for (const row of sheet) {
+        const shipperName =
+          row["Shipper"] || row["shipper"] || row["SHIPPER"] || null;
+        if (!shipperName) continue;
+
+        // Find or create supplier
+        let supplier = suppliers.find(
+          (s) => normalizeName(s.name) === normalizeName(shipperName),
+        );
+
+        if (!supplier) {
+          console.log(`➕ Creating new supplier: ${shipperName}`);
+          const fakeMobile =
+            "09" + Math.floor(100000000 + Math.random() * 900000000);
+          const password_hash = await bcrypt.hash("default123", 10);
+
+          const [newSupplier] = await trx("users")
+            .insert({
+              name: shipperName,
+              mobile: fakeMobile,
+              password_hash,
+              status: "active",
+              created_at: trx.fn.now(),
+              updated_at: trx.fn.now(),
+            })
+            .returning(["id", "name"]);
+
+          // Assign role
+          await trx("user_roles")
+            .insert({
+              user_id: newSupplier.id,
+              role_id: roleUser.id,
+            })
+            .onConflict(["user_id", "role_id"])
+            .ignore();
+
+          supplier = newSupplier;
+          suppliers.push(newSupplier);
+        }
+
+        // 🧩 Normalize metadata keys and values
+        const normalizedMeta = normalizeKeys(row);
+
+        // Handle tracking_code fallback
+        if (normalizedMeta.ty_number && !normalizedMeta.tracking_code) {
+          normalizedMeta.tracking_code = normalizedMeta.ty_number;
+        }
+
+        // Convert date fields
+        for (const key of Object.keys(normalizedMeta)) {
+          if (key.includes("date")) {
+            normalizedMeta[key] = formatDate(normalizedMeta[key]);
+          }
+        }
+
+        // 5️⃣ Create container
+        const [container] = await trx("farmer_plan_containers")
+          .insert({
+            plan_id: plan.id,
+            container_no: containerIndex++,
+            buyer_request_id: buyerRequest.id,
+            supplier_id: supplier.id,
+            metadata: JSON.stringify(normalizedMeta),
+            tracking_code: normalizedMeta.tracking_code || null,
+            created_at: trx.fn.now(),
+            updated_at: trx.fn.now(),
+          })
+          .returning("*");
+
+        // 6️⃣ Link supplier ↔ buyer_request ↔ container
+        await trx("buyer_request_suppliers")
+          .insert({
+            buyer_request_id: buyerRequest.id,
+            supplier_id: supplier.id,
+            container_id: container.id,
+            assigned_at: trx.fn.now(),
+          })
+          .onConflict(["buyer_request_id", "supplier_id", "container_id"])
+          .ignore();
+      }
+    });
+
+    res.json({
+      message:
+        "✅ Excel import completed successfully — buyer_request fields filled, keys mapped, dates normalized, and tracking_code ensured.",
+    });
+  } catch (err) {
+    console.error("❌ importExcelData error:", err);
+    res.status(400).json({ error: err.message });
   }
 };
