@@ -1580,7 +1580,8 @@ export const getContainerById = async (req, res) => {
 /**
  * Admin import Excel → creates buyer_request + containers + suppliers (auto-create if missing)
  * Ensures a buyer user "Al Jabali Trading and Refrigeration Company" exists
- * and sets that buyer as creator_id of the buyer_request.
+ * Sets buyer as creator_id
+ * ✅ Automatically marks all imported containers as completed + logs tracking + notifies supplier
  */
 export const importExcelData = async (req, res) => {
   try {
@@ -1609,7 +1610,7 @@ export const importExcelData = async (req, res) => {
           .replace(/_+/g, "_")
           .replace(/^_+|_+$/g, "");
 
-        // 🔹 Custom key mappings
+        // Custom mappings
         if (newKey === "brand") newKey = "egg_brand";
         if (newKey === "commercial_card") newKey = "trade_card";
         if (newKey === "zip_code") newKey = "zip_code_ex";
@@ -1656,7 +1657,7 @@ export const importExcelData = async (req, res) => {
     /* --------------------- Transaction --------------------- */
 
     await db.transaction(async (trx) => {
-      // 🔹 Ensure buyer user exists
+      // Ensure buyer exists
       const buyerName = "Al Jabali Trading and Refrigeration Company";
       let buyerUser = await trx("users").where("name", buyerName).first();
 
@@ -1678,19 +1679,14 @@ export const importExcelData = async (req, res) => {
           .returning("*");
       }
 
-      // 🔹 Ensure buyer role assigned
       const roleBuyer = await trx("roles").where("name", "buyer").first();
-      if (!roleBuyer) throw new Error("Role 'buyer' not found in roles table");
+      if (!roleBuyer) throw new Error("Role 'buyer' not found");
 
       await trx("user_roles")
-        .insert({
-          user_id: buyerUser.id,
-          role_id: roleBuyer.id,
-        })
+        .insert({ user_id: buyerUser.id, role_id: roleBuyer.id })
         .onConflict(["user_id", "role_id"])
         .ignore();
 
-      // 🔹 Get supplier role
       const roleUser = await trx("roles").where("name", "user").first();
       if (!roleUser) throw new Error("Role 'user' not found");
 
@@ -1698,7 +1694,7 @@ export const importExcelData = async (req, res) => {
       const [buyerRequest] = await trx("buyer_requests")
         .insert({
           buyer_id,
-          creator_id: buyerUser.id, // ✅ linked to buyer
+          creator_id: buyerUser.id,
           import_country: import_country || firstSheetName,
           status: "pending",
           container_amount: sheet.length,
@@ -1733,17 +1729,15 @@ export const importExcelData = async (req, res) => {
           row["Shipper"] || row["shipper"] || row["SHIPPER"] || null;
         if (!shipperName) continue;
 
-        // Find or create supplier
         let supplier = suppliers.find(
           (s) => normalizeName(s.name) === normalizeName(shipperName),
         );
 
         if (!supplier) {
           console.log(`➕ Creating new supplier: ${shipperName}`);
+          const password_hash = await bcrypt.hash("default123", 10);
           const fakeMobile =
             "09" + Math.floor(100000000 + Math.random() * 900000000);
-          const password_hash = await bcrypt.hash("default123", 10);
-
           const [newSupplier] = await trx("users")
             .insert({
               name: shipperName,
@@ -1776,6 +1770,7 @@ export const importExcelData = async (req, res) => {
             normalizedMeta[key] = formatDate(normalizedMeta[key]);
         }
 
+        // 5️⃣ Create container (auto mark completed)
         const [container] = await trx("farmer_plan_containers")
           .insert({
             plan_id: plan.id,
@@ -1784,11 +1779,24 @@ export const importExcelData = async (req, res) => {
             supplier_id: supplier.id,
             metadata: JSON.stringify(normalizedMeta),
             tracking_code: normalizedMeta.tracking_code || null,
-            created_at: trx.fn.now(),
+            status: "completed",
+            is_completed: true,
+            in_progress: false,
+            completed_at: trx.fn.now(),
             updated_at: trx.fn.now(),
           })
           .returning("*");
 
+        // 6️⃣ Add tracking history: delivered
+        await trx("container_tracking_statuses").insert({
+          container_id: container.id,
+          status: "delivered",
+          note: "کانتینر به مقصد تحویل داده شد (وارد شده از اکسل)",
+          created_by: buyerUser.id,
+          created_at: trx.fn.now(),
+        });
+
+        // 7️⃣ Link supplier ↔ buyer_request ↔ container
         await trx("buyer_request_suppliers")
           .insert({
             buyer_request_id: buyerRequest.id,
@@ -1798,11 +1806,26 @@ export const importExcelData = async (req, res) => {
           })
           .onConflict(["buyer_request_id", "supplier_id", "container_id"])
           .ignore();
+
+        // 8️⃣ Notify supplier
+        if (supplier?.id) {
+          await NotificationService.create(
+            supplier.id,
+            "container_tracking_update",
+            buyerRequest.id,
+            {
+              status: "delivered",
+              containerId: container.id,
+              containerNo: container.container_no,
+            },
+            trx,
+          );
+        }
       }
 
       res.json({
         message:
-          "✅ Excel import completed successfully — buyer_request linked to 'Al Jabali Trading and Refrigeration Company'.",
+          "✅ Excel import completed successfully — containers auto-marked as completed and tracking added.",
         buyer_request: {
           id: buyerRequest.id,
           creator_name: buyerUser.name,
