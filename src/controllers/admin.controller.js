@@ -1579,8 +1579,8 @@ export const getContainerById = async (req, res) => {
 
 /**
  * Admin import Excel → creates buyer_request + containers + suppliers (auto-create if missing)
- * Normalizes metadata keys, maps specific fields, converts dates, ensures tracking_code,
- * and sets buyer_request properties (container_amount, expiration_days, product_type).
+ * Ensures a buyer user "Al Jabali Trading and Refrigeration Company" exists
+ * and sets that buyer as creator_id of the buyer_request.
  */
 export const importExcelData = async (req, res) => {
   try {
@@ -1598,7 +1598,6 @@ export const importExcelData = async (req, res) => {
 
     /* --------------------- Helpers --------------------- */
 
-    // Normalize keys to clean snake_case and apply custom mappings
     const normalizeKeys = (obj) => {
       const normalized = {};
       for (const [key, value] of Object.entries(obj)) {
@@ -1622,20 +1621,15 @@ export const importExcelData = async (req, res) => {
       return normalized;
     };
 
-    // Detect and format Excel or string dates into YYYY-MM-DD
     const formatDate = (val) => {
       if (!val) return null;
       try {
-        // If Excel numeric date
         if (typeof val === "number") {
           const date = new Date((val - 25569) * 86400 * 1000);
           return date.toISOString().split("T")[0];
         }
-
         if (typeof val === "string") {
           let str = val.trim();
-
-          // Persian (Jalali) format 1404/05/05
           if (
             /^\d{4}\/\d{2}\/\d{2}$/.test(str) &&
             (str.startsWith("13") || str.startsWith("14"))
@@ -1644,18 +1638,12 @@ export const importExcelData = async (req, res) => {
             const g = jalaali.toGregorian(jy, jm, jd);
             return `${g.gy}-${String(g.gm).padStart(2, "0")}-${String(g.gd).padStart(2, "0")}`;
           }
-
-          // DD/MM/YYYY or D/M/YYYY
           if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(str)) {
             const [d, m, y] = str.split("/").map(Number);
             const date = new Date(y, m - 1, d);
             return date.toISOString().split("T")[0];
           }
-
-          // YYYY-MM-DD
           if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
-
-          // Try generic Date parsing
           const date = new Date(str);
           if (!isNaN(date)) return date.toISOString().split("T")[0];
         }
@@ -1668,19 +1656,54 @@ export const importExcelData = async (req, res) => {
     /* --------------------- Transaction --------------------- */
 
     await db.transaction(async (trx) => {
-      // 🔹 Get 'user' role ID
+      // 🔹 Ensure buyer user exists
+      const buyerName = "Al Jabali Trading and Refrigeration Company";
+      let buyerUser = await trx("users").where("name", buyerName).first();
+
+      if (!buyerUser) {
+        console.log(`🆕 Creating buyer user: ${buyerName}`);
+        const password_hash = await bcrypt.hash("default123", 10);
+        const fakeMobile =
+          "09" + Math.floor(100000000 + Math.random() * 900000000);
+
+        [buyerUser] = await trx("users")
+          .insert({
+            name: buyerName,
+            mobile: fakeMobile,
+            password_hash,
+            status: "active",
+            created_at: trx.fn.now(),
+            updated_at: trx.fn.now(),
+          })
+          .returning("*");
+      }
+
+      // 🔹 Ensure buyer role assigned
+      const roleBuyer = await trx("roles").where("name", "buyer").first();
+      if (!roleBuyer) throw new Error("Role 'buyer' not found in roles table");
+
+      await trx("user_roles")
+        .insert({
+          user_id: buyerUser.id,
+          role_id: roleBuyer.id,
+        })
+        .onConflict(["user_id", "role_id"])
+        .ignore();
+
+      // 🔹 Get supplier role
       const roleUser = await trx("roles").where("name", "user").first();
-      if (!roleUser) throw new Error("Role 'user' not found in roles table");
+      if (!roleUser) throw new Error("Role 'user' not found");
 
       // 1️⃣ Create buyer_request
       const [buyerRequest] = await trx("buyer_requests")
         .insert({
           buyer_id,
+          creator_id: buyerUser.id, // ✅ linked to buyer
           import_country: import_country || firstSheetName,
           status: "pending",
-          container_amount: sheet.length, // ✅ total containers
-          expiration_days: 90, // ✅ fixed value
-          product_type: "eggs", // ✅ fixed product type
+          container_amount: sheet.length,
+          expiration_days: 90,
+          product_type: "eggs",
           created_at: trx.fn.now(),
           updated_at: trx.fn.now(),
         })
@@ -1695,7 +1718,7 @@ export const importExcelData = async (req, res) => {
         })
         .returning("*");
 
-      // 3️⃣ Load existing active suppliers
+      // 3️⃣ Load suppliers
       let suppliers = await trx("users")
         .select("id", "name")
         .where("status", "active");
@@ -1703,7 +1726,7 @@ export const importExcelData = async (req, res) => {
       const normalizeName = (str) =>
         str ? str.toString().trim().toLowerCase().replace(/\s+/g, " ") : "";
 
-      // 4️⃣ Iterate through Excel rows
+      // 4️⃣ Iterate containers
       let containerIndex = 1;
       for (const row of sheet) {
         const shipperName =
@@ -1732,7 +1755,6 @@ export const importExcelData = async (req, res) => {
             })
             .returning(["id", "name"]);
 
-          // Assign role
           await trx("user_roles")
             .insert({
               user_id: newSupplier.id,
@@ -1745,22 +1767,15 @@ export const importExcelData = async (req, res) => {
           suppliers.push(newSupplier);
         }
 
-        // 🧩 Normalize metadata keys and values
         const normalizedMeta = normalizeKeys(row);
-
-        // Handle tracking_code fallback
-        if (normalizedMeta.ty_number && !normalizedMeta.tracking_code) {
+        if (normalizedMeta.ty_number && !normalizedMeta.tracking_code)
           normalizedMeta.tracking_code = normalizedMeta.ty_number;
-        }
 
-        // Convert date fields
         for (const key of Object.keys(normalizedMeta)) {
-          if (key.includes("date")) {
+          if (key.includes("date"))
             normalizedMeta[key] = formatDate(normalizedMeta[key]);
-          }
         }
 
-        // 5️⃣ Create container
         const [container] = await trx("farmer_plan_containers")
           .insert({
             plan_id: plan.id,
@@ -1774,7 +1789,6 @@ export const importExcelData = async (req, res) => {
           })
           .returning("*");
 
-        // 6️⃣ Link supplier ↔ buyer_request ↔ container
         await trx("buyer_request_suppliers")
           .insert({
             buyer_request_id: buyerRequest.id,
@@ -1785,11 +1799,16 @@ export const importExcelData = async (req, res) => {
           .onConflict(["buyer_request_id", "supplier_id", "container_id"])
           .ignore();
       }
-    });
 
-    res.json({
-      message:
-        "✅ Excel import completed successfully — buyer_request fields filled, keys mapped, dates normalized, and tracking_code ensured.",
+      res.json({
+        message:
+          "✅ Excel import completed successfully — buyer_request linked to 'Al Jabali Trading and Refrigeration Company'.",
+        buyer_request: {
+          id: buyerRequest.id,
+          creator_name: buyerUser.name,
+          container_count: sheet.length,
+        },
+      });
     });
   } catch (err) {
     console.error("❌ importExcelData error:", err);
