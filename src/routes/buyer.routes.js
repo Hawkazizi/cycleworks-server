@@ -57,7 +57,7 @@ router.delete(
 router.post(
   "/requests",
   authenticate,
-  authorize("buyer"),
+  authorize("buyer", "admin"),
   buyerController.createRequest,
 );
 
@@ -65,7 +65,7 @@ router.post(
 router.get(
   "/requests",
   authenticate,
-  authorize("buyer"),
+  authorize("buyer", "admin"),
   buyerController.getMyRequests,
 );
 
@@ -73,7 +73,7 @@ router.get(
 router.get(
   "/requests/:id",
   authenticate,
-  authorize("buyer"),
+  authorize("buyer", "admin"),
   buyerController.getRequestById,
 );
 
@@ -81,7 +81,7 @@ router.get(
 router.patch(
   "/requests/:id",
   authenticate,
-  authorize("buyer"),
+  authorize("buyer", "admin"),
   buyerController.updateRequest,
 );
 
@@ -89,7 +89,7 @@ router.patch(
 router.delete(
   "/requests/:id",
   authenticate,
-  authorize("buyer"),
+  authorize("buyer", "admin"),
   buyerController.cancelRequest,
 );
 

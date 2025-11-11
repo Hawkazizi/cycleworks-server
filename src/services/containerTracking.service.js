@@ -1,6 +1,5 @@
-// services/containerTracking.service.js
 import db from "../db/knex.js";
-
+import { NotificationService } from "./notification.service.js";
 /* =======================================================================
    🔢 HELPER: Generate Unique Tracking Code
 ======================================================================= */
@@ -31,10 +30,12 @@ export async function addTracking(
   tracking_code,
   note,
 ) {
-  // Check for existing record
+  // 1️⃣ Check for existing record (by container_id + tracking_code)
   const existing = await db("container_tracking_statuses")
     .where({ container_id: containerId, tracking_code: tracking_code || null })
     .first();
+
+  let actionType = "created";
 
   if (existing) {
     await db("container_tracking_statuses").where({ id: existing.id }).update({
@@ -43,24 +44,99 @@ export async function addTracking(
       updated_at: db.fn.now(),
     });
 
-    return {
-      updated: true,
-      message: `Tracking code "${tracking_code}" updated successfully`,
-    };
+    actionType = "updated";
+  } else {
+    await db("container_tracking_statuses").insert({
+      container_id: containerId,
+      status,
+      note,
+      tracking_code: tracking_code || null,
+      created_by: userId,
+    });
   }
 
-  // Insert new tracking record
-  await db("container_tracking_statuses").insert({
-    container_id: containerId,
+  // 2️⃣ Fetch related info
+  const container = await db("farmer_plan_containers as c")
+    .leftJoin("farmer_plans as p", "p.id", "c.plan_id")
+    .leftJoin("buyer_requests as br", "br.id", "p.request_id")
+    .leftJoin("users as u", "c.supplier_id", "u.id")
+    .where("c.id", containerId)
+    .select(
+      "c.id as container_id",
+      "c.supplier_id",
+      "u.name as supplier_name",
+      "br.buyer_id",
+    )
+    .first();
+
+  if (!container) {
+    return { message: "Tracking saved, but container info not found" };
+  }
+
+  // 3️⃣ Build readable Persian status
+  let readableStatus = "به‌روزرسانی‌شده";
+  if (status === "in_progress") readableStatus = "در حال انجام";
+  else if (status === "completed") readableStatus = "خاتمه یافته";
+  else if (status === "rejected") readableStatus = "رد شده";
+  else if (status === "submitted") readableStatus = "ارسال شده برای بررسی";
+
+  // 4️⃣ Prepare notification data
+  const data = {
+    containerId,
+    supplierName: container.supplier_name || "تأمین‌کننده ناشناس",
     status,
-    note,
+    readableStatus,
+    note: note || null,
     tracking_code: tracking_code || null,
-    created_by: userId,
-  });
+  };
 
-  return { created: true, message: "Tracking status added successfully" };
+  // 5️⃣ Find all active admins/managers
+  const adminManagers = await db("users")
+    .join("user_roles", "users.id", "user_roles.user_id")
+    .join("roles", "user_roles.role_id", "roles.id")
+    .whereRaw("LOWER(roles.name) IN ('admin','manager')")
+    .where("users.status", "active")
+    .distinct()
+    .select("users.id");
+
+  // 6️⃣ Send notifications
+  const promises = [];
+
+  // 🔔 Notify admins/managers
+  for (const am of adminManagers) {
+    promises.push(
+      NotificationService.create(
+        am.id,
+        "container_tracking_status_changed",
+        containerId,
+        data,
+      ),
+    );
+  }
+
+  // 🚚 Optionally notify buyer
+  if (container.buyer_id) {
+    promises.push(
+      NotificationService.create(
+        container.buyer_id,
+        "container_tracking_update",
+        containerId,
+        data,
+      ),
+    );
+  }
+
+  await Promise.allSettled(promises);
+
+  // 7️⃣ Return response
+  return {
+    [actionType]: true,
+    message:
+      actionType === "updated"
+        ? `وضعیت رهگیری با کد "${tracking_code}" با موفقیت به‌روزرسانی شد.`
+        : "وضعیت جدید برای کانتینر با موفقیت ثبت شد.",
+  };
 }
-
 /* =======================================================================
    📋 LIST TRACKING HISTORY
 ======================================================================= */

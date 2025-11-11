@@ -120,15 +120,16 @@ export async function getBuyerRequestById(id) {
 /* =======================================================================
    ✅ REVIEW / APPROVAL
 ======================================================================= */
-
 /** ✏️ Review a buyer request (status, final status, farmer status) */
 export async function reviewBuyerRequest(
   id,
   { status, final_status, farmer_status, reviewerId },
 ) {
+  // 1️⃣ Validate request
   const oldRequest = await db("buyer_requests").where("id", id).first();
   if (!oldRequest) throw new Error("Request not found");
 
+  // 2️⃣ Update request status
   const [updated] = await db("buyer_requests")
     .where({ id })
     .update({
@@ -143,15 +144,65 @@ export async function reviewBuyerRequest(
 
   const normalized = normalizeRequest(updated);
 
-  // 🔔 Notify relevant parties
-  await handleBuyerRequestNotifications(
-    id,
-    oldRequest,
-    updated,
-    normalized,
-    status,
-    final_status,
-  );
+  // 3️⃣ Notify the related buyer (customer)
+  try {
+    const buyerId = updated.buyer_id;
+    if (buyerId) {
+      const readableStatus = (() => {
+        switch (status) {
+          case "approved":
+          case "accepted":
+            return "تأیید شده";
+          case "rejected":
+            return "رد شده";
+          case "completed":
+            return "خاتمه یافته";
+          case "pending":
+            return "در انتظار بررسی";
+          default:
+            return status || "به‌روزرسانی‌شده";
+        }
+      })();
+
+      await NotificationService.create(
+        buyerId,
+        "request_status_changed", // ✅ already handled in NotificationService
+        id, // related_request_id
+        {
+          status,
+          final_status,
+          readableStatus,
+          reviewed_by: reviewerId,
+        },
+      );
+    }
+  } catch (notifyErr) {
+    console.error("❌ Buyer notification error:", notifyErr.message);
+  }
+
+  // 4️⃣ Notify admins/managers (optional)
+  try {
+    const adminManagers = await db("users")
+      .join("user_roles", "users.id", "user_roles.user_id")
+      .join("roles", "user_roles.role_id", "roles.id")
+      .whereRaw("LOWER(roles.name) IN ('admin','manager')")
+      .where("users.status", "active")
+      .distinct()
+      .select("users.id");
+
+    const promises = adminManagers.map((am) =>
+      NotificationService.create(am.id, "buyer_request_reviewed", id, {
+        buyer_id: updated.buyer_id,
+        status,
+        final_status,
+        readableStatus: status,
+      }),
+    );
+
+    await Promise.allSettled(promises);
+  } catch (adminErr) {
+    console.error("❌ Admin notification error:", adminErr.message);
+  }
 
   return normalized;
 }

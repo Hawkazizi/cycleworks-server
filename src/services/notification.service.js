@@ -58,18 +58,107 @@ export const NotificationService = {
         break;
 
       /* 📦 Container Tracking Update */
-      case "container_tracking_update":
-        message = isBuyer
-          ? `Tracking update for your request #${relatedId} → ${data.status || "Updated"}`
-          : `وضعیت کانتینر برای درخواست #${relatedId} به ${data.status || "به‌روزرسانی"} تغییر کرد.`;
-        break;
+      case "container_tracking_update": {
+        const status = data.status || "به‌روزرسانی‌شده";
+        const containerId = data.containerId || relatedId;
 
-      /* 📎 Container File Upload */
-      case "container_file_uploaded":
-        message = isBuyer
-          ? `A new file was uploaded for request #${relatedId}`
-          : `فایل جدیدی برای درخواست #${relatedId} آپلود شد.`;
+        if (isAdminOrManager) {
+          // Admins & Managers see a clear review action
+          message = `🔔 تأمین‌کننده ${
+            data.supplierName ? `«${data.supplierName}»` : ""
+          } وضعیت یک کانتینر را به‌روزرسانی کرده است. لطفاً بررسی کنید.`;
+        } else if (isBuyer) {
+          // Buyers see a friendly progress message
+          let readableStatus = "به‌روزرسانی شد";
+          if (status === "submitted") readableStatus = "ارسال شده برای بررسی";
+          else if (status === "in_progress") readableStatus = "در حال انجام";
+          else if (status === "completed") readableStatus = "خاتمه یافته";
+          else if (status === "rejected") readableStatus = "رد شده";
+
+          message = `🚚 وضعیت کانتینر شما ${
+            data.tracking_code ? `با کد ${data.tracking_code}` : ""
+          } به "${readableStatus}" تغییر کرد.`;
+        } else if (isFarmer) {
+          // Supplier/farmer gets acknowledgment
+          message = `✅ وضعیت کانتینر شما با موفقیت به‌روزرسانی شد و برای مدیر ارسال گردید.`;
+        } else {
+          // fallback (rare)
+          message = `وضعیت یک کانتینر به‌روزرسانی شد.`;
+        }
         break;
+      }
+
+      /* 🗓️ Container Plan Date Selected */
+      case "container_plan_date_selected": {
+        const date = data.plan_date
+          ? new Date(data.plan_date).toLocaleDateString("fa-IR")
+          : "—";
+
+        if (isAdminOrManager) {
+          message = `📅 تأمین‌کننده ${
+            data.supplierName ? `«${data.supplierName}»` : ""
+          } تاریخ برنامه‌ریزی برای یکی از کانتینرها را انتخاب کرده است (${date}). لطفاً بررسی فرمایید.`;
+        } else if (isBuyer) {
+          message = `📅 تاریخ برنامه‌ریزی کانتینر شما برای ${date} تنظیم شد.`;
+        } else if (isFarmer) {
+          message = `✅ تاریخ ${date} با موفقیت ثبت شد و برای تأیید به مدیر ارسال گردید.`;
+        } else {
+          message = `📅 تاریخ برنامه‌ریزی کانتینر به‌روزرسانی شد.`;
+        }
+        break;
+      }
+      /* 🧾 Container Metadata Updated */
+      case "container_metadata_updated": {
+        const fields = data.metadata_type || "اطلاعات کانتینر";
+
+        if (isAdminOrManager) {
+          message = `🧾 تأمین‌کننده ${
+            data.supplierName ? `«${data.supplierName}»` : ""
+          } اطلاعات کانتینر (${fields}) را به‌روزرسانی کرده است. لطفاً بررسی فرمایید.`;
+        } else if (isFarmer) {
+          message = `✅ اطلاعات کانتینر شما با موفقیت به‌روزرسانی شد و برای بررسی ارسال گردید.`;
+        } else if (isBuyer) {
+          message = `ℹ️ اطلاعات جدیدی برای کانتینر ثبت شده است (${fields}).`;
+        } else {
+          message = `🧾 اطلاعات کانتینر به‌روزرسانی شد.`;
+        }
+        break;
+      }
+
+      /* 📎 Container File Uploaded */
+      case "container_file_uploaded": {
+        const fileType = data.fileType || "فایل جدید";
+        const supplierName = data.supplierName || "تأمین‌کننده ناشناس";
+
+        if (isAdminOrManager) {
+          message = `📎 تأمین‌کننده «${supplierName}» فایلی از نوع "${fileType}" را برای یکی از کانتینرها بارگذاری کرده است. لطفاً بررسی فرمایید.`;
+        } else if (isBuyer) {
+          message = `📎 تأمین‌کننده فایلی از نوع "${fileType}" را برای کانتینر شما بارگذاری کرده است.`;
+        } else if (isFarmer) {
+          message = `✅ فایل "${fileType}" با موفقیت بارگذاری شد و برای بررسی به مدیر ارسال گردید.`;
+        } else {
+          message = `📎 فایل جدیدی بارگذاری شد.`;
+        }
+        break;
+      }
+
+      /* 🚚 Container Tracking Status Changed */
+      case "container_tracking_status_changed": {
+        const readable =
+          data.readableStatus || data.status || "به‌روزرسانی‌شده";
+        if (isAdminOrManager) {
+          message = `🚚 تأمین‌کننده ${
+            data.supplierName ? `«${data.supplierName}»` : ""
+          } وضعیت یکی از کانتینرها را به "${readable}" تغییر داده است. لطفاً بررسی فرمایید.`;
+        } else if (isBuyer) {
+          message = `🚚 وضعیت کانتینر شما به "${readable}" تغییر کرد.`;
+        } else if (isFarmer) {
+          message = `✅ وضعیت کانتینر با موفقیت به "${readable}" تغییر یافت.`;
+        } else {
+          message = `وضعیت یک کانتینر به "${readable}" تغییر کرد.`;
+        }
+        break;
+      }
 
       /* 🧾 Buyer Request Created */
       case "new_request":
@@ -101,13 +190,6 @@ export const NotificationService = {
           : data.is_completed
             ? `درخواست #${relatedId} خاتمه یافت.`
             : `درخواست #${relatedId} مجدداً فعال شد.`;
-        break;
-
-      /* ⚙️ Fallback */
-      default:
-        message = isBuyer
-          ? "New notification received"
-          : "اعلان جدید دریافت شد";
         break;
     }
 

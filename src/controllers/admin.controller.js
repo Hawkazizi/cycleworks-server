@@ -181,9 +181,9 @@ export const deleteProfile = async (req, res) => {
 /* -------------------- Users -------------------- */
 export const createUser = async (req, res) => {
   try {
-    const { name, email, password, role_id } = req.body;
+    const { name, email, password, role_id, mobile } = req.body; // ✅ added mobile
 
-    if (!name || !email || !password || !role_id) {
+    if (!name || !email || !password || !role_id || !mobile) {
       return res.status(400).json({ error: "اطلاعات کاربر ناقص است." });
     }
 
@@ -192,6 +192,7 @@ export const createUser = async (req, res) => {
       email,
       password,
       role_id,
+      mobile, // ✅ pass down to service
     });
 
     res.status(201).json({ user });
@@ -199,6 +200,7 @@ export const createUser = async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 };
+
 // Get all users
 export const listUsers = async (req, res) => {
   try {
@@ -1457,11 +1459,11 @@ export const getContainerById = async (req, res) => {
       .leftJoin("users as supplier", "c.supplier_id", "supplier.id")
       .leftJoin("users as buyer", "br.buyer_id", "buyer.id")
       .select(
-        "c.*",
+        "c.*", // includes c.plan_date from farmer_plan_containers
 
         // 🧩 Plan info
         "fp.id as plan_id",
-        "fp.plan_date",
+        "fp.plan_date as fp_plan_date", // alias to avoid confusion
         "fp.status as plan_status",
 
         // 🧾 Buyer Request - include all columns from buyer_requests
@@ -1557,7 +1559,7 @@ export const getContainerById = async (req, res) => {
     // 5️⃣ Other containers in the same plan
     const siblingContainers = await db("farmer_plan_containers")
       .where("plan_id", container.plan_id)
-      .select("id", "container_no", "status");
+      .select("id", "container_no", "status", "plan_date");
 
     // ✅ Final response — everything enriched
     res.json({

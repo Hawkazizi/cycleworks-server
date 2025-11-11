@@ -138,6 +138,7 @@ export const createUserWithRole = async ({
   email,
   password,
   role_id,
+  mobile, // ✅ added
 }) => {
   return db.transaction(async (trx) => {
     const exists = await trx("users").where({ email }).first();
@@ -146,8 +147,14 @@ export const createUserWithRole = async ({
     const password_hash = await bcrypt.hash(password, 10);
 
     const [user] = await trx("users")
-      .insert({ name, email, password_hash, status: "active" })
-      .returning(["id", "name", "email", "status", "created_at"]);
+      .insert({
+        name,
+        email,
+        mobile, // ✅ added
+        password_hash,
+        status: "active",
+      })
+      .returning(["id", "name", "email", "mobile", "status", "created_at"]);
 
     if (role_id) {
       await trx("user_roles").insert({ user_id: user.id, role_id });

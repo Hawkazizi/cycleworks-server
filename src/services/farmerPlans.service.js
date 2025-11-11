@@ -183,10 +183,11 @@ export async function setContainerPlanDate(containerId, planDate, userId) {
   if (container.supplier_id !== userId)
     throw new Error("Not authorized to set this container plan date");
 
-  // Verify within allowed deadline range
+  // 🔎 Verify within allowed deadline range
   const buyerRequest = await db("buyer_requests")
     .where({ id: container.buyer_request_id })
     .first();
+
   if (buyerRequest?.deadline_start && buyerRequest?.deadline_end) {
     const d = new Date(planDate);
     const start = new Date(buyerRequest.deadline_start);
@@ -195,13 +196,39 @@ export async function setContainerPlanDate(containerId, planDate, userId) {
       throw new Error("Selected date is outside allowed deadline range");
   }
 
+  // ✅ Update container plan_date
   await db("farmer_plan_containers").where({ id: containerId }).update({
     plan_date: planDate,
     updated_at: db.fn.now(),
   });
 
+  // 👤 Fetch supplier name
+  const supplier = await db("users").where({ id: userId }).first();
+
+  // 👥 Find all active admins/managers
+  const adminManagers = await db("users")
+    .join("user_roles", "users.id", "user_roles.user_id")
+    .join("roles", "user_roles.role_id", "roles.id")
+    .whereIn("roles.name", ["admin", "manager"])
+    .where("users.status", "active")
+    .select("users.id");
+
+  // 🔔 Send a friendly Persian notification to all admins/managers
+  for (const u of adminManagers) {
+    await NotificationService.create(
+      u.id,
+      "container_plan_date_selected",
+      containerId, // related container
+      {
+        supplierName: supplier?.name || "تأمین‌کننده ناشناس",
+        plan_date: planDate,
+      },
+    );
+  }
+
   return { message: "Plan date saved successfully", plan_date: planDate };
 }
+
 export async function getContainerPlanDate(containerId, userId) {
   const container = await db("farmer_plan_containers")
     .where({ id: containerId })
@@ -253,7 +280,9 @@ export async function getContainerById(containerId) {
  * Upload a file and link it to a container.
  * Automatically notifies all relevant users (admin, manager, buyer, farmer).
  */
+
 export async function addFileToContainer(containerId, fileMeta) {
+  // 1️⃣ Save file record
   const [file] = await db("farmer_plan_files")
     .insert({
       container_id: containerId,
@@ -267,6 +296,7 @@ export async function addFileToContainer(containerId, fileMeta) {
     })
     .returning("*");
 
+  // 2️⃣ Join to fetch relationships
   const info = await db("farmer_plan_containers as c")
     .join("farmer_plans as p", "p.id", "c.plan_id")
     .join("buyer_requests as br", "br.id", "p.request_id")
@@ -281,9 +311,22 @@ export async function addFileToContainer(containerId, fileMeta) {
     buyer_id: buyerId,
     supplier_id: supplierId,
   } = info;
-  const data = { fileId: file.id, containerId, type: fileMeta.type };
 
-  const adminsManagers = await db("users")
+  // 3️⃣ Fetch supplier name
+  const supplier = await db("users").where({ id: supplierId }).first();
+
+  const data = {
+    fileId: file.id,
+    containerId,
+    fileType: fileMeta.type || "نامشخص",
+    supplierName: supplier?.name || "تأمین‌کننده ناشناس",
+    originalName: fileMeta.originalname,
+    mimeType: fileMeta.mimetype,
+    sizeBytes: fileMeta.size,
+  };
+
+  // 4️⃣ Fetch active admins & managers
+  const adminManagers = await db("users")
     .join("user_roles", "users.id", "user_roles.user_id")
     .join("roles", "user_roles.role_id", "roles.id")
     .whereRaw("LOWER(roles.name) IN ('admin', 'manager')")
@@ -293,31 +336,31 @@ export async function addFileToContainer(containerId, fileMeta) {
 
   const promises = [];
 
-  // Notify admins/managers
-  for (const am of adminsManagers) {
+  // 🔔 Notify admins/managers — user uploaded a new file
+  for (const am of adminManagers) {
     promises.push(
       NotificationService.create(
         am.id,
         "container_file_uploaded",
-        requestId,
+        containerId, // ✅ use container ID instead of request ID
         data,
       ),
     );
   }
 
-  // Notify buyer
+  // 📎 Notify buyer (informational)
   if (buyerId)
     promises.push(
-      NotificationService.create(buyerId, "new_file_upload", requestId, data),
+      NotificationService.create(buyerId, "new_file_upload", containerId, data),
     );
 
-  // Notify supplier
+  // 📤 Notify supplier (confirmation)
   if (supplierId)
     promises.push(
       NotificationService.create(
         supplierId,
         "new_file_upload",
-        requestId,
+        containerId,
         data,
       ),
     );
@@ -332,6 +375,7 @@ export async function addFileToContainer(containerId, fileMeta) {
 /**
  * Update container metadata (editable only by the owning supplier or admin/manager).
  */
+/** 🧾 Update container metadata (JSONB merge + notify admins) */
 export async function updateContainerMetadata(
   containerId,
   metadata,
@@ -357,12 +401,13 @@ export async function updateContainerMetadata(
     throw new Error("Not authorized to modify this container");
   }
 
-  // 3️⃣ Update metadata fields (JSONB merge)
+  // 3️⃣ Normalize metadata structure (JSONB merge)
   const normalized =
     metadata && typeof metadata.metadata === "object"
-      ? metadata.metadata // unwrap accidental nesting
+      ? metadata.metadata
       : metadata;
 
+  // 4️⃣ Update metadata JSONB
   await db("farmer_plan_containers")
     .where({ id: containerId })
     .update({
@@ -374,7 +419,31 @@ export async function updateContainerMetadata(
       updated_at: db.fn.now(),
     });
 
-  return { message: "Metadata submitted successfully" };
+  // 5️⃣ Notify admins/managers about metadata update
+  const supplier = await db("users").where({ id: userId }).first();
+
+  const adminManagers = await db("users")
+    .join("user_roles", "users.id", "user_roles.user_id")
+    .join("roles", "user_roles.role_id", "roles.id")
+    .whereIn("roles.name", ["admin", "manager"])
+    .where("users.status", "active")
+    .select("users.id");
+
+  for (const u of adminManagers) {
+    await NotificationService.create(
+      u.id,
+      "container_metadata_updated",
+      containerId, // related container ID
+      {
+        supplierName: supplier?.name || "تأمین‌کننده ناشناس",
+        metadata_type:
+          Object.keys(normalized || {}).join(", ") || "اطلاعات کانتینر",
+        metadata: normalized,
+      },
+    );
+  }
+
+  return { message: "Metadata submitted successfully", metadata: normalized };
 }
 
 /** List all files uploaded for a specific container. */
@@ -561,6 +630,7 @@ export async function addContainerTracking({
  * Update key status fields for a container (supplier-only).
  * Supports toggling in_progress/is_completed.
  */
+
 export async function updateContainerStatus(containerId, supplierId, updates) {
   const allowed = ["status", "farmer_status", "in_progress", "is_completed"];
   const safeUpdates = Object.fromEntries(
@@ -573,6 +643,7 @@ export async function updateContainerStatus(containerId, supplierId, updates) {
   const container = await db("farmer_plan_containers")
     .where({ id: containerId })
     .first();
+
   if (!container) throw new Error("Container not found");
   if (container.supplier_id !== supplierId)
     throw new Error("Not authorized to update this container");
@@ -592,6 +663,37 @@ export async function updateContainerStatus(containerId, supplierId, updates) {
     .where({ id: containerId })
     .update({ ...safeUpdates, updated_at: db.fn.now() })
     .returning("*");
+
+  /* 🔎 Fetch related plan and request for context */
+  const plan = await db("farmer_plans").where({ id: updated.plan_id }).first();
+  const relatedRequestId = plan?.request_id ?? null;
+
+  /* 👤 Fetch supplier info */
+  const supplier = await db("users").where({ id: supplierId }).first();
+
+  /* 🧾 Notify all active admins/managers */
+  const adminManagers = await db("users")
+    .join("user_roles", "users.id", "user_roles.user_id")
+    .join("roles", "user_roles.role_id", "roles.id")
+    .whereIn("roles.name", ["admin", "manager"])
+    .where("users.status", "active")
+    .select("users.id");
+
+  for (const u of adminManagers) {
+    await NotificationService.create(
+      u.id,
+      "container_tracking_update",
+      updated.id,
+      {
+        supplierName: supplier?.name || "Unknown Supplier",
+        containerId: updated.id, // ✅ include containerId in data as well
+        planId: updated.plan_id,
+        status: updated.status || safeUpdates.status || null,
+        farmer_status:
+          updated.farmer_status || safeUpdates.farmer_status || null,
+      },
+    );
+  }
 
   return updated;
 }

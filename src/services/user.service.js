@@ -58,20 +58,27 @@ export const registerUser = async ({
     .insert({ user_id: user.id, role_id: roleRow.id })
     .onConflict(["user_id", "role_id"])
     .ignore();
-
   // Notify admins/managers about new application
   if (application) {
-    const adminManagers = await db("user_roles")
-      .join("roles", "roles.id", "user_roles.role_id")
-      .whereRaw("LOWER(roles.name) IN ('admin', 'manager')")
-      .select("user_id as id")
-      .distinct();
+    const adminManagers = await db("users as u")
+      .join("user_roles as ur", "u.id", "ur.user_id")
+      .join("roles as r", "r.id", "ur.role_id")
+      .whereRaw("LOWER(r.name) IN ('admin','manager')")
+      .andWhere("u.status", "active")
+      .distinct()
+      .pluck("u.id");
 
-    for (const am of adminManagers) {
-      await NotificationService.create(am.id, "new_application", null, {
-        user_name: name,
-        mobile,
-      });
+    for (const adminId of adminManagers) {
+      await NotificationService.create(
+        adminId,
+        "application_submitted", // ✅ use the correct, UX-friendly type
+        application.id, // relatedId = application id (not required, but useful)
+        {
+          application_id: application.id,
+          user_name: name,
+          mobile,
+        },
+      );
     }
   }
 
