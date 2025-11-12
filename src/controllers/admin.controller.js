@@ -1654,6 +1654,22 @@ export const importExcelData = async (req, res) => {
       return null;
     };
 
+    /* --------------------- 🆕 Country Normalization --------------------- */
+
+    const normalizeCountry = (country) => {
+      if (!country) return null;
+      const map = {
+        قطر: "Qatar",
+        الإمارات: "UAE",
+        الامارات: "UAE",
+        السعودية: "Saudi Arabia",
+        عمان: "Oman",
+        الكويت: "Kuwait",
+      };
+      const trimmed = country.toString().trim();
+      return map[trimmed] || trimmed;
+    };
+
     /* --------------------- Transaction --------------------- */
 
     await db.transaction(async (trx) => {
@@ -1690,12 +1706,15 @@ export const importExcelData = async (req, res) => {
       const roleUser = await trx("roles").where("name", "user").first();
       if (!roleUser) throw new Error("Role 'user' not found");
 
+      // 🆕 Apply normalization to import_country
+      const finalCountry = normalizeCountry(import_country || firstSheetName);
+
       // 1️⃣ Create buyer_request
       const [buyerRequest] = await trx("buyer_requests")
         .insert({
           buyer_id,
           creator_id: buyerUser.id,
-          import_country: import_country || firstSheetName,
+          import_country: finalCountry,
           status: "pending",
           container_amount: sheet.length,
           expiration_days: 90,
@@ -1770,6 +1789,15 @@ export const importExcelData = async (req, res) => {
             normalizedMeta[key] = formatDate(normalizedMeta[key]);
         }
 
+        /* --------------------- 🆕 Extract BL Data --------------------- */
+        const adminMetadata = {};
+        if (row["BL Number"] || row["bl_number"]) {
+          adminMetadata.bl_no = row["BL Number"] || row["bl_number"];
+        }
+        if (row["BL Date"] || row["bl_date"]) {
+          adminMetadata.bl_date = formatDate(row["BL Date"] || row["bl_date"]);
+        }
+
         // 5️⃣ Create container (auto mark completed)
         const [container] = await trx("farmer_plan_containers")
           .insert({
@@ -1778,6 +1806,9 @@ export const importExcelData = async (req, res) => {
             buyer_request_id: buyerRequest.id,
             supplier_id: supplier.id,
             metadata: JSON.stringify(normalizedMeta),
+            admin_metadata: Object.keys(adminMetadata).length
+              ? JSON.stringify(adminMetadata)
+              : null, // 🆕 Save BL data as JSONB
             tracking_code: normalizedMeta.tracking_code || null,
             status: "completed",
             is_completed: true,
@@ -1829,6 +1860,7 @@ export const importExcelData = async (req, res) => {
         buyer_request: {
           id: buyerRequest.id,
           creator_name: buyerUser.name,
+          import_country: finalCountry,
           container_count: sheet.length,
         },
       });
