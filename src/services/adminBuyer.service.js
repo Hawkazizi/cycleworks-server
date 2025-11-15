@@ -371,8 +371,6 @@ export async function updateBuyerRequestDeadline(requestId, data, updatedBy) {
 
   if (!updated) throw new Error("Update failed");
 
-  await notifyDeadlineChange(request, requestId, updateData);
-
   return updated;
 }
 
@@ -562,54 +560,6 @@ async function notifyAssignments(requestId, buyerId, supplierIds) {
       message: `درخواست #${requestId} توسط ادمین به تامین‌کنندگان تخصیص داده شد.`,
     });
   }
-}
-
-async function notifyDeadlineChange(request, requestId, updateData) {
-  const notifications = [];
-
-  const readableDates = [];
-  if (updateData.deadline_start)
-    readableDates.push(`شروع: ${updateData.deadline_start}`);
-  if (updateData.deadline_end)
-    readableDates.push(`پایان: ${updateData.deadline_end}`);
-
-  const formattedMsg =
-    readableDates.length > 0
-      ? `بازه تحویل جدید (${readableDates.join(" / ")}) تنظیم شد.`
-      : `تاریخ تحویل جدید (${updateData.deadline_date}) تنظیم شد.`;
-
-  if (request.buyer_id)
-    notifications.push(
-      NotificationService.create(
-        request.buyer_id,
-        "status_updated",
-        requestId,
-        {
-          message: formattedMsg,
-        },
-      ),
-    );
-
-  if (request.preferred_supplier_id)
-    notifications.push(
-      NotificationService.create(
-        request.preferred_supplier_id,
-        "status_updated",
-        requestId,
-        { message: formattedMsg },
-      ),
-    );
-
-  const managers = await getActiveManagers();
-  for (const m of managers) {
-    notifications.push(
-      NotificationService.create(m.id, "status_updated", requestId, {
-        message: `ادمین بازه تحویل درخواست #${requestId} را تغییر داد: ${formattedMsg}`,
-      }),
-    );
-  }
-
-  await Promise.allSettled(notifications);
 }
 
 async function getActiveManagers() {

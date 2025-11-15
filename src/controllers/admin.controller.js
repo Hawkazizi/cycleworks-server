@@ -8,6 +8,7 @@ import path from "path";
 import fs from "fs";
 import xlsx from "xlsx";
 import bcrypt from "bcrypt";
+import crypto from "crypto";
 import { NotificationService } from "../services/notification.service.js";
 /* -------------------- Auth -------------------- */
 // Admin/Manager login
@@ -1578,10 +1579,11 @@ export const getContainerById = async (req, res) => {
 };
 
 /**
- * Admin import Excel → creates buyer_request + containers + suppliers (auto-create if missing)
- * Ensures a buyer user "Al Jabali Trading and Refrigeration Company" exists
- * Sets buyer as creator_id
- * ✅ Automatically marks all imported containers as completed + logs tracking + notifies supplier
+ * Admin import Excel → creates buyer_requests per consignee + containers + suppliers (auto-create if missing)
+ * creator_id = Al Jabali Trading and Refrigeration Company
+ * Groups ALL files by Customer/Consignee → one buyer_request per consignee
+ * Automatically marks containers completed + logs tracking + notifies supplier
+ * Automatically creates license key for each new consignee (buyer)
  */
 export const importExcelData = async (req, res) => {
   try {
@@ -1589,12 +1591,11 @@ export const importExcelData = async (req, res) => {
     if (!req.files || req.files.length === 0)
       throw new Error("No Excel files uploaded");
 
-    const { buyer_id, import_country } = req.body;
-    if (!buyer_id) throw new Error("buyer_id is required");
+    const { import_country } = req.body; // optional
 
     const results = [];
 
-    /* --------------------- Helpers (UNCHANGED) --------------------- */
+    /* --------------------- Helpers --------------------- */
 
     const normalizeKeys = (obj) => {
       const normalized = {};
@@ -1652,7 +1653,6 @@ export const importExcelData = async (req, res) => {
 
     const normalizeCountry = (country) => {
       if (!country) return null;
-
       const map = {
         قطر: "Qatar",
         عمان: "Oman",
@@ -1660,31 +1660,46 @@ export const importExcelData = async (req, res) => {
         البحرين: "Bahrain",
         البحرین: "Bahrain",
       };
-
       const trimmed = country.toString().trim();
       if (map[trimmed]) return map[trimmed];
-
       if (["Qatar", "Oman", "Bahrain"].includes(trimmed)) return trimmed;
-
       return trimmed;
     };
 
+    const normalizeName = (str) =>
+      str ? str.toString().trim().toLowerCase().replace(/\s+/g, " ") : "";
+
+    const getConsigneeName = (row) => {
+      const raw =
+        row["Customer"] ||
+        row["customer"] ||
+        row["CUSTOMER"] ||
+        row["Consignee"] ||
+        row["consignee"] ||
+        row["CONSIGNEE"] ||
+        null;
+      return raw ? raw.toString().trim() : "";
+    };
+
+    const generateLicenseKey = () =>
+      "BUY-" + crypto.randomBytes(12).toString("hex");
+
     /* --------------------- Database Transaction --------------------- */
     await db.transaction(async (trx) => {
-      /* --------------------- Ensure Main Buyer Exists --------------------- */
-      const buyerName = "Al Jabali Trading and Refrigeration Company";
-      let buyerUser = await trx("users").where("name", buyerName).first();
+      /* --------------------- Ensure Main Buyer (creator) Exists --------------------- */
+      const mainName = "Al Jabali Trading and Refrigeration Company";
+      let buyerUser = await trx("users").where("name", mainName).first();
+      const placeholderPassword = await bcrypt.hash("NO_PASSWORD", 10);
 
       if (!buyerUser) {
-        const password_hash = await bcrypt.hash("default123", 10);
         const fakeMobile =
           "09" + Math.floor(100000000 + Math.random() * 900000000);
 
         [buyerUser] = await trx("users")
           .insert({
-            name: buyerName,
+            name: mainName,
             mobile: fakeMobile,
-            password_hash,
+            password_hash: placeholderPassword,
             status: "active",
             created_at: trx.fn.now(),
             updated_at: trx.fn.now(),
@@ -1700,33 +1715,117 @@ export const importExcelData = async (req, res) => {
         .onConflict(["user_id", "role_id"])
         .ignore();
 
-      /* --------------------- Loop through all uploaded files --------------------- */
+      /* --------------------- Load all suppliers once --------------------- */
+      let suppliers = await trx("users")
+        .select("id", "name")
+        .where("status", "active");
+
+      /* --------------------- Read ALL files and flatten rows --------------------- */
+      const allRows = [];
+
       for (const file of req.files) {
         const workbook = xlsx.readFile(file.path);
-        const firstSheetName = workbook.SheetNames[0];
+        const sheetName = workbook.SheetNames[0];
 
-        const sheet = xlsx.utils.sheet_to_json(
-          workbook.Sheets[firstSheetName],
-          { defval: null },
-        );
+        const sheet = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName], {
+          defval: null,
+        });
 
         if (!sheet.length) continue;
 
-        /* --------------------- Country: From upload OR filename --------------------- */
         const derivedCountry =
           import_country ||
           file.originalname.replace(".xlsx", "").replace(".xls", "");
-
         const finalCountry = normalizeCountry(derivedCountry);
 
-        /* --------------------- 1️⃣ Create Buyer Request --------------------- */
+        for (const row of sheet) {
+          allRows.push({
+            row,
+            fileName: file.originalname,
+            country: finalCountry,
+          });
+        }
+      }
+
+      if (!allRows.length) throw new Error("Excel sheets are empty");
+
+      /* --------------------- Group by Consignee --------------------- */
+      const groups = new Map();
+
+      for (const item of allRows) {
+        const consignee = getConsigneeName(item.row);
+        if (!consignee) continue;
+
+        const key = normalizeName(consignee);
+
+        if (!groups.has(key)) {
+          groups.set(key, { name: consignee, rows: [] });
+        }
+        groups.get(key).rows.push(item);
+      }
+
+      if (groups.size === 0)
+        throw new Error("No Customer / Consignee found in Excel");
+
+      /* --------------------- Process Each Consignee --------------------- */
+      for (const [key, group] of groups) {
+        const consigneeName = group.name;
+        const rows = group.rows;
+
+        /* ---- Ensure consignee user exists ---- */
+        let consigneeUser = await trx("users")
+          .where("name", consigneeName)
+          .first();
+
+        if (!consigneeUser) {
+          const fakeMobile =
+            "09" + Math.floor(100000000 + Math.random() * 900000000);
+
+          [consigneeUser] = await trx("users")
+            .insert({
+              name: consigneeName,
+              mobile: fakeMobile,
+              password_hash: placeholderPassword,
+              status: "active",
+              created_at: trx.fn.now(),
+              updated_at: trx.fn.now(),
+            })
+            .returning("*");
+
+          /* ---------- Create license key ---------- */
+          await trx("admin_license_keys").insert({
+            key: generateLicenseKey(),
+            role_id: roleBuyer.id,
+            is_active: true,
+            assigned_to: consigneeUser.id,
+            created_at: trx.fn.now(),
+          });
+        }
+
+        /* Ensure buyer role */
+        await trx("user_roles")
+          .insert({
+            user_id: consigneeUser.id,
+            role_id: roleBuyer.id,
+          })
+          .onConflict(["user_id", "role_id"])
+          .ignore();
+
+        /* Determine country */
+        const countries = [
+          ...new Set(rows.map((r) => r.country).filter(Boolean)),
+        ];
+        const requestCountry =
+          countries.length === 1 ? countries[0] : (countries[0] ?? null);
+
+        /* --------------------- Create buyer_request --------------------- */
         const [buyerRequest] = await trx("buyer_requests")
           .insert({
-            buyer_id,
+            buyer_id: consigneeUser.id,
             creator_id: buyerUser.id,
-            import_country: finalCountry,
+            import_country: requestCountry,
             status: "pending",
-            container_amount: sheet.length,
+            container_amount: 0,
             expiration_days: 90,
             product_type: "eggs",
             created_at: trx.fn.now(),
@@ -1734,7 +1833,7 @@ export const importExcelData = async (req, res) => {
           })
           .returning("*");
 
-        /* --------------------- 2️⃣ Create Farmer Plan --------------------- */
+        /* --------------------- Create farmer plan --------------------- */
         const [plan] = await trx("farmer_plans")
           .insert({
             request_id: buyerRequest.id,
@@ -1743,37 +1842,31 @@ export const importExcelData = async (req, res) => {
           })
           .returning("*");
 
-        /* --------------------- 3️⃣ Load All Suppliers --------------------- */
-        let suppliers = await trx("users")
-          .select("id", "name")
-          .where("status", "active");
+        /* --------------------- Create containers --------------------- */
+        let index = 1;
+        let count = 0;
 
-        const normalizeName = (str) =>
-          str ? str.toString().trim().toLowerCase().replace(/\s+/g, " ") : "";
+        for (const item of rows) {
+          const row = item.row;
 
-        /* --------------------- 4️⃣ Create Containers --------------------- */
-        let containerIndex = 1;
-
-        for (const row of sheet) {
-          const shipperName =
+          const shipper =
             row["Shipper"] || row["shipper"] || row["SHIPPER"] || null;
 
-          if (!shipperName) continue;
+          if (!shipper) continue;
 
           let supplier = suppliers.find(
-            (s) => normalizeName(s.name) === normalizeName(shipperName),
+            (s) => normalizeName(s.name) === normalizeName(shipper),
           );
 
           if (!supplier) {
-            const password_hash = await bcrypt.hash("default123", 10);
             const fakeMobile =
               "09" + Math.floor(100000000 + Math.random() * 900000000);
 
             const [newSupplier] = await trx("users")
               .insert({
-                name: shipperName,
+                name: shipper,
                 mobile: fakeMobile,
-                password_hash,
+                password_hash: placeholderPassword,
                 status: "active",
                 created_at: trx.fn.now(),
                 updated_at: trx.fn.now(),
@@ -1792,7 +1885,6 @@ export const importExcelData = async (req, res) => {
             suppliers.push(newSupplier);
           }
 
-          /* --------------------- Normalize Metadata --------------------- */
           const normalizedMeta = normalizeKeys(row);
 
           if (normalizedMeta.ty_number && !normalizedMeta.tracking_code)
@@ -1803,7 +1895,6 @@ export const importExcelData = async (req, res) => {
               normalizedMeta[key] = formatDate(normalizedMeta[key]);
           }
 
-          /* --------------------- Build Admin Metadata --------------------- */
           const adminMetadata = {};
 
           if (row["BL Number"] || row["bl_number"])
@@ -1814,22 +1905,18 @@ export const importExcelData = async (req, res) => {
               row["BL Date"] || row["bl_date"],
             );
 
-          // Handle Actual Quantity Received correctly
           const actualQty =
-            row["Actual Quantity Received"] || // Correct Excel header
-            row["Actual Quantity Recived"] || // Common misspelling
-            row["actual_quantity_received"] || // Normalized
-            row["actual_quantity_recived"]; // If Excel is messy
+            row["Actual Quantity Received"] ||
+            row["Actual Quantity Recived"] ||
+            row["actual_quantity_received"] ||
+            row["actual_quantity_recived"];
 
-          if (actualQty) {
-            adminMetadata.actual_quantity_received = actualQty; // Save under correct JSON key
-          }
+          if (actualQty) adminMetadata.actual_quantity_received = actualQty;
 
-          /* --------------------- 5️⃣ Create Container --------------------- */
           const [container] = await trx("farmer_plan_containers")
             .insert({
               plan_id: plan.id,
-              container_no: containerIndex++,
+              container_no: index++,
               buyer_request_id: buyerRequest.id,
               supplier_id: supplier.id,
               metadata: JSON.stringify(normalizedMeta),
@@ -1845,7 +1932,8 @@ export const importExcelData = async (req, res) => {
             })
             .returning("*");
 
-          /* --------------------- 6️⃣ Add Tracking --------------------- */
+          count++;
+
           await trx("container_tracking_statuses").insert({
             container_id: container.id,
             status: "delivered",
@@ -1854,7 +1942,6 @@ export const importExcelData = async (req, res) => {
             created_at: trx.fn.now(),
           });
 
-          /* --------------------- 7️⃣ Link Supplier --------------------- */
           await trx("buyer_request_suppliers")
             .insert({
               buyer_request_id: buyerRequest.id,
@@ -1865,36 +1952,38 @@ export const importExcelData = async (req, res) => {
             .onConflict(["buyer_request_id", "supplier_id", "container_id"])
             .ignore();
 
-          /* --------------------- 8️⃣ Notify Supplier --------------------- */
-          if (supplier?.id) {
-            await NotificationService.create(
-              supplier.id,
-              "container_tracking_update",
-              buyerRequest.id,
-              {
-                status: "delivered",
-                containerId: container.id,
-                containerNo: container.container_no,
-              },
-              trx,
-            );
-          }
+          await NotificationService.create(
+            supplier.id,
+            "container_tracking_update",
+            buyerRequest.id,
+            {
+              status: "delivered",
+              containerId: container.id,
+              containerNo: container.container_no,
+            },
+            trx,
+          );
         }
 
-        /* Store result for this file */
+        await trx("buyer_requests").where({ id: buyerRequest.id }).update({
+          container_amount: count,
+          updated_at: trx.fn.now(),
+        });
+
         results.push({
-          file: file.originalname,
-          import_country: finalCountry,
+          consignee: consigneeName,
           buyer_request_id: buyerRequest.id,
-          containers: sheet.length,
+          import_country: requestCountry,
+          containers: count,
         });
       }
     });
 
     /* --------------------- Final Response --------------------- */
     return res.json({
-      message: "✅ All Excel files imported successfully.",
-      total_files: results.length,
+      message:
+        "✅ Excel import completed successfully — grouped by consignee/customer.",
+      total_consignees: results.length,
       details: results,
     });
   } catch (err) {
