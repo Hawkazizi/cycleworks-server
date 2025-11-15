@@ -1585,19 +1585,16 @@ export const getContainerById = async (req, res) => {
  */
 export const importExcelData = async (req, res) => {
   try {
-    if (!req.file) throw new Error("No Excel file uploaded");
+    /* --------------------- Validate input --------------------- */
+    if (!req.files || req.files.length === 0)
+      throw new Error("No Excel files uploaded");
+
     const { buyer_id, import_country } = req.body;
     if (!buyer_id) throw new Error("buyer_id is required");
 
-    const workbook = xlsx.readFile(req.file.path);
-    const firstSheetName = workbook.SheetNames[0];
-    const sheet = xlsx.utils.sheet_to_json(workbook.Sheets[firstSheetName], {
-      defval: null,
-    });
+    const results = [];
 
-    if (!sheet.length) throw new Error("Excel sheet is empty");
-
-    /* --------------------- Helpers --------------------- */
+    /* --------------------- Helpers (UNCHANGED) --------------------- */
 
     const normalizeKeys = (obj) => {
       const normalized = {};
@@ -1610,7 +1607,6 @@ export const importExcelData = async (req, res) => {
           .replace(/_+/g, "_")
           .replace(/^_+|_+$/g, "");
 
-        // Custom mappings
         if (newKey === "brand") newKey = "egg_brand";
         if (newKey === "commercial_card") newKey = "trade_card";
         if (newKey === "zip_code") newKey = "zip_code_ex";
@@ -1654,31 +1650,32 @@ export const importExcelData = async (req, res) => {
       return null;
     };
 
-    /* --------------------- 🆕 Country Normalization --------------------- */
-
     const normalizeCountry = (country) => {
       if (!country) return null;
+
       const map = {
         قطر: "Qatar",
-        الإمارات: "UAE",
-        الامارات: "UAE",
-        السعودية: "Saudi Arabia",
         عمان: "Oman",
-        الكويت: "Kuwait",
+        بحرین: "Bahrain",
+        البحرين: "Bahrain",
+        البحرین: "Bahrain",
       };
+
       const trimmed = country.toString().trim();
-      return map[trimmed] || trimmed;
+      if (map[trimmed]) return map[trimmed];
+
+      if (["Qatar", "Oman", "Bahrain"].includes(trimmed)) return trimmed;
+
+      return trimmed;
     };
 
-    /* --------------------- Transaction --------------------- */
-
+    /* --------------------- Database Transaction --------------------- */
     await db.transaction(async (trx) => {
-      // Ensure buyer exists
+      /* --------------------- Ensure Main Buyer Exists --------------------- */
       const buyerName = "Al Jabali Trading and Refrigeration Company";
       let buyerUser = await trx("users").where("name", buyerName).first();
 
       if (!buyerUser) {
-        console.log(`🆕 Creating buyer user: ${buyerName}`);
         const password_hash = await bcrypt.hash("default123", 10);
         const fakeMobile =
           "09" + Math.floor(100000000 + Math.random() * 900000000);
@@ -1696,174 +1693,209 @@ export const importExcelData = async (req, res) => {
       }
 
       const roleBuyer = await trx("roles").where("name", "buyer").first();
-      if (!roleBuyer) throw new Error("Role 'buyer' not found");
+      const roleUser = await trx("roles").where("name", "user").first();
 
       await trx("user_roles")
         .insert({ user_id: buyerUser.id, role_id: roleBuyer.id })
         .onConflict(["user_id", "role_id"])
         .ignore();
 
-      const roleUser = await trx("roles").where("name", "user").first();
-      if (!roleUser) throw new Error("Role 'user' not found");
+      /* --------------------- Loop through all uploaded files --------------------- */
+      for (const file of req.files) {
+        const workbook = xlsx.readFile(file.path);
+        const firstSheetName = workbook.SheetNames[0];
 
-      // 🆕 Apply normalization to import_country
-      const finalCountry = normalizeCountry(import_country || firstSheetName);
-
-      // 1️⃣ Create buyer_request
-      const [buyerRequest] = await trx("buyer_requests")
-        .insert({
-          buyer_id,
-          creator_id: buyerUser.id,
-          import_country: finalCountry,
-          status: "pending",
-          container_amount: sheet.length,
-          expiration_days: 90,
-          product_type: "eggs",
-          created_at: trx.fn.now(),
-          updated_at: trx.fn.now(),
-        })
-        .returning("*");
-
-      // 2️⃣ Create farmer_plan
-      const [plan] = await trx("farmer_plans")
-        .insert({
-          request_id: buyerRequest.id,
-          plan_date: trx.fn.now(),
-          status: "submitted",
-        })
-        .returning("*");
-
-      // 3️⃣ Load suppliers
-      let suppliers = await trx("users")
-        .select("id", "name")
-        .where("status", "active");
-
-      const normalizeName = (str) =>
-        str ? str.toString().trim().toLowerCase().replace(/\s+/g, " ") : "";
-
-      // 4️⃣ Iterate containers
-      let containerIndex = 1;
-      for (const row of sheet) {
-        const shipperName =
-          row["Shipper"] || row["shipper"] || row["SHIPPER"] || null;
-        if (!shipperName) continue;
-
-        let supplier = suppliers.find(
-          (s) => normalizeName(s.name) === normalizeName(shipperName),
+        const sheet = xlsx.utils.sheet_to_json(
+          workbook.Sheets[firstSheetName],
+          { defval: null },
         );
 
-        if (!supplier) {
-          console.log(`➕ Creating new supplier: ${shipperName}`);
-          const password_hash = await bcrypt.hash("default123", 10);
-          const fakeMobile =
-            "09" + Math.floor(100000000 + Math.random() * 900000000);
-          const [newSupplier] = await trx("users")
-            .insert({
-              name: shipperName,
-              mobile: fakeMobile,
-              password_hash,
-              status: "active",
-              created_at: trx.fn.now(),
-              updated_at: trx.fn.now(),
-            })
-            .returning(["id", "name"]);
+        if (!sheet.length) continue;
 
-          await trx("user_roles")
-            .insert({
-              user_id: newSupplier.id,
-              role_id: roleUser.id,
-            })
-            .onConflict(["user_id", "role_id"])
-            .ignore();
+        /* --------------------- Country: From upload OR filename --------------------- */
+        const derivedCountry =
+          import_country ||
+          file.originalname.replace(".xlsx", "").replace(".xls", "");
 
-          supplier = newSupplier;
-          suppliers.push(newSupplier);
-        }
+        const finalCountry = normalizeCountry(derivedCountry);
 
-        const normalizedMeta = normalizeKeys(row);
-        if (normalizedMeta.ty_number && !normalizedMeta.tracking_code)
-          normalizedMeta.tracking_code = normalizedMeta.ty_number;
-
-        for (const key of Object.keys(normalizedMeta)) {
-          if (key.includes("date"))
-            normalizedMeta[key] = formatDate(normalizedMeta[key]);
-        }
-
-        /* --------------------- 🆕 Extract BL Data --------------------- */
-        const adminMetadata = {};
-        if (row["BL Number"] || row["bl_number"]) {
-          adminMetadata.bl_no = row["BL Number"] || row["bl_number"];
-        }
-        if (row["BL Date"] || row["bl_date"]) {
-          adminMetadata.bl_date = formatDate(row["BL Date"] || row["bl_date"]);
-        }
-
-        // 5️⃣ Create container (auto mark completed)
-        const [container] = await trx("farmer_plan_containers")
+        /* --------------------- 1️⃣ Create Buyer Request --------------------- */
+        const [buyerRequest] = await trx("buyer_requests")
           .insert({
-            plan_id: plan.id,
-            container_no: containerIndex++,
-            buyer_request_id: buyerRequest.id,
-            supplier_id: supplier.id,
-            metadata: JSON.stringify(normalizedMeta),
-            admin_metadata: Object.keys(adminMetadata).length
-              ? JSON.stringify(adminMetadata)
-              : null, // 🆕 Save BL data as JSONB
-            tracking_code: normalizedMeta.tracking_code || null,
-            status: "completed",
-            is_completed: true,
-            in_progress: false,
-            completed_at: trx.fn.now(),
+            buyer_id,
+            creator_id: buyerUser.id,
+            import_country: finalCountry,
+            status: "pending",
+            container_amount: sheet.length,
+            expiration_days: 90,
+            product_type: "eggs",
+            created_at: trx.fn.now(),
             updated_at: trx.fn.now(),
           })
           .returning("*");
 
-        // 6️⃣ Add tracking history: delivered
-        await trx("container_tracking_statuses").insert({
-          container_id: container.id,
-          status: "delivered",
-          note: "کانتینر به مقصد تحویل داده شد (وارد شده از اکسل)",
-          created_by: buyerUser.id,
-          created_at: trx.fn.now(),
-        });
-
-        // 7️⃣ Link supplier ↔ buyer_request ↔ container
-        await trx("buyer_request_suppliers")
+        /* --------------------- 2️⃣ Create Farmer Plan --------------------- */
+        const [plan] = await trx("farmer_plans")
           .insert({
-            buyer_request_id: buyerRequest.id,
-            supplier_id: supplier.id,
-            container_id: container.id,
-            assigned_at: trx.fn.now(),
+            request_id: buyerRequest.id,
+            plan_date: trx.fn.now(),
+            status: "submitted",
           })
-          .onConflict(["buyer_request_id", "supplier_id", "container_id"])
-          .ignore();
+          .returning("*");
 
-        // 8️⃣ Notify supplier
-        if (supplier?.id) {
-          await NotificationService.create(
-            supplier.id,
-            "container_tracking_update",
-            buyerRequest.id,
-            {
-              status: "delivered",
-              containerId: container.id,
-              containerNo: container.container_no,
-            },
-            trx,
+        /* --------------------- 3️⃣ Load All Suppliers --------------------- */
+        let suppliers = await trx("users")
+          .select("id", "name")
+          .where("status", "active");
+
+        const normalizeName = (str) =>
+          str ? str.toString().trim().toLowerCase().replace(/\s+/g, " ") : "";
+
+        /* --------------------- 4️⃣ Create Containers --------------------- */
+        let containerIndex = 1;
+
+        for (const row of sheet) {
+          const shipperName =
+            row["Shipper"] || row["shipper"] || row["SHIPPER"] || null;
+
+          if (!shipperName) continue;
+
+          let supplier = suppliers.find(
+            (s) => normalizeName(s.name) === normalizeName(shipperName),
           );
-        }
-      }
 
-      res.json({
-        message:
-          "✅ Excel import completed successfully — containers auto-marked as completed and tracking added.",
-        buyer_request: {
-          id: buyerRequest.id,
-          creator_name: buyerUser.name,
+          if (!supplier) {
+            const password_hash = await bcrypt.hash("default123", 10);
+            const fakeMobile =
+              "09" + Math.floor(100000000 + Math.random() * 900000000);
+
+            const [newSupplier] = await trx("users")
+              .insert({
+                name: shipperName,
+                mobile: fakeMobile,
+                password_hash,
+                status: "active",
+                created_at: trx.fn.now(),
+                updated_at: trx.fn.now(),
+              })
+              .returning(["id", "name"]);
+
+            await trx("user_roles")
+              .insert({
+                user_id: newSupplier.id,
+                role_id: roleUser.id,
+              })
+              .onConflict(["user_id", "role_id"])
+              .ignore();
+
+            supplier = newSupplier;
+            suppliers.push(newSupplier);
+          }
+
+          /* --------------------- Normalize Metadata --------------------- */
+          const normalizedMeta = normalizeKeys(row);
+
+          if (normalizedMeta.ty_number && !normalizedMeta.tracking_code)
+            normalizedMeta.tracking_code = normalizedMeta.ty_number;
+
+          for (const key of Object.keys(normalizedMeta)) {
+            if (key.includes("date"))
+              normalizedMeta[key] = formatDate(normalizedMeta[key]);
+          }
+
+          /* --------------------- Build Admin Metadata --------------------- */
+          const adminMetadata = {};
+
+          if (row["BL Number"] || row["bl_number"])
+            adminMetadata.bl_no = row["BL Number"] || row["bl_number"];
+
+          if (row["BL Date"] || row["bl_date"])
+            adminMetadata.bl_date = formatDate(
+              row["BL Date"] || row["bl_date"],
+            );
+
+          // Handle Actual Quantity Received correctly
+          const actualQty =
+            row["Actual Quantity Received"] || // Correct Excel header
+            row["Actual Quantity Recived"] || // Common misspelling
+            row["actual_quantity_received"] || // Normalized
+            row["actual_quantity_recived"]; // If Excel is messy
+
+          if (actualQty) {
+            adminMetadata.actual_quantity_received = actualQty; // Save under correct JSON key
+          }
+
+          /* --------------------- 5️⃣ Create Container --------------------- */
+          const [container] = await trx("farmer_plan_containers")
+            .insert({
+              plan_id: plan.id,
+              container_no: containerIndex++,
+              buyer_request_id: buyerRequest.id,
+              supplier_id: supplier.id,
+              metadata: JSON.stringify(normalizedMeta),
+              admin_metadata: Object.keys(adminMetadata).length
+                ? JSON.stringify(adminMetadata)
+                : null,
+              tracking_code: normalizedMeta.tracking_code || null,
+              status: "completed",
+              is_completed: true,
+              in_progress: false,
+              completed_at: trx.fn.now(),
+              updated_at: trx.fn.now(),
+            })
+            .returning("*");
+
+          /* --------------------- 6️⃣ Add Tracking --------------------- */
+          await trx("container_tracking_statuses").insert({
+            container_id: container.id,
+            status: "delivered",
+            note: "کانتینر به مقصد تحویل داده شد (وارد شده از اکسل)",
+            created_by: buyerUser.id,
+            created_at: trx.fn.now(),
+          });
+
+          /* --------------------- 7️⃣ Link Supplier --------------------- */
+          await trx("buyer_request_suppliers")
+            .insert({
+              buyer_request_id: buyerRequest.id,
+              supplier_id: supplier.id,
+              container_id: container.id,
+              assigned_at: trx.fn.now(),
+            })
+            .onConflict(["buyer_request_id", "supplier_id", "container_id"])
+            .ignore();
+
+          /* --------------------- 8️⃣ Notify Supplier --------------------- */
+          if (supplier?.id) {
+            await NotificationService.create(
+              supplier.id,
+              "container_tracking_update",
+              buyerRequest.id,
+              {
+                status: "delivered",
+                containerId: container.id,
+                containerNo: container.container_no,
+              },
+              trx,
+            );
+          }
+        }
+
+        /* Store result for this file */
+        results.push({
+          file: file.originalname,
           import_country: finalCountry,
-          container_count: sheet.length,
-        },
-      });
+          buyer_request_id: buyerRequest.id,
+          containers: sheet.length,
+        });
+      }
+    });
+
+    /* --------------------- Final Response --------------------- */
+    return res.json({
+      message: "✅ All Excel files imported successfully.",
+      total_files: results.length,
+      details: results,
     });
   } catch (err) {
     console.error("❌ importExcelData error:", err);

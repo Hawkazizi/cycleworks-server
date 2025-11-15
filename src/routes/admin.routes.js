@@ -406,7 +406,7 @@ router.post(
   "/import-excel",
   authenticate,
   authorize("admin", "manager"),
-  upload.single("file"),
+  upload.array("files", 10),
   adminController.importExcelData,
 );
 
