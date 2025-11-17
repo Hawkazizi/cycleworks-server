@@ -136,12 +136,21 @@ export async function getProfileById(userId) {
   return db("users").where({ id: userId }).first();
 }
 
-/** Update user profile (name, email, password) */
+/** Update user profile (name, email, password, mobile) */
 export async function updateProfileById(userId, data) {
   const update = {};
 
   if (data.name) update.name = data.name.trim();
   if (data.email) update.email = data.email.trim();
+
+  // 🔥 NEW: update mobile
+  if (data.mobile) {
+    const exists = await db("users").where({ mobile: data.mobile }).first();
+    if (exists && exists.id !== userId) {
+      throw new Error("این شماره موبایل قبلاً استفاده شده است");
+    }
+    update.mobile = data.mobile.trim();
+  }
 
   if (data.password) {
     update.password_hash = await bcrypt.hash(data.password, 10);
@@ -150,7 +159,13 @@ export async function updateProfileById(userId, data) {
   if (Object.keys(update).length === 0)
     throw new Error("No valid fields to update");
 
-  await db("users").where({ id: userId }).update(update);
+  await db("users")
+    .where({ id: userId })
+    .update({
+      ...update,
+      updated_at: db.fn.now(),
+    });
+
   return getProfileById(userId);
 }
 
@@ -280,6 +295,7 @@ export const getUserProfile = async (userId) => {
       "u.id",
       "u.name",
       "u.email",
+      "u.mobile", // 🔥 ADD THIS
       "u.status",
       "u.created_at",
       "ua.supplier_name",

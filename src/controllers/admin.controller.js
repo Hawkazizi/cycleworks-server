@@ -1924,6 +1924,7 @@ export const importExcelData = async (req, res) => {
                 ? JSON.stringify(adminMetadata)
                 : null,
               tracking_code: normalizedMeta.tracking_code || null,
+              farmer_status: "accepted",
               status: "completed",
               is_completed: true,
               in_progress: false,
@@ -1937,7 +1938,7 @@ export const importExcelData = async (req, res) => {
           await trx("container_tracking_statuses").insert({
             container_id: container.id,
             status: "delivered",
-            note: "کانتینر به مقصد تحویل داده شد (وارد شده از اکسل)",
+            note: "کانتینر به مقصد تحویل داده شد",
             created_by: buyerUser.id,
             created_at: trx.fn.now(),
           });
