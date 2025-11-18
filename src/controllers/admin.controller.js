@@ -1856,9 +1856,8 @@ export const importExcelData = async (req, res) => {
         for (const item of rows) {
           const row = item.row;
 
-          const shipper = Object.keys(row).find(
-            (k) => k.trim().toLowerCase().replace(/\s+/g, "") === "shipper",
-          );
+          const shipper =
+            row["Shipper"] || row["shipper"] || row["SHIPPER"] || null;
 
           if (!shipper) continue;
 
@@ -1932,7 +1931,7 @@ export const importExcelData = async (req, res) => {
                 ? JSON.stringify(adminMetadata)
                 : null,
               tracking_code: normalizedMeta.tracking_code || null,
-              farmer_status: "accepted",
+              farmer_status: "accepted", // <-- required
               status: "completed",
               is_completed: true,
               in_progress: false,
