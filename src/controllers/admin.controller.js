@@ -1659,7 +1659,11 @@ export const importExcelData = async (req, res) => {
         بحرین: "Bahrain",
         البحرين: "Bahrain",
         البحرین: "Bahrain",
+        qatar: "Qatar",
+        oman: "Oman",
+        bahrain: "Bahrain",
       };
+
       const trimmed = country.toString().trim();
       if (map[trimmed]) return map[trimmed];
       if (["Qatar", "Oman", "Bahrain"].includes(trimmed)) return trimmed;
@@ -1733,9 +1737,12 @@ export const importExcelData = async (req, res) => {
 
         if (!sheet.length) continue;
 
-        const derivedCountry =
-          import_country ||
-          file.originalname.replace(".xlsx", "").replace(".xls", "");
+        const cleanName = file.originalname
+          .replace(/\.xlsx?$/i, "")
+          .trim()
+          .replace(/[^\w\s]/g, ""); // remove invisible unicode
+
+        const derivedCountry = import_country || cleanName;
         const finalCountry = normalizeCountry(derivedCountry);
 
         for (const row of sheet) {
@@ -1756,7 +1763,7 @@ export const importExcelData = async (req, res) => {
         const consignee = getConsigneeName(item.row);
         if (!consignee) continue;
 
-        const key = normalizeName(consignee);
+        const key = normalizeName(consignee) + "::" + item.country;
 
         if (!groups.has(key)) {
           groups.set(key, { name: consignee, rows: [] });
@@ -1849,8 +1856,9 @@ export const importExcelData = async (req, res) => {
         for (const item of rows) {
           const row = item.row;
 
-          const shipper =
-            row["Shipper"] || row["shipper"] || row["SHIPPER"] || null;
+          const shipper = Object.keys(row).find(
+            (k) => k.trim().toLowerCase().replace(/\s+/g, "") === "shipper",
+          );
 
           if (!shipper) continue;
 
