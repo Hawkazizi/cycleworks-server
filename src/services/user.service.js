@@ -408,12 +408,13 @@ export async function getContainerDetails(containerId, userId) {
       "c.is_completed",
       "c.in_progress",
       "c.metadata_status as container_status",
+      "c.farmer_status", // ✅ ADDED
       "c.supplier_id",
       "c.created_at as container_created_at",
       "c.updated_at as container_updated_at",
       "p.id as plan_id",
 
-      // 🧾 Buyer Request Details (form fields)
+      // Buyer Request Details
       "br.id as request_id",
       "br.status as request_status",
       "br.import_country",
@@ -434,7 +435,7 @@ export async function getContainerDetails(containerId, userId) {
       "br.deadline_start as buyer_deadline_start",
       "br.deadline_end as buyer_deadline_end",
 
-      // 👥 Buyer + Supplier Info
+      // Buyer + Supplier Info
       "buyer.name as buyer_name",
       "buyer.mobile as buyer_mobile",
       "supplier.name as supplier_name",
@@ -453,13 +454,27 @@ export async function getContainerDetails(containerId, userId) {
   // --- 5️⃣ Normalize arrays and JSON fields safely
   const normalized = {
     ...container,
+
+    // Normalize statuses
+    farmer_status: container.farmer_status
+      ? String(container.farmer_status).toLowerCase()
+      : "pending",
+
+    container_status: container.container_status
+      ? String(container.container_status).toLowerCase()
+      : "pending",
+
+    // Parse metadata JSON
     metadata:
       typeof container.metadata === "string"
         ? JSON.parse(container.metadata)
-        : container.metadata || {}, // ✅ fix: only parse if string
+        : container.metadata || {},
+
+    // Parse arrays
     size: Array.isArray(container.size)
       ? container.size
       : safeParseArray(container.size),
+
     certificates: Array.isArray(container.certificates)
       ? container.certificates
       : safeParseArray(container.certificates),
