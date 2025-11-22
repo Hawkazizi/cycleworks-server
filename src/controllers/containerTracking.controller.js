@@ -31,15 +31,17 @@ export async function listAllContainersWithTracking(req, res) {
           "last.latest_time",
         );
       })
-      // 🧠 Fetch only containers that have a TY number in metadata
-      .whereRaw(
-        `c.metadata->>'ty_number' IS NOT NULL AND c.metadata->>'ty_number' <> ''`,
-      )
+      // ❌ REMOVED – this was hiding all in-progress containers
+      // .whereRaw(`c.metadata->>'ty_number' IS NOT NULL AND c.metadata->>'ty_number' <> ''`)
       .select(
         "c.id as container_id",
         "c.container_no",
         "c.status as container_status",
+
+        // ✅ added fields
+        "c.in_progress",
         "c.is_completed",
+
         "c.created_at as container_created_at",
         "c.metadata",
         "c.metadata_status",
@@ -47,10 +49,12 @@ export async function listAllContainersWithTracking(req, res) {
         "c.admin_metadata",
         "c.admin_metadata_status",
         "c.admin_metadata_review_note",
+
         // Plan
         "p.id as plan_id",
         "p.plan_date",
         "p.status as plan_status",
+
         // Buyer request
         "br.id as buyer_request_id",
         "br.import_country",
@@ -63,6 +67,7 @@ export async function listAllContainersWithTracking(req, res) {
         "br.container_amount",
         "br.cartons",
         "br.status as buyer_status",
+
         // Users (supplier / buyer)
         "supplier.id as supplier_id",
         "supplier.name as supplier_name",
@@ -70,6 +75,7 @@ export async function listAllContainersWithTracking(req, res) {
         "buyer.id as buyer_id",
         "buyer.name as buyer_name",
         "buyer.email as buyer_email",
+
         // Latest tracking
         "ct.status as latest_status",
         "ct.note",
@@ -299,8 +305,10 @@ export async function myContainersWithTracking(req, res) {
         "c.container_no",
         "c.status as container_status",
         "c.farmer_status", // 🟢 include farmer status
+        "c.in_progress",
         "c.tracking_code",
         "c.updated_at",
+        "c.in_progress",
         "c.is_completed",
         "c.in_progress",
         "c.metadata",

@@ -1131,6 +1131,7 @@ export const listContainersByRequestId = async (req, res) => {
 };
 
 /* -------------------- List ALL Containers (for Admin) -------------------- */
+/* -------------------- List ALL Containers (for Admin) -------------------- */
 export const listAllContainersWithTracking = async (req, res) => {
   try {
     const containers = await db("farmer_plan_containers as c")
@@ -1139,6 +1140,7 @@ export const listAllContainersWithTracking = async (req, res) => {
       .leftJoin("users as supplier", "c.supplier_id", "supplier.id")
       .leftJoin("users as buyer", "br.buyer_id", "buyer.id")
       .leftJoin("users as operator", "br.creator_id", "operator.id")
+
       // 🧩 latest tracking join
       .leftJoin(
         db("container_tracking_statuses as t")
@@ -1156,23 +1158,40 @@ export const listAllContainersWithTracking = async (req, res) => {
           "last.latest_time",
         );
       })
+
       .select(
+        // 🔹 container basic info
         "c.id as container_id",
         "c.container_no",
         "c.status as container_status",
         "c.created_at",
         "c.updated_at",
+
+        // 🔹 MUST HAVE: status flags
+        "c.in_progress", // ✅ NOW INCLUDED
+        "c.is_completed", // ✅ NOW INCLUDED
+
+        // 🔹 optional metadata
+        "c.metadata",
+        "c.admin_metadata",
+
+        // 🔹 supplier / buyer
         "supplier.name as supplier_name",
         "buyer.name as buyer_name",
         "operator.name as operator_name",
+
+        // 🔹 buyer request info
         "br.import_country",
         "br.product_type",
         "br.egg_type",
         "br.cartons",
+
+        // 🔹 tracking info
         "ct.status as latest_status",
         "ct.note as latest_note",
         "ct.created_at as latest_tracking_time",
-        // 🧠 derive TY number from either tracking_code or metadata (can be null)
+
+        // 🔹 Smart TY number extraction
         db.raw(`
           COALESCE(
             NULLIF(TRIM(ct.tracking_code), ''),
@@ -1181,7 +1200,8 @@ export const listAllContainersWithTracking = async (req, res) => {
           ) AS ty_number
         `),
       )
-      // 🗑️ REMOVED the .whereRaw() filter here to include ALL containers
+
+      // 🔹 keep all containers — do not filter anymore
       .orderBy("c.created_at", "desc");
 
     res.json(containers);
