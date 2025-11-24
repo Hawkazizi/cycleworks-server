@@ -392,6 +392,14 @@ router.get(
   adminController.exportReportsCSV,
 );
 
+// Toggle is_rejected status for a container
+router.patch(
+  "/:id/reject-toggle",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.toggleRejectStatus,
+);
+
 // Mark buyer request complete
 router.put(
   "/buyer-requests/:id/complete",

@@ -31,8 +31,8 @@ export async function listAllContainersWithTracking(req, res) {
           "last.latest_time",
         );
       })
-      // ❌ REMOVED – this was hiding all in-progress containers
-      // .whereRaw(`c.metadata->>'ty_number' IS NOT NULL AND c.metadata->>'ty_number' <> ''`)
+      // ✅ Exclude rejected containers
+      .where("c.is_rejected", false) // 👈 this line hides all rejected ones
       .select(
         "c.id as container_id",
         "c.container_no",
@@ -41,6 +41,7 @@ export async function listAllContainersWithTracking(req, res) {
         // ✅ added fields
         "c.in_progress",
         "c.is_completed",
+        "c.is_rejected", // optional: include it in response if needed elsewhere
 
         "c.created_at as container_created_at",
         "c.metadata",

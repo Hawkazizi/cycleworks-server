@@ -212,3 +212,36 @@ export async function updateContainerAdminMetadata(
 
   return { message: "Admin metadata submitted", container: updated };
 }
+
+export async function toggleRejectStatus(containerId) {
+  return db.transaction(async (trx) => {
+    // Fetch current record to ensure it exists
+    const current = await trx("farmer_plan_containers")
+      .where("id", containerId)
+      .first();
+
+    if (!current) {
+      return null;
+    }
+
+    // Toggle logic for both is_rejected and in_progress
+    const newRejectedStatus = !current.is_rejected;
+    const newInProgressStatus = newRejectedStatus
+      ? false
+      : !current.in_progress;
+
+    // Update both fields
+    await trx("farmer_plan_containers").where("id", containerId).update({
+      is_rejected: newRejectedStatus,
+      in_progress: newInProgressStatus,
+      updated_at: trx.fn.now(),
+    });
+
+    // Re-fetch updated record to return
+    const updated = await trx("farmer_plan_containers")
+      .where("id", containerId)
+      .first();
+
+    return updated;
+  });
+}

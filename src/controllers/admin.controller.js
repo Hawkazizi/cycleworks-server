@@ -1170,6 +1170,8 @@ export const listAllContainersWithTracking = async (req, res) => {
         // 🔹 MUST HAVE: status flags
         "c.in_progress", // ✅ NOW INCLUDED
         "c.is_completed", // ✅ NOW INCLUDED
+        "c.is_rejected", // ✅ ADDED: rejection flag
+        "c.farmer_status", // ✅ ADDED: farmer_status from farmer_plan_containers
 
         // 🔹 optional metadata
         "c.metadata",
@@ -1412,33 +1414,56 @@ export async function updateContainerAdminMetadataController(req, res) {
 
 export const completeBuyerRequest = async (req, res) => {
   try {
-    const { id } = req.params;
-    const adminId = req.user.id;
+    const { id } = req.params; // Get the ID from URL params
+    const { completed_at } = req.body; // Get completed_at from the request body
+    const adminId = req.user.id; // Assuming the admin's user ID is stored in the request user object
+
+    // Check if the completed_at is provided and is a valid date
+    if (!completed_at || isNaN(new Date(completed_at).getTime())) {
+      return res
+        .status(400)
+        .json({ error: "Invalid or missing completed_at date" });
+    }
+
+    // Ensure that the date is parsed as a Date object for database consistency
+    const parsedCompletedAt = new Date(completed_at);
 
     await db.transaction(async (trx) => {
+      // Update the buyer request with the completed status and provided completed_at
       const [updated] = await trx("buyer_requests")
         .where({ id })
-        .update({ status: "completed", updated_at: trx.fn.now() })
+        .update({
+          status: "completed",
+          updated_at: trx.fn.now(), // Use database function to set the current timestamp
+          completed_at: parsedCompletedAt, // Store the provided completed_at date
+        })
         .returning("*");
 
+      // Update the farmer plan containers associated with this request, marking them as completed
       await trx("farmer_plan_containers")
         .whereIn(
           "plan_id",
           trx("farmer_plans").select("id").where("request_id", id),
         )
-        .update({ is_completed: true, completed_at: trx.fn.now() });
+        .update({
+          is_completed: true,
+          completed_at: parsedCompletedAt, // Set the completed_at date for the container
+        });
 
+      // Create a notification for the buyer indicating the request has been completed
       await NotificationService.create(updated.buyer_id, "completed", id, {
         request_id: id,
         status: "completed",
       });
 
+      // Return the updated request details as a response
       res.json({
-        message: "Request and containers marked completed",
+        message: "Request and containers marked as completed",
         request: updated,
       });
     });
   } catch (err) {
+    // Log the error and return a response with the error message
     console.error("completeBuyerRequest error:", err);
     res.status(400).json({ error: err.message });
   }
@@ -1595,6 +1620,36 @@ export const getContainerById = async (req, res) => {
   } catch (err) {
     console.error("getContainerById error:", err);
     res.status(500).json({ error: "Failed to fetch container details" });
+  }
+};
+
+export const toggleRejectStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Validate ID (basic check — enhance with your validation lib if needed)
+    const containerId = Number(id);
+    if (isNaN(containerId) || containerId <= 0) {
+      return res.status(400).json({ error: "شناسه نامعتبر است" });
+    }
+
+    // Optional: Add authz check here (e.g., is admin?)
+    // if (!req.user.isAdmin) return res.status(403).json({ error: 'دسترسی مجاز نیست' });
+
+    const updatedContainer =
+      await adminFarmerPlansService.toggleRejectStatus(containerId);
+
+    if (!updatedContainer) {
+      return res.status(404).json({ error: "ظرف یافت نشد" });
+    }
+
+    res.json({
+      message: "وضعیت رد/تایید با موفقیت بروزرسانی شد",
+      data: updatedContainer,
+    });
+  } catch (err) {
+    console.error("Toggle reject error:", err);
+    res.status(500).json({ error: "خطای داخلی سرور" });
   }
 };
 
