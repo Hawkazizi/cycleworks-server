@@ -1131,7 +1131,6 @@ export const listContainersByRequestId = async (req, res) => {
 };
 
 /* -------------------- List ALL Containers (for Admin) -------------------- */
-/* -------------------- List ALL Containers (for Admin) -------------------- */
 export const listAllContainersWithTracking = async (req, res) => {
   try {
     const containers = await db("farmer_plan_containers as c")
@@ -1159,6 +1158,8 @@ export const listAllContainersWithTracking = async (req, res) => {
         );
       })
 
+      // 🔸 Check if any related file is 'submitted'
+      .leftJoin("farmer_plan_files as fpf", "c.id", "fpf.container_id")
       .select(
         // 🔹 container basic info
         "c.id as container_id",
@@ -1167,11 +1168,15 @@ export const listAllContainersWithTracking = async (req, res) => {
         "c.created_at",
         "c.updated_at",
 
-        // 🔹 MUST HAVE: status flags
-        "c.in_progress", // ✅ NOW INCLUDED
-        "c.is_completed", // ✅ NOW INCLUDED
-        "c.is_rejected", // ✅ ADDED: rejection flag
-        "c.farmer_status", // ✅ ADDED: farmer_status from farmer_plan_containers
+        // 🔹 status flags
+        "c.in_progress",
+        "c.is_completed",
+        "c.is_rejected",
+        "c.farmer_status",
+
+        // 🔹 metadata statuses
+        "c.metadata_status",
+        "c.admin_metadata_status",
 
         // 🔹 optional metadata
         "c.metadata",
@@ -1201,9 +1206,22 @@ export const listAllContainersWithTracking = async (req, res) => {
             NULLIF(TRIM((c.metadata->'metadata'->>'ty_number')), '')
           ) AS ty_number
         `),
-      )
 
-      // 🔹 keep all containers — do not filter anymore
+        // 🔸 NEW: flag if any file is submitted
+        db.raw(`
+          BOOL_OR(fpf.status = 'submitted') AS has_submitted_file
+        `),
+      )
+      .groupBy(
+        "c.id",
+        "fp.id",
+        "br.id",
+        "supplier.id",
+        "buyer.id",
+        "operator.id",
+        "ct.id",
+        "last.latest_time",
+      )
       .orderBy("c.created_at", "desc");
 
     res.json(containers);
