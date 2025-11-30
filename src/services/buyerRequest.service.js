@@ -188,6 +188,7 @@ export async function createRequestWithBuyerAndLicense({
         preferred_supplier_name: requestData.preferred_supplier_name || null,
         preferred_supplier_id: requestData.preferred_supplier_id || null,
         description: requestData.description,
+        order_number: requestData.order_number || null,
         status: "pending",
       })
       .returning("*");
@@ -257,6 +258,7 @@ export async function createRequest(userId, data) {
       preferred_supplier_name: data.preferred_supplier_name || null,
       preferred_supplier_id: data.preferred_supplier_id || null,
       description: data.description,
+      order_number: data.order_number || null,
       status: "pending",
     })
     .returning("*");
@@ -366,6 +368,7 @@ export async function updateRequest(userId, requestId, data) {
         data.preferred_supplier_name ?? req.preferred_supplier_name,
       preferred_supplier_id:
         data.preferred_supplier_id ?? req.preferred_supplier_id,
+      order_number: data.order_number ?? req.order_number,
       updated_at: knex.fn.now(),
     })
     .returning("*");

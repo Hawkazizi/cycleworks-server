@@ -434,7 +434,7 @@ export async function getContainerDetails(containerId, userId) {
       "br.preferred_supplier_name",
       "br.deadline_start as buyer_deadline_start",
       "br.deadline_end as buyer_deadline_end",
-
+      "br.order_number",
       // Buyer + Supplier Info
       "buyer.name as buyer_name",
       "buyer.mobile as buyer_mobile",

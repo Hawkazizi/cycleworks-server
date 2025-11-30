@@ -76,11 +76,14 @@ export async function listAllContainersWithTracking(req, res) {
         "buyer.id as buyer_id",
         "buyer.name as buyer_name",
         "buyer.email as buyer_email",
-
-        // Latest tracking
+        db.raw(`
+          COALESCE(
+            c.tracking_code,
+            ct.tracking_code
+          ) as tracking_code
+        `),
         "ct.status as latest_status",
         "ct.note",
-        "ct.tracking_code",
         "ct.created_at as updated_at",
       )
       .orderBy("ct.created_at", "desc");
@@ -154,24 +157,46 @@ export async function listAllContainersWithTracking(req, res) {
       tracking_history: historyByContainer[c.container_id] || [],
       files: filesByContainer[c.container_id] || [],
     }));
+    // ✅ Helper to check if a container has a valid tracking code
+    const hasValidTracking = (c) => {
+      const code = c.tracking_code;
+      return (
+        code &&
+        typeof code === "string" &&
+        code.trim() !== "" &&
+        code.toLowerCase() !== "null"
+      );
+    };
 
-    // 📊 Compute stats
+    // ✅ Filter containers that have a valid tracking code
+    const trackedContainers = containers.filter(hasValidTracking);
+
+    // 📊 Compute stats based ONLY on tracked containers
     const containersByCountry = {};
     let exitedIran = 0;
-    containers.forEach((c) => {
+    let inIran = 0;
+
+    trackedContainers.forEach((c) => {
       const country = c.import_country?.trim() || "Unknown";
       containersByCountry[country] = (containersByCountry[country] || 0) + 1;
-      if (c.is_completed) exitedIran++;
+
+      if (c.is_completed === true && c.in_progress === false) {
+        exitedIran++;
+      }
+
+      if (c.in_progress === true && c.is_completed === false) {
+        inIran++;
+      }
     });
 
-    // ✅ Response
     res.json({
       stats: {
-        totalContainers: containers.length,
+        totalContainers: trackedContainers.length, // 👈 ONLY tracked containers
         containersByCountry,
         exitedIran,
+        inIran,
       },
-      containers,
+      containers, // 👈 still return ALL non-rejected containers for filtering/search
     });
   } catch (err) {
     console.error("listAllContainersWithTracking error:", err);

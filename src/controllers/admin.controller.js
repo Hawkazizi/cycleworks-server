@@ -626,7 +626,7 @@ export const getBuyerRequestById = async (req, res) => {
         "br.admin_extra_files",
         "br.deadline_start",
         "br.deadline_end",
-
+        "br.order_number",
         // Buyer Info
         "buyer.name as buyer_name",
         "buyer.email as buyer_email",
