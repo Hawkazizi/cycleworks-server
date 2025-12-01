@@ -6,6 +6,139 @@ import { NotificationService } from "./notification.service.js";
 ======================================================================= */
 
 /**
+ * Admin/manager uploads a file to a container.
+ * Reuses similar logic to farmerPlansService.addFileToContainer,
+ * but may skip supplier logic or adjust notifications.
+ */
+export const addFileToContainerAsAdmin = async (containerId, fileMeta) => {
+  // 1️⃣ Save file record
+  const [file] = await db("farmer_plan_files")
+    .insert({
+      container_id: containerId,
+      file_key: fileMeta.key,
+      type: fileMeta.type || null,
+      original_name: fileMeta.originalname,
+      mime_type: fileMeta.mimetype,
+      size_bytes: fileMeta.size,
+      path: fileMeta.path,
+      status: "submitted",
+    })
+    .returning("*");
+
+  // 2️⃣ Fetch container context
+  const info = await db("farmer_plan_containers as c")
+    .join("farmer_plans as p", "p.id", "c.plan_id")
+    .join("buyer_requests as br", "br.id", "p.request_id")
+    .where("c.id", containerId)
+    .select("p.request_id", "br.buyer_id", "c.supplier_id")
+    .first();
+
+  const data = {
+    fileId: file.id,
+    containerId,
+    fileType: fileMeta.type || "نامشخص",
+    uploader: "ادمین/مدیر",
+    originalName: fileMeta.originalname,
+    mimeType: fileMeta.mimetype,
+    sizeBytes: fileMeta.size,
+  };
+
+  const promises = [];
+
+  // 🔔 Notify admins/managers
+  const adminManagers = await db("users")
+    .join("user_roles", "users.id", "user_roles.user_id")
+    .join("roles", "user_roles.role_id", "roles.id")
+    .whereRaw("LOWER(roles.name) IN ('admin', 'manager')")
+    .where("users.status", "active")
+    .distinct()
+    .select("users.id");
+
+  for (const am of adminManagers) {
+    promises.push(
+      NotificationService.create(
+        am.id,
+        "admin_file_uploaded",
+        containerId,
+        data,
+      ),
+    );
+  }
+
+  // 📎 Notify buyer
+  if (info?.buyer_id) {
+    promises.push(
+      NotificationService.create(
+        info.buyer_id,
+        "admin_file_uploaded",
+        containerId,
+        data,
+      ),
+    );
+  }
+
+  // 📤 Notify supplier
+  if (info?.supplier_id) {
+    promises.push(
+      NotificationService.create(
+        info.supplier_id,
+        "admin_file_uploaded",
+        containerId,
+        data,
+      ),
+    );
+  }
+
+  await Promise.allSettled(promises);
+  return file;
+};
+
+/**
+ * Optional: Notify users about file deletion.
+ */
+export const notifyFileDeletion = async (fileRecord, deletedByUserId) => {
+  const { container_id: containerId } = fileRecord;
+
+  const info = await db("farmer_plan_containers as c")
+    .join("farmer_plans as p", "p.id", "c.plan_id")
+    .join("buyer_requests as br", "br.id", "p.request_id")
+    .where("c.id", containerId)
+    .select("br.buyer_id", "c.supplier_id")
+    .first();
+
+  const data = {
+    fileName: fileRecord.original_name,
+    deletedBy: "ادمین/مدیر",
+  };
+
+  const promises = [];
+
+  // Notify buyer & supplier
+  if (info?.buyer_id) {
+    promises.push(
+      NotificationService.create(
+        info.buyer_id,
+        "file_deleted_by_admin",
+        containerId,
+        data,
+      ),
+    );
+  }
+  if (info?.supplier_id) {
+    promises.push(
+      NotificationService.create(
+        info.supplier_id,
+        "file_deleted_by_admin",
+        containerId,
+        data,
+      ),
+    );
+  }
+
+  await Promise.allSettled(promises);
+};
+
+/**
  * Review a single farmer-uploaded plan file.
  * @param {number} fileId - File ID in `farmer_plan_files`.
  * @param {"approved"|"rejected"} status - Review decision.

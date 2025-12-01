@@ -336,6 +336,27 @@ router.patch(
    📂 FILES & REVIEWS
 ======================================================================= */
 
+/* =======================================================================
+   📎 CONTAINER FILES (Admin Upload/Delete)
+======================================================================= */
+
+// Upload file to container (as admin/manager)
+router.post(
+  "/containers/:containerId/files",
+  authenticate,
+  authorize("admin", "manager"),
+  upload.single("file"),
+  adminController.uploadContainerFile,
+);
+
+// Delete a container file (as admin/manager)
+router.delete(
+  "/containers/:containerId/files/:fileId",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.deleteContainerFile,
+);
+
 // Review farmer file
 router.post(
   "/farmer-files/:fileId/review",

@@ -361,18 +361,24 @@ export const deleteUser = async (req, res) => {
   }
 };
 /* -------------------- Reports -------------------- */
-
 export const exportReportsCSV = async (req, res) => {
   try {
-    const csvData = await adminReportService.generateReportsCSV();
+    const type = req.query.type;
+
+    const csvData = await adminReportService.generateReportsCSV(type);
+
     res.header("Content-Type", "text/csv");
-    res.attachment("reports.csv");
+    res.attachment(
+      type === "completed" ? "completed-containers.csv" : "full-reports.csv",
+    );
+
     return res.send(csvData);
   } catch (err) {
     console.error("CSV export failed:", err);
     res.status(500).json({ error: "Failed to export reports" });
   }
 };
+
 /* -------------------- Applications -------------------- */
 // Get pending applications
 export const getApplications = async (req, res) => {
@@ -891,6 +897,72 @@ export async function reviewFarmerFile(req, res) {
     res.status(400).json({ error: err.message });
   }
 }
+
+/** 📤 Upload container file (by admin/manager) */
+export const uploadContainerFile = async (req, res) => {
+  try {
+    const { containerId } = req.params;
+    const file = req.file;
+    if (!file) return res.status(400).json({ error: "File is required" });
+
+    const destDir = path.join("uploads", "containers", String(containerId));
+    fs.mkdirSync(destDir, { recursive: true });
+    const newPath = path.join(destDir, file.originalname);
+    fs.renameSync(file.path, newPath);
+
+    const saved = await adminFarmerPlansService.addFileToContainerAsAdmin(
+      containerId,
+      {
+        key: file.filename,
+        originalname: file.originalname,
+        mimetype: file.mimetype,
+        size: file.size,
+        path: "/" + newPath.replace(/\\/g, "/"),
+        type: req.body.type || null, // ✅ Accept type from frontend
+      },
+    );
+
+    res.status(201).json(saved);
+  } catch (err) {
+    console.error("Upload error:", err);
+    res.status(400).json({ error: err.message });
+  }
+};
+
+/** 🗑️ Delete a container file (by admin/manager) */
+export const deleteContainerFile = async (req, res) => {
+  try {
+    const { containerId, fileId } = req.params;
+
+    const fileRecord = await db("farmer_plan_files")
+      .where({ id: fileId, container_id: containerId })
+      .first();
+
+    if (!fileRecord) {
+      return res.status(404).json({ error: "File not found" });
+    }
+
+    // Delete physical file
+    const filePath = path.join(
+      process.cwd(),
+      fileRecord.path.replace(/^\//, ""),
+    );
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+
+    // Delete DB record
+    await db("farmer_plan_files").where({ id: fileId }).del();
+
+    // Optional: Notify relevant parties
+    await adminFarmerPlansService.notifyFileDeletion(fileRecord, req.user.id);
+
+    res.status(200).json({ message: "File deleted successfully" });
+  } catch (err) {
+    console.error("Delete error:", err);
+    res.status(400).json({ error: err.message });
+  }
+};
 
 export async function assignSuppliers(req, res) {
   try {
