@@ -1304,6 +1304,7 @@ export const listAllContainersWithTracking = async (req, res) => {
 };
 
 /* -------------------- Assign Containers to Suppliers -------------------- */
+/* -------------------- Assign Containers to Suppliers -------------------- */
 export const assignContainersToSuppliers = async (req, res) => {
   try {
     const { requestId, assignments } = req.body;
@@ -1312,28 +1313,26 @@ export const assignContainersToSuppliers = async (req, res) => {
       return res.status(400).json({ error: "Missing requestId" });
     }
 
-    // Allow empty array to mean “clear all assignments”
     const isClearAll = !Array.isArray(assignments) || assignments.length === 0;
 
-    // Sanitize and deduplicate
+    // Deduplicate
     const seen = new Set();
     const uniqueAssignments = Array.isArray(assignments)
       ? assignments
-          .filter((a) => a.container_id)
+          .filter((a) => a.container_id && a.supplier_id)
           .map((a) => ({
             container_id: Number(a.container_id),
-            supplier_id: a.supplier_id ? Number(a.supplier_id) : null,
+            supplier_id: Number(a.supplier_id),
           }))
           .filter((a) => {
-            const key = a.container_id;
-            if (seen.has(key)) return false;
-            seen.add(key);
+            if (seen.has(a.container_id)) return false;
+            seen.add(a.container_id);
             return true;
           })
       : [];
 
     await db.transaction(async (trx) => {
-      // 🧹 Step 1: Clear all existing supplier assignments for this request
+      // 1️⃣ Clear all assignments
       await trx.raw(
         `
         UPDATE farmer_plan_containers AS c
@@ -1345,23 +1344,8 @@ export const assignContainersToSuppliers = async (req, res) => {
         [requestId],
       );
 
-      // If we're clearing all, we're done inside trx (no notifications)
-      if (isClearAll || uniqueAssignments.length === 0) return;
-
-      // 📋 Preload container_no for the containers we are assigning (for nicer notifications)
-      const ids = uniqueAssignments.map((a) => a.container_id);
-      const rows = await trx("farmer_plan_containers")
-        .whereIn("id", ids)
-        .select("id", "container_no");
-      const containerNoById = Object.fromEntries(
-        rows.map((r) => [r.id, r.container_no]),
-      );
-
-      // 🧩 Step 2: Apply new assignments + 🔔 notify each supplier
+      // 2️⃣ Apply assignments
       for (const { supplier_id, container_id } of uniqueAssignments) {
-        if (!supplier_id) continue;
-
-        // Update assignment
         await trx.raw(
           `
           UPDATE farmer_plan_containers AS c
@@ -1374,50 +1358,51 @@ export const assignContainersToSuppliers = async (req, res) => {
           [supplier_id, requestId, container_id],
         );
 
-        // 🔔 Notify the supplier about this assignment
         await NotificationService.create(
           supplier_id,
           "request_status_changed",
           requestId,
-          {
-            status: "تخصیص شده",
-            container_id,
-            container_no: containerNoById[container_id] ?? null,
-          },
-          trx, // ensure atomicity with the assignment
+          { status: "تخصیص شده", container_id },
+          trx,
         );
       }
+
+      // 3️⃣ Recalculate allocation ONCE
+      const [{ count }] = await trx("farmer_plan_containers as c")
+        .join("farmer_plans as fp", "fp.id", "c.plan_id")
+        .where("fp.request_id", requestId)
+        .whereNotNull("c.supplier_id")
+        .count("c.id as count");
+
+      const allocated = Number(count) || 0;
+
+      const { container_amount } = await trx("buyer_requests")
+        .where("id", requestId)
+        .select("container_amount")
+        .first();
+
+      const total = Number(container_amount) || 0;
+
+      let allocation_status = "pending";
+      if (allocated > 0 && allocated < total) allocation_status = "partial";
+      if (total > 0 && allocated >= total) allocation_status = "completed";
+
+      await trx("buyer_requests").where("id", requestId).update({
+        allocated_containers: allocated,
+        allocation_status,
+        updated_at: trx.fn.now(),
+      });
     });
-
-    // 🔄 Return fresh state
-    const updatedContainers = await db("farmer_plan_containers as c")
-      .join("farmer_plans as fp", "fp.id", "c.plan_id")
-      .leftJoin("users as u", "c.supplier_id", "u.id")
-      .where("fp.request_id", requestId)
-      .select(
-        "c.id as container_id",
-        "c.container_no",
-        "c.status as container_status",
-        "u.id as supplier_id",
-        "u.name as supplier_name",
-        "u.mobile as supplier_mobile",
-      )
-      .orderBy("c.id", "asc");
-
-    const message = isClearAll
-      ? "✅ تمام تامین‌کنندگان از این درخواست حذف شدند"
-      : "✅ تخصیص تامین‌کنندگان با موفقیت بروزرسانی شد";
 
     res.json({
       success: true,
-      message,
-      updatedContainers,
+      message: isClearAll
+        ? "✅ تمام تامین‌کنندگان حذف شدند"
+        : "✅ تخصیص تامین‌کنندگان بروزرسانی شد",
     });
   } catch (err) {
-    console.error("assignContainersToSuppliers error:", err);
-    res.status(500).json({
-      error: err.message || "Failed to assign suppliers",
-    });
+    console.error(err);
+    res.status(500).json({ error: "Failed to assign suppliers" });
   }
 };
 

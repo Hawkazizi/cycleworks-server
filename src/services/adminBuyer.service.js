@@ -18,6 +18,8 @@ export async function getBuyerRequests() {
     .select(
       "br.id",
       "br.status",
+      "br.allocation_status",
+      "br.allocated_containers",
       "br.expiration_date",
       "br.expiration_days",
       "br.deadline_start",
