@@ -1591,6 +1591,7 @@ export const getContainerById = async (req, res) => {
 
         // 🧾 Buyer Request - include all columns from buyer_requests
         "br.id as buyer_request_id",
+        "br.order_number",
         "br.buyer_id",
         "br.status as buyer_request_status",
         "br.reviewed_by",

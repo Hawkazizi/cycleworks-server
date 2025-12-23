@@ -130,16 +130,23 @@ export async function reviewBuyerRequest(
   // 1️⃣ Validate request
   const oldRequest = await db("buyer_requests").where("id", id).first();
   if (!oldRequest) throw new Error("Request not found");
-
   // 2️⃣ Update request status
+  const updatePayload = {
+    status,
+    reviewed_by: reviewerId,
+    reviewed_at: db.fn.now(),
+    updated_at: db.fn.now(),
+  };
+
+  if (status === "rejected") {
+    updatePayload.allocation_status = "rejected";
+    updatePayload.allocated_containers = 0; // optional but recommended
+  }
+
+  // 2️⃣ Update request status (SINGLE SOURCE OF TRUTH)
   const [updated] = await db("buyer_requests")
     .where({ id })
-    .update({
-      status,
-      reviewed_by: reviewerId,
-      reviewed_at: db.fn.now(),
-      updated_at: db.fn.now(),
-    })
+    .update(updatePayload)
     .returning("*");
 
   if (!updated) return null;
