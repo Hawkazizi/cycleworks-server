@@ -397,6 +397,9 @@ export const updateSetting = async (key, value) => {
    🪪 LICENSE KEYS
 ======================================================================= */
 
+const QC_ROLES = ["qc_internal", "qc_external"];
+const QC_COUNTRIES = ["OM", "QA", "BA"];
+
 export const getAllLicenseKeys = async () => {
   return db("admin_license_keys as alk")
     .leftJoin("roles as r", "alk.role_id", "r.id")
@@ -410,10 +413,30 @@ export const getAllLicenseKeys = async () => {
     .orderBy("alk.created_at", "desc");
 };
 
-export const createLicenseKey = async ({ key, role_id, assigned_to, user }) => {
+export const createLicenseKey = async ({
+  key,
+  role_id,
+  country_code,
+  assigned_to,
+  user,
+}) => {
   let userId = assigned_to;
 
-  // Auto-create user if not provided
+  const role = await db("roles").where({ id: role_id }).first();
+  if (!role) throw new Error("Invalid role");
+
+  /* ---------------------------------------------------
+     Enforce country rules (match DB trigger)
+  --------------------------------------------------- */
+  if (QC_ROLES.includes(role.name)) {
+    if (!QC_COUNTRIES.includes(country_code)) {
+      throw new Error("QC licenses must have country_code: OM, QA, or BA");
+    }
+  } else {
+    country_code = "IR";
+  }
+
+  // Auto-create user if provided
   if (user?.name) {
     const random = Math.floor(Math.random() * 1000000);
     const fakeEmail = `admin_${random}@system.local`;
@@ -432,24 +455,56 @@ export const createLicenseKey = async ({ key, role_id, assigned_to, user }) => {
       .returning("*");
 
     userId = newUser.id;
+
     await db("user_roles").where({ user_id: userId }).del();
     await db("user_roles").insert({ user_id: userId, role_id });
   }
 
   const [created] = await db("admin_license_keys")
-    .insert({ key, role_id, assigned_to: userId })
+    .insert({
+      key,
+      role_id,
+      country_code,
+      assigned_to: userId,
+    })
     .returning("*");
 
   return created;
 };
 
-export const updateLicenseKey = async ({ id, key, role_id, assigned_to }) => {
+export const updateLicenseKey = async ({
+  id,
+  key,
+  role_id,
+  country_code,
+  assigned_to,
+}) => {
+  const existing = await db("admin_license_keys").where({ id }).first();
+  if (!existing) throw new Error("License key not found");
+
+  const role = await db("roles").where({ id: role_id }).first();
+  if (!role) throw new Error("Invalid role");
+
+  /* ---------------------------------------------------
+     Enforce country rules
+  --------------------------------------------------- */
+  if (QC_ROLES.includes(role.name)) {
+    if (!QC_COUNTRIES.includes(country_code)) {
+      throw new Error("QC licenses must have country_code: OM, QA, or BA");
+    }
+  } else {
+    country_code = "IR";
+  }
+
   const [updated] = await db("admin_license_keys")
     .where({ id })
-    .update({ key, role_id, assigned_to })
+    .update({
+      key,
+      role_id,
+      country_code,
+      assigned_to,
+    })
     .returning("*");
-
-  if (!updated) throw new Error("License key not found");
 
   if (assigned_to && role_id) {
     await db("user_roles").where({ user_id: assigned_to }).del();

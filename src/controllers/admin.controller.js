@@ -410,7 +410,6 @@ export const getApplicationsByUser = async (req, res) => {
 };
 
 /* -------------------- Update Application (Admin / User / Manager / Farmer) -------------------- */
-/* -------------------- Update Application (Admin / User / Manager / Farmer) -------------------- */
 export const updateApplication = async (req, res) => {
   try {
     const { id } = req.params;
@@ -524,13 +523,16 @@ export const getLicenseKeys = async (req, res) => {
 
 export const createLicenseKey = async (req, res) => {
   try {
-    const { key, role_id, assigned_to, user } = req.body;
+    const { key, role_id, country_code, assigned_to, user } = req.body;
+
     const newKey = await adminService.createLicenseKey({
       key,
       role_id,
+      country_code,
       assigned_to,
       user,
     });
+
     res.status(201).json({ key: newKey });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -540,12 +542,13 @@ export const createLicenseKey = async (req, res) => {
 export const updateLicenseKey = async (req, res) => {
   try {
     const { id } = req.params;
-    const { key, role_id, assigned_to } = req.body;
+    const { key, role_id, country_code, assigned_to } = req.body;
 
     const updated = await adminService.updateLicenseKey({
       id,
       key,
       role_id,
+      country_code,
       assigned_to,
     });
 
