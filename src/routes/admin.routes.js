@@ -1,6 +1,7 @@
 import { Router } from "express";
 import * as adminController from "../controllers/admin.controller.js";
 import * as adminTrackingCtrl from "../controllers/containerTracking.controller.js";
+import * as getContainerReport from "../controllers/Reports/admin.Reports.controller.js";
 import { authenticate } from "../middleware/authenticate.js";
 import { authorize } from "../middleware/authorize.js";
 import upload from "../middleware/upload.js";
@@ -427,6 +428,42 @@ router.put(
   authenticate,
   authorize("admin", "manager"),
   adminController.completeBuyerRequest,
+);
+
+/* =======================================================================
+   🎟️ QC
+======================================================================= */
+// Reports export
+router.get(
+  "/qcreports/:containerId",
+  authenticate,
+  authorize("admin", "manager"),
+  getContainerReport.getContainerQcReport,
+);
+/* =======================================================================
+   🧪 INTERNAL QC – HOLD (PER CONTAINER)
+======================================================================= */
+
+// Get QC hold info for a specific container
+router.get(
+  "/containers/:id/qc-hold",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.getContainerQcHold,
+);
+
+// Resolve QC hold for a specific container
+router.post(
+  "/containers/:id/qc-hold/resolve",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.resolveContainerQcHold,
+);
+router.get(
+  "/containers/:id/qc-hold/history",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.getContainerQcHoldHistory,
 );
 
 ///////////////

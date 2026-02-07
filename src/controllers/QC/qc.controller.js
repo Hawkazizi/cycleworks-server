@@ -36,7 +36,6 @@ export const updateProfile = async (req, res) => {
 };
 
 /* ---------------- GET CONTAINERS ---------------- */
-
 export const getQcContainers = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -45,7 +44,7 @@ export const getQcContainers = async (req, res) => {
       page = 1,
       limit = 20,
       qc_status,
-      container_no,
+      search,
       supplier_name,
       sort_by,
       sort_direction,
@@ -58,7 +57,7 @@ export const getQcContainers = async (req, res) => {
       page: Number(page),
       limit: Number(limit),
       qc_status,
-      container_no,
+      search,
       supplier_name,
       sort_by,
       sort_direction,

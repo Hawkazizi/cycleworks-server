@@ -49,4 +49,14 @@ router.patch(
   trackingCtrl.updateTyNumber,
 );
 
+/* =======================================================================
+   conainer workflow
+======================================================================= */
+
+router.get(
+  "/:id/workflow",
+  authenticate,
+  authorize("user", "admin", "manager"),
+  trackingCtrl.getContainerWorkflow,
+);
 export default router;

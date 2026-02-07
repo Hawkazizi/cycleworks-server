@@ -667,3 +667,142 @@ export async function markContainerCompleted(containerId, adminId) {
       "کانتینر با موفقیت تکمیل شد و وضعیت 'در مقصد' ثبت گردید و اعلان ارسال شد ✅",
   };
 }
+/* =======================================================================
+   🧪 INTERNAL QC – HOLD (PER CONTAINER)
+======================================================================= */
+
+export const getContainerQcHold = async (containerId) => {
+  // Fetch container with hold info + QC reviewer details
+  const container = await db("farmer_plan_containers as c")
+    .leftJoin("admin_license_keys as alk", "c.qc_reviewed_by", "alk.id")
+    .leftJoin("users as u", "alk.assigned_to", "u.id")
+    .select(
+      "c.id",
+      "c.qc_status",
+      "c.qc_hold_reason as reason",
+      "c.qc_hold_details as notes",
+      "c.qc_reviewed_at as held_at",
+      db.raw("jsonb_build_object('id', u.id, 'name', u.name) as held_by"),
+    )
+    .where("c.id", containerId)
+    .first();
+
+  if (!container) throw new Error("Container not found");
+
+  // Only return hold info if container is in 'held' status
+  if (container.qc_status !== "held") return null;
+
+  return container;
+};
+
+export const resolveInternalQcHold = async ({
+  containerId,
+  resolutionAction,
+  resolutionNote,
+  resolvedBy,
+}) => {
+  const allowedActions = [
+    "release_hold",
+    "request_reinspection",
+    "reject_container",
+    "cancel_container",
+  ];
+
+  if (!allowedActions.includes(resolutionAction)) {
+    throw new Error("Invalid resolution_action");
+  }
+
+  return db.transaction(async (trx) => {
+    // Lock container
+    const container = await trx("farmer_plan_containers")
+      .where({ id: containerId })
+      .forUpdate()
+      .first();
+
+    if (!container) throw new Error("Container not found");
+    if (container.qc_status !== "held")
+      throw new Error("Container is not in held status");
+    if (container.is_completed) throw new Error("Container already completed");
+
+    // Insert resolution record
+    await trx("internal_qc_hold_resolutions").insert({
+      container_id: container.id,
+      previous_qc_status: container.qc_status,
+      resolution_action: resolutionAction,
+      resolution_note: resolutionNote || null,
+      resolved_by: resolvedBy,
+      send_back_to_qc: ["release_hold", "request_reinspection"].includes(
+        resolutionAction,
+      ),
+    });
+
+    // Update container status
+    if (["release_hold", "request_reinspection"].includes(resolutionAction)) {
+      await trx("farmer_plan_containers").where({ id: container.id }).update({
+        qc_status: "pending",
+        qc_hold_reason: null,
+        qc_hold_details: null,
+        qc_reviewed_by: null,
+        qc_reviewed_at: null,
+        qc_inspection_info: {},
+        updated_at: trx.fn.now(),
+      });
+    }
+
+    if (resolutionAction === "reject_container") {
+      await trx("farmer_plan_containers").where({ id: container.id }).update({
+        is_rejected: true,
+        is_completed: true,
+        updated_at: trx.fn.now(),
+      });
+    }
+
+    if (resolutionAction === "cancel_container") {
+      await trx("farmer_plan_containers").where({ id: container.id }).update({
+        is_completed: true,
+        updated_at: trx.fn.now(),
+      });
+    }
+
+    // Return updated container
+    const updated = await trx("farmer_plan_containers as c")
+      .leftJoin("admin_license_keys as alk", "c.qc_reviewed_by", "alk.id")
+      .leftJoin("users as u", "alk.assigned_to", "u.id")
+      .select(
+        "c.id",
+        "c.qc_status",
+        "c.qc_hold_reason as reason",
+        "c.qc_hold_details as notes",
+        "c.qc_reviewed_at as held_at",
+        db.raw("jsonb_build_object('id', u.id, 'name', u.name) as held_by"),
+      )
+      .where("c.id", container.id)
+      .first();
+
+    return updated;
+  });
+};
+
+export const getContainerQcHoldHistory = async (containerId) => {
+  // Ensure container exists
+  const exists = await db("farmer_plan_containers")
+    .where({ id: containerId })
+    .first("id");
+
+  if (!exists) throw new Error("Container not found");
+
+  return db("internal_qc_hold_resolutions as r")
+    .leftJoin("admin_license_keys as alk", "r.resolved_by", "alk.id")
+    .leftJoin("users as u", "alk.assigned_to", "u.id")
+    .select(
+      "r.id",
+      "r.previous_qc_status",
+      "r.resolution_action",
+      "r.resolution_note",
+      "r.send_back_to_qc",
+      "r.resolved_at",
+      db.raw("jsonb_build_object('id', u.id, 'name', u.name) as resolved_by"),
+    )
+    .where("r.container_id", containerId)
+    .orderBy("r.resolved_at", "desc");
+};

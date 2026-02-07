@@ -95,7 +95,7 @@ export const getQcContainers = async ({
   page = 1,
   limit = 20,
   qc_status,
-  container_no,
+  search, // ✅ Changed from container_no to search
   supplier_name,
   sort_by = "created_at",
   sort_direction = "desc",
@@ -140,13 +140,39 @@ export const getQcContainers = async ({
     baseQuery.andWhere("c.qc_status", qc_status);
   }
 
-  if (container_no) {
-    baseQuery.andWhereRaw("CAST(c.container_no AS TEXT) ILIKE ?", [
-      `%${container_no}%`,
-    ]);
-    statsQuery.andWhereRaw("CAST(c.container_no AS TEXT) ILIKE ?", [
-      `%${container_no}%`,
-    ]);
+  /* ✅ UPDATED: Multi-field search */
+  if (search) {
+    // Remove '#' prefix if present (e.g., "#123" → "123")
+    const cleanSearch = search.replace(/^#/, "").trim();
+
+    baseQuery.andWhere(function () {
+      // Search by container_no
+      this.orWhereRaw("CAST(c.container_no AS TEXT) ILIKE ?", [
+        `%${cleanSearch}%`,
+      ])
+        // Search by tracking_code
+        .orWhereRaw("CAST(c.tracking_code AS TEXT) ILIKE ?", [
+          `%${cleanSearch}%`,
+        ]);
+
+      // Search by ID if it's a valid number
+      if (!isNaN(cleanSearch) && cleanSearch !== "") {
+        this.orWhere("c.id", "=", parseInt(cleanSearch, 10));
+      }
+    });
+
+    // Apply same search to stats query
+    statsQuery.andWhere(function () {
+      this.orWhereRaw("CAST(c.container_no AS TEXT) ILIKE ?", [
+        `%${cleanSearch}%`,
+      ]).orWhereRaw("CAST(c.tracking_code AS TEXT) ILIKE ?", [
+        `%${cleanSearch}%`,
+      ]);
+
+      if (!isNaN(cleanSearch) && cleanSearch !== "") {
+        this.orWhere("c.id", "=", parseInt(cleanSearch, 10));
+      }
+    });
   }
 
   if (supplier_name) {
@@ -179,6 +205,7 @@ export const getQcContainers = async ({
 
   const orderColumn = SORTABLE_COLUMNS[sort_by] || "c.created_at";
   const orderDirection = sort_direction === "asc" ? "asc" : "desc";
+
   /* 5️⃣-A Status counts (GLOBAL, no pagination) */
   /* GLOBAL status counts (unfiltered by qc_status) */
   const rawStatusCounts = await statsQuery
@@ -208,6 +235,7 @@ export const getQcContainers = async ({
       "c.qc_status",
       "c.created_at",
       "c.tracking_code",
+      "c.qc_reviewed_at",
 
       "br.id as buyer_request_id",
       "br.status as buyer_request_status",
@@ -507,22 +535,35 @@ export const holdContainer = async ({
   if (container.qc_status !== "qc_submitted") {
     throw new Error("Container must be under QC inspection");
   }
+
   if (
     !container.qc_inspection_info ||
     Object.keys(container.qc_inspection_info).length === 0
   ) {
     throw new Error("QC inspection must be completed before decision");
   }
-  await db("farmer_plan_containers")
-    .where({ id: containerId })
-    .update({
-      qc_status: "held",
-      qc_hold_reason: reason,
-      qc_hold_details: details || null,
-      qc_reviewed_by: license.id,
-      qc_reviewed_at: db.fn.now(),
-      updated_at: db.fn.now(),
-    });
+
+  const activeHold = await db("farmer_plan_containers")
+    .where({ id: containerId, qc_status: "held" })
+    .first();
+
+  if (activeHold) {
+    throw new Error("Container already has an active QC hold");
+  }
+
+  await db.transaction(async (trx) => {
+    // 1️⃣ Update container state
+    await trx("farmer_plan_containers")
+      .where({ id: containerId })
+      .update({
+        qc_status: "held",
+        qc_hold_reason: reason,
+        qc_hold_details: details || null,
+        qc_reviewed_by: license.id,
+        qc_reviewed_at: trx.fn.now(),
+        updated_at: trx.fn.now(),
+      });
+  });
 
   return { success: true };
 };

@@ -2153,3 +2153,65 @@ export const importExcelData = async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 };
+
+/* =======================================================================
+   🧪 INTERNAL QC – HOLD (PER CONTAINER)
+======================================================================= */
+
+export const getContainerQcHold = async (req, res) => {
+  try {
+    const { id: containerId } = req.params;
+    const hold = await adminService.getContainerQcHold(containerId);
+
+    res.json({
+      has_hold: !!hold,
+      hold,
+    });
+  } catch (err) {
+    console.error("Get container QC hold error:", err);
+    res.status(400).json({ error: err.message });
+  }
+};
+
+export const resolveContainerQcHold = async (req, res) => {
+  try {
+    const { id: containerId } = req.params;
+    const adminLicenseId = req.user.licenseId;
+    const { resolution_action, resolution_note } = req.body;
+
+    if (!resolution_action) {
+      return res.status(400).json({ error: "resolution_action is required" });
+    }
+
+    const container = await adminService.resolveInternalQcHold({
+      containerId,
+      resolutionAction: resolution_action,
+      resolutionNote: resolution_note,
+      resolvedBy: adminLicenseId,
+    });
+
+    res.json({
+      message: "QC hold resolved successfully",
+      container,
+    });
+  } catch (err) {
+    console.error("Resolve container QC hold error:", err);
+    res.status(400).json({ error: err.message });
+  }
+};
+
+export const getContainerQcHoldHistory = async (req, res) => {
+  try {
+    const { id: containerId } = req.params;
+
+    const history = await adminService.getContainerQcHoldHistory(containerId);
+
+    res.json({
+      container_id: Number(containerId),
+      history,
+    });
+  } catch (err) {
+    console.error("Get container QC hold history error:", err);
+    res.status(400).json({ error: err.message });
+  }
+};

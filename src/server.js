@@ -7,6 +7,7 @@ import userRouter from "./routes/user.routes.js";
 import adminRouter from "./routes/admin.routes.js";
 import buyerRouter from "./routes/buyer.routes.js";
 import containerRouter from "./routes/container.routes.js";
+import externalQcRouter from "./routes/QC/externalQc.routes.js";
 import notificationRoutes from "./routes/notification.routes.js";
 import qcRoutes from "./routes/QC/qc.routes.js";
 dotenv.config();
@@ -43,6 +44,7 @@ app.use("/api/buyers", buyerRouter);
 app.use("/api/containers", containerRouter);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/qc", qcRoutes);
+app.use("/api/external-qc", externalQcRouter);
 // Test DB connection on startup
 db.raw("SELECT 1+1 AS result")
   .then(() => {

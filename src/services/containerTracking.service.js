@@ -233,3 +233,106 @@ export async function updateTyNumber(containerId, tyNumber, userId) {
     message: "TY number and tracking code updated successfully",
   };
 }
+
+/* =======================================================================
+   ✏️ CONTAINER WORKFLOW
+======================================================================= */
+
+export const resolveContainerWorkflow = async (containerId) => {
+  /* --------------------------------------------------
+     1. Base container (ROOT OF TRUTH)
+  -------------------------------------------------- */
+  const container = await db("farmer_plan_containers")
+    .where({ id: containerId })
+    .first();
+
+  if (!container) return null;
+
+  /* --------------------------------------------------
+     2. Admin review (initial)
+  -------------------------------------------------- */
+  if (container.is_rejected) {
+    return response(containerId, "ADMIN_REJECTED", "ADMIN", "REJECTED");
+  }
+
+  // if (!container.reviewed_at) {
+  //   return response(containerId, "ADMIN_REVIEW", "ADMIN", "PENDING");
+  // }
+
+  /* --------------------------------------------------
+     3. Supplier decision
+  -------------------------------------------------- */
+  if (!container.supplier_id) {
+    return response(containerId, "SUPPLIER_DECISION", "SUPPLIER", "PENDING");
+  }
+
+  if (container.farmer_status === "rejected") {
+    return response(containerId, "SUPPLIER_REJECTED", "SUPPLIER", "REJECTED");
+  }
+
+  /* --------------------------------------------------
+     4. Supplier files
+  -------------------------------------------------- */
+  const files = await db("farmer_plan_files").where({
+    container_id: containerId,
+  });
+
+  if (!files.length) {
+    return response(containerId, "SUPPLIER_FILES", "SUPPLIER", "PENDING");
+  }
+
+  const unreviewedFiles = files.some((f) => f.status === "submitted");
+
+  if (unreviewedFiles) {
+    return response(containerId, "ADMIN_FILES_REVIEW", "ADMIN", "PENDING");
+  }
+
+  /* --------------------------------------------------
+     5. Internal QC
+  -------------------------------------------------- */
+  if (container.qc_status === "pending") {
+    return response(containerId, "INTERNAL_QC", "INTERNAL_QC", "PENDING");
+  }
+
+  if (container.qc_status === "hold") {
+    const holdCount = await db("internal_qc_hold_resolutions")
+      .where({ container_id: containerId })
+      .count("id as count")
+      .first();
+
+    return response(containerId, "INTERNAL_QC_HOLD", "ADMIN", "HOLD", {
+      reason: container.qc_hold_reason,
+      details: container.qc_hold_details,
+      loop_count: Number(holdCount.count),
+    });
+  }
+
+  /* --------------------------------------------------
+     6. External QC
+  -------------------------------------------------- */
+  const externalQc = await db("external_qc_reports")
+    .where({ container_id: containerId })
+    .first();
+
+  if (!externalQc) {
+    return response(containerId, "EXTERNAL_QC", "EXTERNAL_QC", "PENDING");
+  }
+
+  /* --------------------------------------------------
+     7. Completed
+  -------------------------------------------------- */
+  return response(containerId, "COMPLETED", "EXTERNAL_QC", "REPORTED", {
+    reported_at: externalQc.confirmed_at,
+  });
+};
+
+/* --------------------------------------------------
+   Helper
+-------------------------------------------------- */
+const response = (containerId, stage, actor, status, details = {}) => ({
+  container_id: containerId,
+  stage,
+  actor,
+  status,
+  details,
+});

@@ -4,17 +4,13 @@ import db from "../db/knex.js";
 /* =======================================================================
    📦 CONTAINER OVERVIEW (ADMIN)
 ======================================================================= */
-/** 🧾 List all containers with latest tracking, plans, files, and stats */
-/** 🧾 List all containers with latest tracking, plans, files, and stats */
 export async function listAllContainersWithTracking(req, res) {
   try {
     const rows = await db("farmer_plan_containers as c")
       .leftJoin("farmer_plans as p", "c.plan_id", "p.id")
-      // 🟢 supplier & buyer joins
       .leftJoin("users as supplier", "c.supplier_id", "supplier.id")
       .leftJoin("buyer_requests as br", "p.request_id", "br.id")
       .leftJoin("users as buyer", "br.buyer_id", "buyer.id")
-      // 🟢 latest tracking join
       .leftJoin(
         db("container_tracking_statuses as t")
           .select("container_id")
@@ -31,17 +27,15 @@ export async function listAllContainersWithTracking(req, res) {
           "last.latest_time",
         );
       })
-      // ✅ Exclude rejected containers
-      .where("c.is_rejected", false) // 👈 this line hides all rejected ones
+      .where("c.is_rejected", false)
       .select(
         "c.id as container_id",
         "c.container_no",
         "c.status as container_status",
 
-        // ✅ added fields
         "c.in_progress",
         "c.is_completed",
-        "c.is_rejected", // optional: include it in response if needed elsewhere
+        "c.is_rejected",
 
         "c.created_at as container_created_at",
         "c.metadata",
@@ -96,7 +90,6 @@ export async function listAllContainersWithTracking(req, res) {
       });
     }
 
-    // 🧩 Optional filter by supplier_id query param
     const { supplier_id } = req.query;
     const filteredRows = supplier_id
       ? rows.filter((r) => String(r.supplier_id) === String(supplier_id))
@@ -104,7 +97,6 @@ export async function listAllContainersWithTracking(req, res) {
 
     const containerIds = filteredRows.map((r) => r.container_id);
 
-    // 🧾 Fetch all tracking history for visible containers
     const histories = await db("container_tracking_statuses")
       .whereIn("container_id", containerIds)
       .orderBy("created_at", "desc");
@@ -114,7 +106,6 @@ export async function listAllContainersWithTracking(req, res) {
       return acc;
     }, {});
 
-    // 📂 Fetch files per container
     const files = await db("farmer_plan_files")
       .whereIn("container_id", containerIds)
       .select(
@@ -134,7 +125,6 @@ export async function listAllContainersWithTracking(req, res) {
       return acc;
     }, {});
 
-    // 🧠 Safe JSON parse helper
     function safeParseJSON(value) {
       try {
         return value ? JSON.parse(value) : {};
@@ -143,7 +133,6 @@ export async function listAllContainersWithTracking(req, res) {
       }
     }
 
-    // 🧩 Merge everything together
     const containers = filteredRows.map((c) => ({
       ...c,
       metadata:
@@ -157,7 +146,6 @@ export async function listAllContainersWithTracking(req, res) {
       tracking_history: historyByContainer[c.container_id] || [],
       files: filesByContainer[c.container_id] || [],
     }));
-    // ✅ Helper to check if a container has a valid tracking code
     const hasValidTracking = (c) => {
       const code = c.tracking_code;
       return (
@@ -168,10 +156,8 @@ export async function listAllContainersWithTracking(req, res) {
       );
     };
 
-    // ✅ Filter containers that have a valid tracking code
     const trackedContainers = containers.filter(hasValidTracking);
 
-    // 📊 Compute stats based ONLY on tracked containers
     const containersByCountry = {};
     let exitedIran = 0;
     let inIran = 0;
@@ -196,7 +182,7 @@ export async function listAllContainersWithTracking(req, res) {
         exitedIran,
         inIran,
       },
-      containers, // 👈 still return ALL non-rejected containers for filtering/search
+      containers,
     });
   } catch (err) {
     console.error("listAllContainersWithTracking error:", err);
@@ -204,7 +190,6 @@ export async function listAllContainersWithTracking(req, res) {
   }
 }
 
-/** 📂 Get all files of a container */
 export async function getContainerFiles(req, res) {
   try {
     const { id } = req.params;
@@ -234,7 +219,6 @@ export async function getContainerFiles(req, res) {
    🧭 TRACKING OPERATIONS
 ======================================================================= */
 
-/** ➕ Add Tracking (Controller) */
 export async function addTracking(req, res) {
   try {
     const { id } = req.params;
@@ -244,7 +228,6 @@ export async function addTracking(req, res) {
 
     if (!status) return res.status(400).json({ error: "Status is required" });
 
-    // Ownership check for non-admins
     if (!roles.includes("admin") && !roles.includes("manager")) {
       const owns = await db("farmer_plan_containers as c")
         .where((builder) => {
@@ -270,14 +253,12 @@ export async function addTracking(req, res) {
   }
 }
 
-/** 📜 List all tracking records for a container */
 export async function listTracking(req, res) {
   try {
     const { id } = req.params;
     const userId = req.user.id;
     const roles = req.user.roles || [];
 
-    // Access control
     if (!roles.includes("admin") && !roles.includes("manager")) {
       const ownsContainer = await db("farmer_plan_containers as c")
         .where((builder) => {
@@ -301,7 +282,6 @@ export async function listTracking(req, res) {
 /* =======================================================================
    👤 USER: MY CONTAINERS
 ======================================================================= */
-/** 📦 List current supplier's containers with tracking & files */
 export async function myContainersWithTracking(req, res) {
   try {
     const userId = req.user.id;
@@ -330,7 +310,7 @@ export async function myContainersWithTracking(req, res) {
         "c.id as container_id",
         "c.container_no",
         "c.status as container_status",
-        "c.farmer_status", // 🟢 include farmer status
+        "c.farmer_status",
         "c.in_progress",
         "c.tracking_code",
         "c.updated_at",
@@ -384,7 +364,6 @@ export async function myContainersWithTracking(req, res) {
           metadata = {};
         }
 
-        // 🧩 Status priority logic
         let finalStatus = "submitted";
         if (c.is_completed) finalStatus = "completed";
         else if (
@@ -478,3 +457,25 @@ export async function updateTyNumber(req, res) {
     res.status(500).json({ error: err.message });
   }
 }
+
+/* =======================================================================
+   🔠  CONTAINER WORKFLOW
+======================================================================= */
+export const getContainerWorkflow = async (req, res, next) => {
+  try {
+    const containerId = Number(req.params.id);
+
+    const workflow =
+      await trackingService.resolveContainerWorkflow(containerId);
+
+    if (!workflow) {
+      return res.status(404).json({
+        message: "Container not found",
+      });
+    }
+
+    res.json(workflow);
+  } catch (err) {
+    next(err);
+  }
+};
