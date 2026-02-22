@@ -9,6 +9,7 @@ import buyerRouter from "./routes/buyer.routes.js";
 import containerRouter from "./routes/container.routes.js";
 import externalQcRouter from "./routes/QC/externalQc.routes.js";
 import notificationRoutes from "./routes/notification.routes.js";
+import ticketRoutes from "./routes/ticket.routes.js";
 import qcRoutes from "./routes/QC/qc.routes.js";
 dotenv.config();
 
@@ -24,7 +25,7 @@ app.use(
     origin: [
       "http://localhost:5173", // local dev
       "https://digipoultry.com", // production
-      "https://www.digipoultry.com", // optional www
+      "https://www.digipoultry.com", // optional
     ],
     credentials: true,
   }),
@@ -45,6 +46,7 @@ app.use("/api/containers", containerRouter);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/qc", qcRoutes);
 app.use("/api/external-qc", externalQcRouter);
+app.use("/tickets", ticketRoutes);
 // Test DB connection on startup
 db.raw("SELECT 1+1 AS result")
   .then(() => {

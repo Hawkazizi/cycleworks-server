@@ -166,34 +166,4 @@ router
   .get(authenticate, authorize("user"), userController.listContainerTracking)
   .post(authenticate, authorize("user"), userController.addContainerTracking);
 
-/* =======================================================================
-   🎟️ TICKETS
-======================================================================= */
-
-// Create support ticket
-router.post(
-  "/tickets",
-  authenticate,
-  authorize("user"),
-  upload.single("attachment"),
-  userController.createTicket,
-);
-
-// List my tickets
-router.get(
-  "/tickets",
-  authenticate,
-  authorize("user"),
-  userController.getMyTickets,
-);
-
-// Update a ticket
-router.patch(
-  "/tickets/:id",
-  authenticate,
-  authorize("user"),
-  upload.single("attachment"),
-  userController.updateTicket,
-);
-
 export default router;

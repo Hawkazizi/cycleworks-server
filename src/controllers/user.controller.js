@@ -4,7 +4,6 @@ import db from "../db/knex.js";
 import { sendMail } from "../config/mailer.js";
 import * as userService from "../services/user.service.js";
 import * as farmerPlansService from "../services/farmerPlans.service.js";
-import * as ticketService from "../services/ticket.service.js";
 
 /* =======================================================================
    🔐 AUTHENTICATION
@@ -471,92 +470,6 @@ export async function addContainerTracking(req, res) {
     res.status(400).json({ error: err.message });
   }
 }
-
-/* =======================================================================
-   🎟️ TICKETS
-======================================================================= */
-
-/** 🆕 Create support ticket */
-export const createTicket = async (req, res) => {
-  try {
-    const { subject, message } = req.body;
-    if (!message) return res.status(400).json({ error: "متن تیکت الزامی است" });
-
-    const userId = req.user.id;
-    const role = (req.user.roles && req.user.roles[0]) || "user";
-
-    // Optional file upload
-    let fileInfo = null;
-    if (req.file) {
-      const dir = path.join("uploads", "users", String(userId), "tickets");
-      fs.mkdirSync(dir, { recursive: true });
-
-      const filePath = path.join(dir, req.file.originalname);
-      fs.renameSync(req.file.path, filePath);
-      fileInfo = {
-        path: "/" + filePath.replace(/\\/g, "/"),
-        originalname: req.file.originalname,
-        mimetype: req.file.mimetype,
-      };
-    }
-
-    const ticket = await ticketService.createTicket({
-      userId,
-      role,
-      subject,
-      message,
-      file: fileInfo,
-    });
-
-    res.status(201).json({ message: "تیکت ارسال شد", ticket });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-};
-
-/** 📋 List user tickets */
-export const getMyTickets = async (req, res) => {
-  try {
-    const tickets = await ticketService.getUserTickets(req.user.id);
-    res.json(tickets);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-};
-
-/** ✏️ Update ticket */
-export const updateTicket = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { subject, message } = req.body;
-
-    let fileInfo = null;
-    if (req.file) {
-      const dir = path.join("uploads", "users", String(req.user.id), "tickets");
-      fs.mkdirSync(dir, { recursive: true });
-
-      const filePath = path.join(dir, req.file.originalname);
-      fs.renameSync(req.file.path, filePath);
-      fileInfo = {
-        path: "/" + filePath.replace(/\\/g, "/"),
-        originalname: req.file.originalname,
-        mimetype: req.file.mimetype,
-      };
-    }
-
-    const updated = await ticketService.updateTicket({
-      ticketId: id,
-      userId: req.user.id,
-      subject,
-      message,
-      file: fileInfo,
-    });
-
-    res.json({ message: "تیکت به‌روزرسانی شد", ticket: updated });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-};
 
 /* =======================================================================
    🧰 UTILITIES
