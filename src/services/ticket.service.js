@@ -288,12 +288,42 @@ export async function listTicketRecipients({
   currentUserId,
   includeInactive = true,
   excludeSelf = true,
+  q = "",
+  limit = 50,
+  offset = 0,
 } = {}) {
-  // Postgres: aggregate role names into an array
-  // NOTE: We use raw for array_agg / filter.
-  let q = db("users as u")
+  // Base query
+  let base = db("users as u")
     .leftJoin("user_roles as ur", "ur.user_id", "u.id")
     .leftJoin("roles as r", "r.id", "ur.role_id")
+    .modify((qb) => {
+      if (!includeInactive) qb.where("u.status", "active");
+      if (excludeSelf && currentUserId) qb.whereNot("u.id", currentUserId);
+
+      if (q) {
+        const like = `%${q.toLowerCase()}%`;
+        qb.andWhere((w) => {
+          w.whereRaw("LOWER(COALESCE(u.name,'')) LIKE ?", [like])
+            .orWhereRaw("LOWER(COALESCE(u.email,'')) LIKE ?", [like])
+            .orWhereRaw("LOWER(COALESCE(u.mobile,'')) LIKE ?", [like])
+            .orWhereRaw("CAST(u.id AS TEXT) LIKE ?", [`%${q}%`]);
+        });
+      }
+    });
+
+  // Total count (distinct users)
+  const totalRow = await base
+    .clone()
+    .clearSelect()
+    .clearOrder()
+    .countDistinct({ c: "u.id" })
+    .first();
+
+  const total = Number(totalRow?.c || 0);
+
+  // Data query (roles aggregated)
+  const rows = await base
+    .clone()
     .select(
       "u.id",
       "u.name",
@@ -303,38 +333,27 @@ export async function listTicketRecipients({
       "u.profile_picture",
       db.raw(
         `COALESCE(
-           ARRAY_AGG(DISTINCT r.name) FILTER (WHERE r.name IS NOT NULL),
-           '{}'
-         ) AS roles`,
+            ARRAY_AGG(DISTINCT r.name) FILTER (WHERE r.name IS NOT NULL),
+            '{}'
+          ) AS roles`,
       ),
     )
     .groupBy("u.id")
-    .orderBy("u.id", "asc");
+    // stable ordering for consistent pagination
+    .orderByRaw(
+      `
+       CASE WHEN u.status = 'active' THEN 0 ELSE 1 END,
+       u.id ASC
+     `,
+    )
+    .limit(limit)
+    .offset(offset);
 
-  if (!includeInactive) q = q.where("u.status", "active");
-  if (excludeSelf && currentUserId) q = q.whereNot("u.id", currentUserId);
-
-  const users = await q;
-
-  // Normalize: roles sometimes comes back as string in some drivers; usually it's array already.
-  return users.map((u) => ({
-    ...u,
-    roles: Array.isArray(u.roles) ? u.roles : [],
-  }));
-}
-async function getUsersByRoles(
-  roleNames = [],
-  { includeInactive = true } = {},
-) {
-  let q = db("users as u")
-    .join("user_roles as ur", "ur.user_id", "u.id")
-    .join("roles as r", "r.id", "ur.role_id")
-    .whereIn("r.name", roleNames)
-    .select("u.id")
-    .groupBy("u.id");
-
-  if (!includeInactive) q = q.where("u.status", "active");
-
-  const rows = await q;
-  return rows.map((x) => x.id);
+  return {
+    total,
+    users: rows.map((u) => ({
+      ...u,
+      roles: Array.isArray(u.roles) ? u.roles : [],
+    })),
+  };
 }

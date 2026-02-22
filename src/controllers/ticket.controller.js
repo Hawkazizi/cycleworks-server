@@ -191,21 +191,54 @@ export const deleteTicket = async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 };
-
+// controllers/ticket.controller.js
 export const listRecipients = async (req, res) => {
   try {
-    // query params allow you to tune behavior without changing code
-    const includeInactive = req.query.includeInactive !== "false";
-    const excludeSelf = req.query.excludeSelf !== "false";
+    // robust boolean parsing
+    const includeInactive =
+      String(req.query.includeInactive ?? "true") !== "false";
+    const excludeSelf = String(req.query.excludeSelf ?? "true") !== "false";
 
-    const users = await ticketService.listTicketRecipients({
+    // pagination + search
+    const q = String(req.query.q ?? "").trim(); // search term
+    const page = Math.max(1, Number(req.query.page ?? 1));
+    const limitRaw = Number(req.query.limit ?? 50);
+    const limit = Math.min(200, Math.max(1, limitRaw)); // clamp 1..200
+    const offset = (page - 1) * limit;
+
+    const { users, total } = await ticketService.listTicketRecipients({
       currentUserId: req.user?.id,
       includeInactive,
       excludeSelf,
+      q,
+      limit,
+      offset,
     });
 
-    res.json(users);
+    // Helpful in prod debugging + UI
+    res.setHeader("X-Total-Count", String(total));
+    res.setHeader("Cache-Control", "private, max-age=60"); // optional (user-specific)
+
+    res.json({
+      users,
+      meta: {
+        total,
+        page,
+        limit,
+        hasMore: offset + users.length < total,
+        q,
+        includeInactive,
+        excludeSelf,
+      },
+    });
   } catch (err) {
+    // IMPORTANT: log server-side to find prod-only issues
+    console.error("listRecipients failed:", {
+      message: err.message,
+      stack: err.stack,
+      userId: req.user?.id,
+      query: req.query,
+    });
     res.status(400).json({ error: err.message });
   }
 };
