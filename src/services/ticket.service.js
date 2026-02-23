@@ -93,7 +93,15 @@ export async function listMyTickets({ userId, status }) {
     })
     .groupBy("t.id")
     .orderBy("t.last_message_at", "desc")
-    .select("t.*");
+    .select("t.*")
+    .select(
+      db.raw(
+        `COALESCE(
+          ARRAY_AGG(DISTINCT tr.user_id) FILTER (WHERE tr.user_id IS NOT NULL),
+          '{}'
+        ) AS recipient_ids`,
+      ),
+    );
 
   if (status) q.andWhere("t.status", status);
 
