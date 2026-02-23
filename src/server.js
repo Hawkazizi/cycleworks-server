@@ -46,7 +46,7 @@ app.use("/api/containers", containerRouter);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/qc", qcRoutes);
 app.use("/api/external-qc", externalQcRouter);
-app.use("/tickets", ticketRoutes);
+app.use("/api/tickets", ticketRoutes);
 // Test DB connection on startup
 db.raw("SELECT 1+1 AS result")
   .then(() => {
