@@ -189,7 +189,8 @@ export async function listAllContainersWithTracking(req, res) {
       allByCountry[country] = (allByCountry[country] || 0) + 1;
 
       const exported =
-        hasBlDate(c.admin_metadata) && isSubmitted(c.admin_metadata_status);
+        Boolean(c.is_completed) ||
+        (hasBlDate(c.admin_metadata) && isSubmitted(c.admin_metadata_status));
 
       if (exported) {
         exitedIran++;
