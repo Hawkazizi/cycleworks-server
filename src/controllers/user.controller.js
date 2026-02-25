@@ -172,8 +172,10 @@ export const getProfilePicture = async (req, res) => {
       .where({ id: req.user.id })
       .first();
 
-    if (!user?.profile_picture)
-      return res.status(404).json({ error: "Profile picture not found" });
+    // ✅ No picture set -> 204 No Content (clean + not an "error")
+    if (!user?.profile_picture) {
+      return res.status(204).send();
+    }
 
     const filePath = path.join(
       process.cwd(),
@@ -181,8 +183,11 @@ export const getProfilePicture = async (req, res) => {
         ? user.profile_picture.slice(1)
         : user.profile_picture,
     );
-    if (!fs.existsSync(filePath))
-      return res.status(404).json({ error: "File not found on server" });
+
+    // ✅ Picture path exists in DB but file missing -> also 204
+    if (!fs.existsSync(filePath)) {
+      return res.status(204).send();
+    }
 
     const ext = path.extname(filePath).toLowerCase();
     const mimeType =
@@ -194,11 +199,11 @@ export const getProfilePicture = async (req, res) => {
 
     res.setHeader("Content-Type", mimeType);
     fs.createReadStream(filePath).pipe(res);
-  } catch {
+  } catch (err) {
+    console.error("getProfilePicture error:", err);
     res.status(500).json({ error: "Failed to fetch profile picture" });
   }
 };
-
 /** ❌ Delete farmer profile */
 export async function deleteProfile(req, res) {
   try {
@@ -350,24 +355,40 @@ export async function listFiles(req, res) {
 }
 
 /** 🔍 Get container metadata */
-/** 🔍 Get container metadata */
 export const getContainerMetadata = async (req, res) => {
   try {
     const { id } = req.params;
-    const supplierId = req.user.id;
 
-    // 🟢 Only join the plan if you still need plan info (not farmer_id)
-    const container = await db("farmer_plan_containers as c")
+    // roles might be ["admin"] OR [{name:"admin"}] depending on middleware
+    const roles = (req.user.roles || []).map((r) =>
+      typeof r === "string" ? r : r?.name,
+    );
+
+    const isAdmin = roles.includes("admin") || roles.includes("manager");
+
+    let q = db("farmer_plan_containers as c")
       .leftJoin("farmer_plans as p", "c.plan_id", "p.id")
       .where("c.id", id)
-      .andWhere("c.supplier_id", supplierId)
       .select("c.*")
       .first();
 
-    if (!container)
+    // ✅ suppliers can only read their own container metadata
+    if (!isAdmin) {
+      q = db("farmer_plan_containers as c")
+        .leftJoin("farmer_plans as p", "c.plan_id", "p.id")
+        .where("c.id", id)
+        .andWhere("c.supplier_id", req.user.id)
+        .select("c.*")
+        .first();
+    }
+
+    const container = await q;
+
+    if (!container) {
       return res
         .status(404)
         .json({ error: "Container not found or unauthorized" });
+    }
 
     let metadata = {};
     try {
@@ -379,9 +400,12 @@ export const getContainerMetadata = async (req, res) => {
       metadata = {};
     }
 
-    res.json({
+    return res.json({
       metadata,
       metadata_status: container.metadata_status,
+      metadata_review_note: container.metadata_review_note,
+      tracking_code: container.tracking_code,
+      supplier_id: container.supplier_id,
     });
   } catch (err) {
     console.error("getContainerMetadata error:", err);
@@ -405,15 +429,41 @@ export async function updateContainerMetadataController(req, res) {
   }
 }
 
-/** 📋 List containers assigned to supplier */
+/** 📋 List containers assigned to supplier (accepted requests only) with pagination + search */
 export async function listAssignedContainers(req, res) {
   try {
-    const containers = await farmerPlansService.listAssignedPlansWithContainers(
-      req.user.id,
+    const supplierId = req.user?.id;
+    if (!supplierId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const {
+      page = "1",
+      pageSize = "10",
+      q = "",
+      sortBy = "plan_date",
+      sortOrder = "asc",
+    } = req.query;
+
+    const result = await farmerPlansService.listAssignedPlansWithContainers(
+      supplierId,
+      { page, pageSize, q, sortBy, sortOrder },
     );
-    res.json(containers);
+
+    return res.json(result);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    // Log full error server-side, return safe message to client
+    console.error("listAssignedContainers error:", err);
+
+    // If you throw custom errors with statusCode in your services, support them:
+    const status =
+      err?.statusCode && Number.isInteger(err.statusCode)
+        ? err.statusCode
+        : 500;
+
+    return res.status(status).json({
+      error: status === 500 ? "Internal server error" : err.message,
+    });
   }
 }
 

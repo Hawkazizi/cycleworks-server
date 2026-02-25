@@ -84,13 +84,16 @@ export const uploadProfilePicture = async (req, res) => {
 export const getProfilePicture = async (req, res) => {
   try {
     const buyerId = req.user.id;
+
     const buyer = await db("users")
       .select("profile_picture")
       .where({ id: buyerId })
       .first();
 
-    if (!buyer?.profile_picture)
-      return res.status(404).json({ error: "Profile picture not found" });
+    // ✅ No profile pic set → return 204
+    if (!buyer?.profile_picture) {
+      return res.status(204).end();
+    }
 
     const filePath = path.join(
       process.cwd(),
@@ -99,8 +102,10 @@ export const getProfilePicture = async (req, res) => {
         : buyer.profile_picture,
     );
 
-    if (!fs.existsSync(filePath))
-      return res.status(404).json({ error: "File not found on server" });
+    // ✅ DB has a path but file missing → also return 204 (or 404 if you prefer)
+    if (!fs.existsSync(filePath)) {
+      return res.status(204).end();
+    }
 
     const ext = path.extname(filePath).toLowerCase();
     const mimeType =

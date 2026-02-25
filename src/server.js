@@ -4,6 +4,7 @@ import cors from "cors";
 import db from "./db/knex.js";
 import path from "path";
 import userRouter from "./routes/user.routes.js";
+import superAdminRoutes from "./routes/superAdmin/superadmin.routes.js";
 import adminRouter from "./routes/admin.routes.js";
 import buyerRouter from "./routes/buyer.routes.js";
 import containerRouter from "./routes/container.routes.js";
@@ -24,6 +25,7 @@ app.use(
   cors({
     origin: [
       "http://localhost:5173", // local dev
+      "http://localhost:5174",
       "https://digipoultry.com", // production
       "https://www.digipoultry.com", // optional
     ],
@@ -39,6 +41,8 @@ app.get("/", (req, res) => {
 });
 
 // Routes
+
+app.use("/api/superadmin", superAdminRoutes);
 app.use("/api/users", userRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/buyers", buyerRouter);

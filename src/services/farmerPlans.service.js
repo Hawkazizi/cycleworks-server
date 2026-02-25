@@ -458,15 +458,43 @@ export async function listFiles(containerId) {
 ======================================================================= */
 
 /**
- * List all buyer requests and containers assigned to a supplier.
- * Returns grouped data with latest tracking info.
+ * List buyer requests (accepted) and their plans+containers assigned to a supplier.
+ * Supports pagination, search, and sorting.
+ *
+ * Pagination is applied at the buyer-request level (distinct br.id).
  */
-/**
- * List all buyer requests and containers assigned to a supplier.
- * Only show containers when the parent buyer request is 'accepted'.
- */
-export async function listAssignedPlansWithContainers(supplierId) {
-  const rows = await db("farmer_plan_containers as c")
+export async function listAssignedPlansWithContainers(
+  supplierId,
+  {
+    page = 1,
+    pageSize = 10,
+    q = "",
+    sortBy = "plan_date", // plan_date | deadline_start | deadline_end | request_id
+    sortOrder = "asc", // asc | desc
+  } = {},
+) {
+  // ---- sanitize inputs ----
+  const safePage = Number.isFinite(+page) ? Math.max(1, parseInt(page, 10)) : 1;
+  const safePageSize = Number.isFinite(+pageSize)
+    ? Math.min(100, Math.max(1, parseInt(pageSize, 10)))
+    : 10;
+
+  const safeQ = typeof q === "string" ? q.trim().toLowerCase() : "";
+  const safeSortOrder =
+    String(sortOrder).toLowerCase() === "desc" ? "desc" : "asc";
+
+  // Allowed sort keys mapped to SQL expressions
+  const sortMap = {
+    request_id: "br.id",
+    plan_date: db.raw("min(fp.plan_date)"), // for request-level pagination ordering
+    deadline_start: "br.deadline_start",
+    deadline_end: "br.deadline_end",
+  };
+
+  const sortExpr = sortMap[sortBy] || sortMap.plan_date;
+
+  // ---- base query (shared filters/joins) ----
+  const base = db("farmer_plan_containers as c")
     .join("farmer_plans as fp", "fp.id", "c.plan_id")
     .join("buyer_requests as br", "br.id", "fp.request_id")
     .leftJoin("users as buyer", "br.buyer_id", "buyer.id")
@@ -486,6 +514,86 @@ export async function listAssignedPlansWithContainers(supplierId) {
         "last.latest_time",
       );
     })
+    .where("c.supplier_id", supplierId)
+    .andWhere("br.status", "accepted"); // ✅ Only accepted buyer requests
+
+  // ---- search filter ----
+  // ---- search filter ----
+  if (safeQ) {
+    const like = `%${safeQ}%`;
+    base.andWhere(function () {
+      this.whereRaw("LOWER(COALESCE(buyer.name::text, '')) LIKE ?", [like])
+        .orWhereRaw("LOWER(COALESCE(buyer.mobile::text, '')) LIKE ?", [like])
+        .orWhereRaw("LOWER(COALESCE(c.container_no::text, '')) LIKE ?", [like])
+        .orWhereRaw("LOWER(COALESCE(br.import_country::text, '')) LIKE ?", [
+          like,
+        ])
+        .orWhereRaw("LOWER(COALESCE(br.exit_border::text, '')) LIKE ?", [like])
+        .orWhereRaw("LOWER(COALESCE(ct.tracking_code::text, '')) LIKE ?", [
+          like,
+        ]); // ✅ add tracking search too
+    });
+  }
+
+  // ---- total count of DISTINCT requests ----
+  const countRow = await base
+    .clone()
+    .clearSelect()
+    .clearOrder()
+    .countDistinct({ total: "br.id" })
+    .first();
+
+  const total = parseInt(countRow?.total ?? 0, 10);
+  const totalPages = total === 0 ? 0 : Math.ceil(total / safePageSize);
+  const offset = (safePage - 1) * safePageSize;
+
+  // If no results, return consistent shape
+  if (!total) {
+    return {
+      data: [],
+      pagination: {
+        page: safePage,
+        pageSize: safePageSize,
+        total: 0,
+        totalPages: 0,
+        hasNext: false,
+        hasPrev: safePage > 1,
+      },
+    };
+  }
+
+  // ---- page request IDs (paginate at request level) ----
+  // We group by br.id to support ordering by min(fp.plan_date) for stable request ordering.
+  const pageRequestRows = await base
+    .clone()
+    .clearSelect()
+    .clearOrder()
+    .select("br.id as request_id")
+    .groupBy("br.id")
+    .orderBy(sortExpr, safeSortOrder)
+    .orderBy("br.id", "asc") // tiebreaker
+    .limit(safePageSize)
+    .offset(offset);
+
+  const requestIds = pageRequestRows.map((r) => r.request_id).filter(Boolean);
+
+  if (!requestIds.length) {
+    return {
+      data: [],
+      pagination: {
+        page: safePage,
+        pageSize: safePageSize,
+        total,
+        totalPages,
+        hasNext: safePage < totalPages,
+        hasPrev: safePage > 1,
+      },
+    };
+  }
+
+  // ---- fetch full rows for those request IDs ----
+  const rows = await base
+    .clone()
     .select(
       "br.id as request_id",
       "br.status as request_status",
@@ -498,7 +606,7 @@ export async function listAssignedPlansWithContainers(supplierId) {
       db.raw("to_char(fp.plan_date, 'YYYY-MM-DD') as plan_date"),
 
       "c.id as container_id",
-      "c.container_no",
+      db.raw("c.container_no::text as container_no"),
       "c.status as container_status",
       "c.farmer_status",
       "c.in_progress",
@@ -507,7 +615,7 @@ export async function listAssignedPlansWithContainers(supplierId) {
       "c.metadata_status",
       "c.metadata_review_note",
       db.raw(
-        `to_char(c.created_at, 'YYYY-MM-DD"T"HH24:MI:SSZ') as container_created_at`,
+        `to_char(c.created_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as container_created_at`,
       ),
 
       "ct.status as latest_status",
@@ -517,18 +625,18 @@ export async function listAssignedPlansWithContainers(supplierId) {
       "buyer.name as buyer_name",
       "buyer.mobile as buyer_mobile",
     )
-    .where("c.supplier_id", supplierId)
-    .andWhere("br.status", "accepted") // ✅ Only accepted buyer requests
-    .orderBy("fp.plan_date", "asc");
+    .whereIn("br.id", requestIds)
+    .orderBy("br.id", "asc")
+    .orderBy("fp.plan_date", "asc")
+    .orderBy("c.created_at", "asc");
 
-  // If no rows, just return []
-  if (!rows.length) return [];
+  // ---- build nested structure: requests -> plans -> containers ----
+  const requestsMap = new Map();
 
-  // Group containers by buyer request
-  const grouped = {};
   for (const r of rows) {
-    if (!grouped[r.request_id]) {
-      grouped[r.request_id] = {
+    // ensure request
+    if (!requestsMap.has(r.request_id)) {
+      requestsMap.set(r.request_id, {
         request_id: r.request_id,
         import_country: r.import_country,
         exit_border: r.exit_border,
@@ -537,12 +645,24 @@ export async function listAssignedPlansWithContainers(supplierId) {
         request_status: r.request_status,
         deadline_start_date: r.deadline_start_date,
         deadline_end_date: r.deadline_end_date,
+        plans: [],
+      });
+    }
+
+    const requestObj = requestsMap.get(r.request_id);
+
+    // ensure plan under request
+    let planObj = requestObj.plans.find((p) => p.plan_id === r.plan_id);
+    if (!planObj) {
+      planObj = {
         plan_id: r.plan_id,
         plan_date: r.plan_date,
         containers: [],
       };
+      requestObj.plans.push(planObj);
     }
 
+    // parse metadata safely
     let meta = {};
     try {
       meta =
@@ -553,7 +673,7 @@ export async function listAssignedPlansWithContainers(supplierId) {
       meta = {};
     }
 
-    grouped[r.request_id].containers.push({
+    planObj.containers.push({
       container_id: r.container_id,
       container_no: r.container_no,
       container_status: r.container_status,
@@ -570,9 +690,20 @@ export async function listAssignedPlansWithContainers(supplierId) {
     });
   }
 
-  return Object.values(grouped);
-}
+  const data = Array.from(requestsMap.values());
 
+  return {
+    data,
+    pagination: {
+      page: safePage,
+      pageSize: safePageSize,
+      total,
+      totalPages,
+      hasNext: safePage < totalPages,
+      hasPrev: safePage > 1,
+    },
+  };
+}
 /**
  * Fetch all tracking records for a supplier’s container (with auth check).
  */

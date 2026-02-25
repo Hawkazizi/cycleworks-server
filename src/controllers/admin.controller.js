@@ -129,13 +129,15 @@ export const uploadProfilePicture = async (req, res) => {
 export const getProfilePicture = async (req, res) => {
   try {
     const adminId = req.user.id;
+
     const admin = await db("users")
       .select("profile_picture")
       .where({ id: adminId })
       .first();
 
-    if (!admin || !admin.profile_picture) {
-      return res.status(404).json({ error: "Profile picture not found" });
+    // ✅ No profile pic set → return 204 (no error on frontend)
+    if (!admin?.profile_picture) {
+      return res.status(204).end();
     }
 
     const filePath = path.join(
@@ -145,8 +147,9 @@ export const getProfilePicture = async (req, res) => {
         : admin.profile_picture,
     );
 
+    // ✅ Path exists in DB but file is missing → also return 204 (or 404 if you prefer)
     if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: "File not found on server" });
+      return res.status(204).end();
     }
 
     const ext = path.extname(filePath).toLowerCase();
@@ -179,7 +182,19 @@ export const deleteProfile = async (req, res) => {
     res.status(500).json({ error: "Failed to delete profile" });
   }
 };
+/* -------------------- GET ADMIN DASHBOARD -------------------- */
 
+export const getAdminDashboard = async (req, res) => {
+  try {
+    const data = await adminService.getAdminDashboard();
+    // Optional: small cache (huge win in prod)
+    res.set("Cache-Control", "private, max-age=20");
+    return res.json(data);
+  } catch (err) {
+    console.error("getAdminDashboard error:", err);
+    return res.status(500).json({ error: "Failed to load dashboard" });
+  }
+};
 /* -------------------- Users -------------------- */
 export const createUser = async (req, res) => {
   try {
@@ -1443,6 +1458,32 @@ export async function markContainerCompleted(req, res) {
     res.json(result);
   } catch (err) {
     console.error("markContainerCompleted error:", err);
+    res.status(400).json({ error: err.message });
+  }
+}
+/* -------------------- ADMIN: Update Container Completed Date -------------------- */
+export async function updateContainerCompletedAt(req, res) {
+  try {
+    const { id } = req.params;
+    const { completed_at } = req.body;
+
+    if (!completed_at || isNaN(new Date(completed_at).getTime())) {
+      return res
+        .status(400)
+        .json({ error: "Invalid or missing completed_at date" });
+    }
+
+    const parsedCompletedAt = new Date(completed_at);
+
+    const result = await adminService.updateContainerCompletedAt(
+      id,
+      parsedCompletedAt,
+      req.user.id,
+    );
+
+    res.json(result);
+  } catch (err) {
+    console.error("updateContainerCompletedAt error:", err);
     res.status(400).json({ error: err.message });
   }
 }

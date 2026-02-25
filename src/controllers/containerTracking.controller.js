@@ -4,6 +4,7 @@ import db from "../db/knex.js";
 /* =======================================================================
    📦 CONTAINER OVERVIEW (ADMIN)
 ======================================================================= */
+// controllers/adminContainers.js (or wherever this lives)
 export async function listAllContainersWithTracking(req, res) {
   try {
     const rows = await db("farmer_plan_containers as c")
@@ -70,22 +71,30 @@ export async function listAllContainersWithTracking(req, res) {
         "buyer.id as buyer_id",
         "buyer.name as buyer_name",
         "buyer.email as buyer_email",
+
         db.raw(`
           COALESCE(
             c.tracking_code,
             ct.tracking_code
           ) as tracking_code
         `),
+
         "ct.status as latest_status",
         "ct.note",
         "ct.created_at as updated_at",
       )
       .orderBy("ct.created_at", "desc");
 
-    // 🔹 Handle no results
     if (!rows.length) {
       return res.json({
-        stats: { totalContainers: 0, containersByCountry: {}, exitedIran: 0 },
+        stats: {
+          totalContainers: 0,
+          exitedIran: 0,
+          inIran: 0,
+          exportedByCountry: {},
+          inIranByCountry: {},
+          allByCountry: {},
+        },
         containers: [],
       });
     }
@@ -146,41 +155,65 @@ export async function listAllContainersWithTracking(req, res) {
       tracking_history: historyByContainer[c.container_id] || [],
       files: filesByContainer[c.container_id] || [],
     }));
-    const hasValidTracking = (c) => {
-      const code = c.tracking_code;
-      return (
-        code &&
-        typeof code === "string" &&
-        code.trim() !== "" &&
-        code.toLowerCase() !== "null"
-      );
+
+    // ---------------------------
+    // ✅ Export logic (YOUR RULE)
+    // Exported = admin_metadata_status === "submitted" AND admin_metadata.bl_date exists
+    // ---------------------------
+    const isSubmitted = (s) =>
+      String(s || "")
+        .trim()
+        .toLowerCase() === "submitted";
+
+    const hasBlDate = (m) => {
+      const v = m?.bl_date;
+      return v && String(v).trim() !== "";
     };
 
-    const trackedContainers = containers.filter(hasValidTracking);
+    const exportedByCountry = {};
+    const inIranByCountry = {};
+    const allByCountry = {};
 
-    const containersByCountry = {};
     let exitedIran = 0;
     let inIran = 0;
 
-    trackedContainers.forEach((c) => {
-      const country = c.import_country?.trim() || "Unknown";
-      containersByCountry[country] = (containersByCountry[country] || 0) + 1;
+    const normalizeCountry = (val) => {
+      const s = String(val || "").trim();
+      return s ? s : "Unknown";
+    };
 
-      if (c.is_completed === true && c.in_progress === false) {
+    containers.forEach((c) => {
+      const country = normalizeCountry(c.import_country);
+
+      // optional overall distribution
+      allByCountry[country] = (allByCountry[country] || 0) + 1;
+
+      const exported =
+        hasBlDate(c.admin_metadata) && isSubmitted(c.admin_metadata_status);
+
+      if (exported) {
         exitedIran++;
-      }
-
-      if (c.in_progress === true && c.is_completed === false) {
+        exportedByCountry[country] = (exportedByCountry[country] || 0) + 1;
+      } else {
         inIran++;
+        inIranByCountry[country] = (inIranByCountry[country] || 0) + 1;
       }
     });
 
-    res.json({
+    return res.json({
       stats: {
-        totalContainers: trackedContainers.length, // 👈 ONLY tracked containers
-        containersByCountry,
+        // ✅ your requirement: total exported == exitedIran
+        totalContainers: exitedIran,
         exitedIran,
         inIran,
+
+        // ✅ correct maps
+        exportedByCountry,
+        inIranByCountry,
+        allByCountry,
+
+        // keep old key if any old frontend still uses it (optional)
+        containersByCountry: exportedByCountry,
       },
       containers,
     });

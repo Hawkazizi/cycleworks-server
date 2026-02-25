@@ -94,6 +94,16 @@ router.delete(
 );
 
 /* =======================================================================
+   🧩 ADMIN DASHBOARD
+======================================================================= */
+
+router.get(
+  "/dashboard",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.getAdminDashboard,
+);
+/* =======================================================================
    🧩 ROLES & SETTINGS
 ======================================================================= */
 
@@ -331,6 +341,12 @@ router.patch(
   authenticate,
   authorize("admin", "manager"),
   adminController.markContainerCompleted,
+);
+router.patch(
+  "/containers/:id/completed-at",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.updateContainerCompletedAt,
 );
 
 /* =======================================================================

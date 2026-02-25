@@ -17,6 +17,30 @@ async function isRecipient(ticketId, userId) {
   return !!row;
 }
 
+/**
+ * Get user IDs by their role names
+ * @param {string[]} roles - Array of role names to match (e.g., ["admin", "manager"])
+ * @param {Object} options - Options
+ * @param {boolean} options.includeInactive - Include inactive users (default: true)
+ * @returns {Promise<number[]>} - Array of user IDs
+ */
+async function getUsersByRoles(roles, { includeInactive = true } = {}) {
+  if (!Array.isArray(roles) || roles.length === 0) return [];
+
+  const query = db("users as u")
+    .join("user_roles as ur", "ur.user_id", "u.id")
+    .join("roles as r", "r.id", "ur.role_id")
+    .whereIn("r.name", roles)
+    .select("u.id");
+
+  if (!includeInactive) {
+    query.where("u.status", "active");
+  }
+
+  const rows = await query.distinct("u.id");
+  return rows.map((row) => Number(row.id));
+}
+
 /* =========================
    Create Ticket
    - created_by: sender (required)
@@ -30,14 +54,13 @@ export async function createTicket({
   message,
   file,
 }) {
+  // 1️⃣ Create the ticket record
   const [ticket] = await db("tickets")
     .insert({
-      user_id: createdBy, // legacy
+      user_id: createdBy,
       role,
-
       created_by: createdBy,
-      assigned_to: assignedTo, // keep for non-user flows
-
+      assigned_to: assignedTo,
       subject,
       message,
       attachment_path: file?.path || null,
@@ -48,12 +71,14 @@ export async function createTicket({
     })
     .returning("*");
 
-  // ✅ "user" auto recipients
+  // 2️⃣ Handle auto-recipients for "user" role
   if (role === "user") {
+    // ✅ Now this works because getUsersByRoles is defined above
     const recipientIds = await getUsersByRoles(["buyer", "admin", "manager"], {
       includeInactive: true,
     });
 
+    // Exclude self from recipients
     const filtered = recipientIds.filter((id) => id !== createdBy);
 
     if (filtered.length) {
@@ -63,10 +88,10 @@ export async function createTicket({
         .ignore();
     }
 
-    // optional: keep assigned_to null for user tickets
+    // Keep assigned_to null for user tickets (multi-recipient model)
     await db("tickets").where({ id: ticket.id }).update({ assigned_to: null });
   } else {
-    // non-user roles can still have 1 selected recipient
+    // 3️⃣ Non-user roles: use explicitly assigned recipient
     if (assignedTo) {
       await db("ticket_recipients")
         .insert({ ticket_id: ticket.id, user_id: assignedTo })
@@ -77,7 +102,6 @@ export async function createTicket({
 
   return ticket;
 }
-
 /* =========================
    List My Tickets
    - inbox: assigned_to = me

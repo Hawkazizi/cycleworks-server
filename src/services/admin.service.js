@@ -128,7 +128,238 @@ export const updateAdminProfile = async (userId, data) => {
   if (!updated) throw new Error("Profile update failed");
   return updated;
 };
+/* =======================================================================
+   👥 Admin Dashboard
+======================================================================= */
+export async function getAdminDashboard() {
+  // ---------------------------
+  // 1) USERS COUNT
+  // ---------------------------
+  const usersCountRow = await db("users").count("* as c").first();
+  const usersCount = Number(usersCountRow?.c || 0);
 
+  // ---------------------------
+  // 2) PENDING APPLICATIONS COUNT
+  // ---------------------------
+  const appsPendingRow = await db("user_applications")
+    .where("status", "pending")
+    .count("* as c")
+    .first();
+  const appsPending = Number(appsPendingRow?.c || 0);
+
+  // ---------------------------
+  // 3) BUYER REQUESTS STATS (status + country + recent)
+  // ---------------------------
+  const buyerStatsByStatus = await db("buyer_requests as br")
+    .select("br.status")
+    .count("* as c")
+    .groupBy("br.status");
+
+  const buyerTotalRow = await db("buyer_requests").count("* as c").first();
+  const buyerTotal = Number(buyerTotalRow?.c || 0);
+
+  const buyerByStatusMap = buyerStatsByStatus.reduce((acc, r) => {
+    const k = (r.status || "unknown").toLowerCase();
+    acc[k] = Number(r.c || 0);
+    return acc;
+  }, {});
+
+  const buyerByCountryRows = await db("buyer_requests as br")
+    .select("br.import_country")
+    .count("* as c")
+    .groupBy("br.import_country");
+
+  const buyerByCountry = buyerByCountryRows.map((r) => ({
+    name: r.import_country || "Unknown",
+    v: Number(r.c || 0),
+  }));
+
+  // recent 6 buyer requests (minimal fields used in UI)
+  const recentRequests = await db("buyer_requests as br")
+    .select(
+      "br.id",
+      "br.import_country",
+      "br.status",
+      "br.created_at",
+      "br.container_amount",
+      "br.cartons",
+      "br.product_type",
+      "br.deadline_start",
+      "br.deadline_end",
+    )
+    .orderBy("br.created_at", "desc")
+    .limit(6);
+
+  // ---------------------------
+  // 4) CONTAINERS STATS (single-pass aggregation)
+  // ---------------------------
+  // This covers what you currently compute using:
+  // - /api/admin/containers-with-tracking
+  // - /api/admin/containers/all
+  //
+  // We compute:
+  // totalContainers (non-rejected)
+  // containersByCountry (non-rejected)
+  // containersInProgress (non-rejected, in_progress true, not completed)
+  // inProgressX per country
+  // completedX per country
+  // rejectedContainers (is_rejected true)
+  // pendingFarmer (farmer_status = pending)
+  //
+  const containerAggRows = await db("farmer_plan_containers as c")
+    .leftJoin("farmer_plans as fp", "fp.id", "c.plan_id")
+    .leftJoin("buyer_requests as br", "br.id", "fp.request_id")
+    .select(db.raw(`COALESCE(br.import_country, 'Unknown') as country`))
+    .select(
+      db.raw(
+        `COUNT(*) FILTER (WHERE c.is_rejected = false) as total_non_rejected`,
+      ),
+      db.raw(`COUNT(*) FILTER (WHERE c.is_rejected = true) as total_rejected`),
+      db.raw(
+        `COUNT(*) FILTER (
+          WHERE c.is_rejected = false
+          AND c.in_progress = true
+          AND c.is_completed = false
+        ) as in_progress_non_rejected`,
+      ),
+      db.raw(
+        `COUNT(*) FILTER (
+          WHERE c.is_rejected = false
+          AND (c.is_completed = true OR LOWER(COALESCE(c.status,'')) = 'completed')
+        ) as completed_non_rejected`,
+      ),
+      db.raw(
+        `COUNT(*) FILTER (WHERE LOWER(COALESCE(c.farmer_status,'')) = 'pending') as pending_farmer_total`,
+      ),
+    )
+    .groupBy("country");
+
+  // Build maps
+  let totalContainers = 0;
+  let rejectedContainers = 0;
+  let containersInProgress = 0;
+  let pendingFarmer = 0;
+
+  const containersByCountry = {};
+  const inProgressByCountry = {};
+  const completedByCountry = {};
+
+  for (const r of containerAggRows) {
+    const country = String(r.country || "Unknown").trim();
+
+    const totalNonRejected = Number(r.total_non_rejected || 0);
+    const totalRejected = Number(r.total_rejected || 0);
+    const inProg = Number(r.in_progress_non_rejected || 0);
+    const completed = Number(r.completed_non_rejected || 0);
+    const pendingFarmerCount = Number(r.pending_farmer_total || 0);
+
+    totalContainers += totalNonRejected;
+    rejectedContainers += totalRejected;
+    containersInProgress += inProg;
+    pendingFarmer += pendingFarmerCount;
+
+    containersByCountry[country] = completed; // chart wants completed
+    inProgressByCountry[country] = inProg;
+    completedByCountry[country] = completed;
+  }
+
+  // Normalize country keys you use in UI
+  const getCountry = (obj, name) => obj[name] || obj[name.toLowerCase()] || 0;
+  const buyerQatar = buyerByCountryRows.find(
+    (x) => (x.import_country || "").toLowerCase() === "qatar",
+  )
+    ? Number(
+        buyerByCountryRows.find(
+          (x) => (x.import_country || "").toLowerCase() === "qatar",
+        )?.c || 0,
+      )
+    : 0;
+
+  const buyerOman = buyerByCountryRows.find(
+    (x) => (x.import_country || "").toLowerCase() === "oman",
+  )
+    ? Number(
+        buyerByCountryRows.find(
+          (x) => (x.import_country || "").toLowerCase() === "oman",
+        )?.c || 0,
+      )
+    : 0;
+
+  const buyerBahrain = buyerByCountryRows.find(
+    (x) => (x.import_country || "").toLowerCase() === "bahrain",
+  )
+    ? Number(
+        buyerByCountryRows.find(
+          (x) => (x.import_country || "").toLowerCase() === "bahrain",
+        )?.c || 0,
+      )
+    : 0;
+
+  const buyerKuwait = buyerByCountryRows.find(
+    (x) => (x.import_country || "").toLowerCase() === "kuwait",
+  )
+    ? Number(
+        buyerByCountryRows.find(
+          (x) => (x.import_country || "").toLowerCase() === "kuwait",
+        )?.c || 0,
+      )
+    : 0;
+
+  // Convert containersByCountry map to array for bar chart
+  const containersByCountryData = Object.entries(containersByCountry).map(
+    ([name, count]) => ({ name, count }),
+  );
+
+  // ---------------------------
+  // Final stats object (match your AdminDashboard state keys)
+  // ---------------------------
+  const stats = {
+    users: usersCount,
+    applications: appsPending,
+
+    buyerTotal,
+    buyerPending: buyerByStatusMap["pending"] || 0,
+    buyerAccepted: buyerByStatusMap["accepted"] || 0,
+    buyerRejected: buyerByStatusMap["rejected"] || 0,
+    buyerCancelled: buyerByStatusMap["cancelled"] || 0,
+
+    // NOTE: in your current UI you later overwrite buyerCompletedRequests with container completed count.
+    // We'll provide it anyway as 0 or status-based if you ever need:
+    buyerCompletedRequests: buyerByStatusMap["completed"] || 0,
+
+    buyerOman,
+    buyerQatar,
+    buyerBahrain,
+    buyerKuwait,
+
+    totalContainers,
+    containersInProgress,
+    rejectedContainers,
+    pendingFarmer,
+
+    inProgressQatar: getCountry(inProgressByCountry, "Qatar"),
+    inProgressOman: getCountry(inProgressByCountry, "Oman"),
+    inProgressBahrain: getCountry(inProgressByCountry, "Bahrain"),
+    inProgressKuwait: getCountry(inProgressByCountry, "Kuwait"),
+
+    completedQatar: getCountry(completedByCountry, "Qatar"),
+    completedOman: getCountry(completedByCountry, "Oman"),
+    completedBahrain: getCountry(completedByCountry, "Bahrain"),
+    completedKuwait: getCountry(completedByCountry, "Kuwait"),
+
+    qatarContainers: getCountry(containersByCountry, "Qatar"),
+    omanContainers: getCountry(containersByCountry, "Oman"),
+    bahrainContainers: getCountry(containersByCountry, "Bahrain"),
+    kuwaitContainers: getCountry(containersByCountry, "Kuwait"),
+  };
+
+  return {
+    stats,
+    buyerByCountry,
+    containersByCountry: containersByCountryData,
+    recentRequests,
+  };
+}
 /* =======================================================================
    👥 USER MANAGEMENT
 ======================================================================= */
@@ -138,7 +369,7 @@ export const createUserWithRole = async ({
   email,
   password,
   role_id,
-  mobile, // ✅ added
+  mobile,
 }) => {
   return db.transaction(async (trx) => {
     const exists = await trx("users").where({ email }).first();
@@ -665,6 +896,44 @@ export async function markContainerCompleted(containerId, adminId) {
   return {
     message:
       "کانتینر با موفقیت تکمیل شد و وضعیت 'در مقصد' ثبت گردید و اعلان ارسال شد ✅",
+  };
+}
+/* -------------------- ADMIN: Update Container Completed Date -------------------- */
+export async function updateContainerCompletedAt(
+  containerId,
+  completedAt,
+  adminId,
+) {
+  if (!containerId) throw new Error("Container ID is required");
+  if (!completedAt || isNaN(new Date(completedAt).getTime())) {
+    throw new Error("Valid completed_at is required");
+  }
+
+  const container = await db("farmer_plan_containers")
+    .select("id", "is_completed", "status")
+    .where({ id: containerId })
+    .first();
+
+  if (!container) throw new Error("Container not found");
+
+  // Important: only allow editing if it was actually completed already
+  if (!container.is_completed) {
+    throw new Error("Container is not completed yet; cannot edit completed_at");
+  }
+
+  const [updated] = await db("farmer_plan_containers")
+    .where({ id: containerId })
+    .update({
+      completed_at: completedAt,
+      updated_at: db.fn.now(),
+      admin_metadata_reviewed_by: adminId,
+      admin_metadata_reviewed_at: db.fn.now(),
+    })
+    .returning(["id", "completed_at", "is_completed", "status", "updated_at"]);
+
+  return {
+    message: "completed_at updated successfully ✅",
+    container: updated,
   };
 }
 /* =======================================================================
