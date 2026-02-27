@@ -28,6 +28,7 @@ app.use(
       "http://localhost:5174",
       "https://digipoultry.com", // production
       "https://www.digipoultry.com", // optional
+      "http://195.177.255.233",
     ],
     credentials: true,
   }),

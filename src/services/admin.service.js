@@ -490,6 +490,7 @@ export const updateApplication = async (id, updates, userId, role) => {
     "status",
     "reviewed_by",
     "reviewed_at",
+
     "final_approved",
     "final_admin_comment",
   ];
