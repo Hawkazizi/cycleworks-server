@@ -490,8 +490,6 @@ export const updateApplication = async (id, updates, userId, role) => {
     "status",
     "reviewed_by",
     "reviewed_at",
-    "notes",
-    "admin_comment",
     "final_approved",
     "final_admin_comment",
   ];
@@ -629,7 +627,7 @@ export const updateSetting = async (key, value) => {
 ======================================================================= */
 
 const QC_ROLES = ["qc_internal", "qc_external"];
-const QC_COUNTRIES = ["OM", "QA", "BA"];
+const QC_COUNTRIES = ["OM", "QA", "BA", "KW"];
 
 export const getAllLicenseKeys = async () => {
   return db("admin_license_keys as alk")
@@ -651,25 +649,30 @@ export const createLicenseKey = async ({
   assigned_to,
   user,
 }) => {
-  let userId = assigned_to;
+  let userId = assigned_to ?? null;
 
-  const role = await db("roles").where({ id: role_id }).first();
+  const roleId = Number(role_id);
+  if (!Number.isInteger(roleId)) throw new Error("Invalid role_id");
+
+  const role = await db("roles").where({ id: roleId }).first();
   if (!role) throw new Error("Invalid role");
 
-  /* ---------------------------------------------------
-     Enforce country rules (match DB trigger)
-  --------------------------------------------------- */
+  // ---------------------------------------------------
+  // Enforce country rules (keep consistent everywhere)
+  // ---------------------------------------------------
+  let finalCountry = country_code;
+
   if (QC_ROLES.includes(role.name)) {
-    if (!QC_COUNTRIES.includes(country_code)) {
-      throw new Error("QC licenses must have country_code: OM, QA, or BA");
+    if (!QC_COUNTRIES.includes(finalCountry)) {
+      throw new Error("QC licenses must have country_code: OM, QA, BA, or KW");
     }
   } else {
-    country_code = "IR";
+    finalCountry = "IR";
   }
 
   // Auto-create user if provided
   if (user?.name) {
-    const random = Math.floor(Math.random() * 1000000);
+    const random = Math.floor(Math.random() * 1_000_000);
     const fakeEmail = `admin_${random}@system.local`;
     const fakeMobile = `09${random}`.padEnd(11, "0");
     const fakePassword = crypto.randomBytes(8).toString("hex");
@@ -688,14 +691,14 @@ export const createLicenseKey = async ({
     userId = newUser.id;
 
     await db("user_roles").where({ user_id: userId }).del();
-    await db("user_roles").insert({ user_id: userId, role_id });
+    await db("user_roles").insert({ user_id: userId, role_id: roleId });
   }
 
   const [created] = await db("admin_license_keys")
     .insert({
       key,
-      role_id,
-      country_code,
+      role_id: roleId,
+      country_code: finalCountry,
       assigned_to: userId,
     })
     .returning("*");
@@ -713,33 +716,39 @@ export const updateLicenseKey = async ({
   const existing = await db("admin_license_keys").where({ id }).first();
   if (!existing) throw new Error("License key not found");
 
-  const role = await db("roles").where({ id: role_id }).first();
+  const roleId = Number(role_id);
+  if (!Number.isInteger(roleId)) throw new Error("Invalid role_id");
+
+  const role = await db("roles").where({ id: roleId }).first();
   if (!role) throw new Error("Invalid role");
 
-  /* ---------------------------------------------------
-     Enforce country rules
-  --------------------------------------------------- */
+  // ---------------------------------------------------
+  // Enforce country rules
+  // ---------------------------------------------------
+  let finalCountry = country_code;
+
   if (QC_ROLES.includes(role.name)) {
-    if (!QC_COUNTRIES.includes(country_code)) {
-      throw new Error("QC licenses must have country_code: OM, QA, or BA");
+    if (!QC_COUNTRIES.includes(finalCountry)) {
+      throw new Error("QC licenses must have country_code: OM, QA, BA, or KW");
     }
   } else {
-    country_code = "IR";
+    finalCountry = "IR";
   }
 
   const [updated] = await db("admin_license_keys")
     .where({ id })
     .update({
       key,
-      role_id,
-      country_code,
-      assigned_to,
+      role_id: roleId,
+      country_code: finalCountry,
+      assigned_to: assigned_to ?? null,
     })
     .returning("*");
 
-  if (assigned_to && role_id) {
+  // Keep user_roles in sync when assigning
+  if (assigned_to && roleId) {
     await db("user_roles").where({ user_id: assigned_to }).del();
-    await db("user_roles").insert({ user_id: assigned_to, role_id });
+    await db("user_roles").insert({ user_id: assigned_to, role_id: roleId });
   }
 
   return updated;
