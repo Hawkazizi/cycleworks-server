@@ -9,13 +9,14 @@ import xlsx from "xlsx";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
 import { NotificationService } from "../services/notification.service.js";
+
 /* -------------------- Auth -------------------- */
 // Admin/Manager login
 export const loginWithLicense = async (req, res) => {
   try {
     const { licenseKey, role } = req.body;
     if (!licenseKey) {
-      return res.status(400).json({ error: "licenseKey is required" });
+      return res.status(400).json({ error: req.t("auth.license_required") });
     }
 
     const { token, user, roles } = await adminService.loginWithLicense(
@@ -28,6 +29,7 @@ export const loginWithLicense = async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 };
+
 // Get profile (admin or manager)
 export const getProfile = async (req, res) => {
   try {
@@ -36,7 +38,7 @@ export const getProfile = async (req, res) => {
     res.json({ admin });
   } catch (err) {
     console.error("Get profile error:", err);
-    res.status(404).json({ error: "پروفایل یافت نشد" });
+    res.status(404).json({ error: req.t("user.profile_not_found") });
   }
 };
 
@@ -49,7 +51,7 @@ export const updateProfile = async (req, res) => {
     if (!name && !email && !mobile) {
       return res
         .status(400)
-        .json({ error: "حداقل یکی از فیلدهای پروفایل الزامی است." });
+        .json({ error: req.t("validation.profile_field_required") });
     }
 
     const updated = await adminService.updateAdminProfile(adminUserId, {
@@ -59,7 +61,7 @@ export const updateProfile = async (req, res) => {
     });
 
     res.json({
-      message: "پروفایل با موفقیت بروزرسانی شد",
+      message: req.t("user.profile_updated"),
       admin: updated,
     });
   } catch (err) {
@@ -74,7 +76,7 @@ export const uploadProfilePicture = async (req, res) => {
     const adminId = req.user.id;
 
     if (!req.file) {
-      return res.status(400).json({ error: "No file uploaded" });
+      return res.status(400).json({ error: req.t("validation.file_required") });
     }
 
     // Ensure /uploads/profiles directory exists
@@ -116,12 +118,12 @@ export const uploadProfilePicture = async (req, res) => {
     });
 
     res.json({
-      message: "Profile picture updated successfully",
+      message: req.t("user.profile_picture_updated"),
       profile_picture: newFilePath,
     });
   } catch (err) {
     console.error("uploadProfilePicture (admin) error:", err);
-    res.status(500).json({ error: "Failed to upload profile picture" });
+    res.status(500).json({ error: req.t("errors.upload_picture") });
   }
 };
 
@@ -164,7 +166,7 @@ export const getProfilePicture = async (req, res) => {
     fs.createReadStream(filePath).pipe(res);
   } catch (err) {
     console.error("getProfilePicture (admin) error:", err);
-    res.status(500).json({ error: "Failed to fetch profile picture" });
+    res.status(500).json({ error: req.t("errors.fetch_picture") });
   }
 };
 
@@ -176,14 +178,14 @@ export const deleteProfile = async (req, res) => {
     // Delete from DB (reusing your service)
     await db("users").where({ id: adminId }).del();
 
-    res.json({ message: "Admin profile deleted" });
+    res.json({ message: req.t("user.profile_deleted") });
   } catch (err) {
     console.error("deleteProfile (admin) error:", err);
-    res.status(500).json({ error: "Failed to delete profile" });
+    res.status(500).json({ error: req.t("errors.delete_profile") });
   }
 };
-/* -------------------- GET ADMIN DASHBOARD -------------------- */
 
+/* -------------------- GET ADMIN DASHBOARD -------------------- */
 export const getAdminDashboard = async (req, res) => {
   try {
     const data = await adminService.getAdminDashboard();
@@ -192,16 +194,19 @@ export const getAdminDashboard = async (req, res) => {
     return res.json(data);
   } catch (err) {
     console.error("getAdminDashboard error:", err);
-    return res.status(500).json({ error: "Failed to load dashboard" });
+    return res.status(500).json({ error: req.t("errors.load_dashboard") });
   }
 };
+
 /* -------------------- Users -------------------- */
 export const createUser = async (req, res) => {
   try {
-    const { name, email, password, role_id, mobile } = req.body; // ✅ added mobile
+    const { name, email, password, role_id, mobile } = req.body;
 
     if (!name || !email || !password || !role_id || !mobile) {
-      return res.status(400).json({ error: "اطلاعات کاربر ناقص است." });
+      return res
+        .status(400)
+        .json({ error: req.t("validation.incomplete_user_info") });
     }
 
     const user = await adminService.createUserWithRole({
@@ -209,7 +214,7 @@ export const createUser = async (req, res) => {
       email,
       password,
       role_id,
-      mobile, // ✅ pass down to service
+      mobile,
     });
 
     res.status(201).json({ user });
@@ -231,9 +236,9 @@ export const listUsers = async (req, res) => {
 // Ban / unban user
 export const banOrUnbanUser = async (req, res) => {
   try {
-    const { id } = req.params; // target user id
-    const { action } = req.body; // "ban" or "unban"
-    const adminId = req.user.id; // logged-in admin from JWT
+    const { id } = req.params;
+    const { action } = req.body;
+    const adminId = req.user.id;
     const updatedUser = await adminService.toggleUserStatus(
       Number(id),
       action,
@@ -268,7 +273,8 @@ export async function getUserById(req, res) {
       .where("u.id", id)
       .first();
 
-    if (!user) return res.status(404).json({ error: "User not found" });
+    if (!user)
+      return res.status(404).json({ error: req.t("common.not_found") });
 
     // ✅ Buyer requests where this supplier is involved
     const buyerRequests = await db("buyer_requests as br")
@@ -326,6 +332,7 @@ export async function getUserById(req, res) {
     res.status(500).json({ error: err.message });
   }
 }
+
 export const getUserProfilePicture = async (req, res) => {
   try {
     const { id } = req.params;
@@ -335,7 +342,6 @@ export const getUserProfilePicture = async (req, res) => {
       .first();
 
     if (!user || !user.profile_picture) {
-      // Gracefully return 204 (No Content) so frontend won't throw errors
       return res.status(204).end();
     }
     const filePath = path.join(
@@ -346,7 +352,7 @@ export const getUserProfilePicture = async (req, res) => {
     );
 
     if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: "File not found on server" });
+      return res.status(404).json({ error: req.t("common.file_not_found") });
     }
 
     const ext = path.extname(filePath).toLowerCase();
@@ -361,7 +367,7 @@ export const getUserProfilePicture = async (req, res) => {
     fs.createReadStream(filePath).pipe(res);
   } catch (err) {
     console.error("getUserProfilePicture error:", err);
-    res.status(500).json({ error: "Failed to fetch profile picture" });
+    res.status(500).json({ error: req.t("errors.fetch_picture") });
   }
 };
 
@@ -369,11 +375,12 @@ export const deleteUser = async (req, res) => {
   try {
     const { id } = req.params;
     await adminService.deleteUser(Number(id));
-    res.json({ success: true, message: "User and related data deleted" });
+    res.json({ success: true, message: req.t("user.deleted") });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 };
+
 /* -------------------- Reports -------------------- */
 export const exportReportsCSV = async (req, res) => {
   try {
@@ -389,12 +396,11 @@ export const exportReportsCSV = async (req, res) => {
     return res.send(csvData);
   } catch (err) {
     console.error("CSV export failed:", err);
-    res.status(500).json({ error: "Failed to export reports" });
+    res.status(500).json({ error: req.t("report.export_failed") });
   }
 };
 
 /* -------------------- Applications -------------------- */
-// Get pending applications
 export const getApplications = async (req, res) => {
   try {
     const apps = await adminService.getApplications();
@@ -404,16 +410,13 @@ export const getApplications = async (req, res) => {
   }
 };
 
-/* -------------------- Get Applications by User -------------------- */
 export const getApplicationsByUser = async (req, res) => {
   try {
     const { userId } = req.params;
     const apps = await adminService.getApplicationsByUser(userId);
 
     if (!apps || apps.length === 0) {
-      return res
-        .status(404)
-        .json({ message: "No application found for this user" });
+      return res.status(404).json({ message: req.t("application.not_found") });
     }
 
     res.json(apps);
@@ -423,17 +426,14 @@ export const getApplicationsByUser = async (req, res) => {
   }
 };
 
-/* -------------------- Update Application (Admin / User / Manager / Farmer) -------------------- */
 export const updateApplication = async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user.id;
     const role = req.user.roles[0];
 
-    // 🧠 Combine body + uploaded files
     const updates = { ...req.body };
 
-    // ✅ Handle uploaded files (admins can upload too)
     if (req.files && Object.keys(req.files).length > 0) {
       for (const field in req.files) {
         const file = req.files[field][0];
@@ -443,13 +443,12 @@ export const updateApplication = async (req, res) => {
           path: `/uploads/temp/${file.filename}`,
           mimetype: file.mimetype,
           size: file.size,
-          uploaded_by: role, // store who uploaded it
+          uploaded_by: role,
           uploaded_at: new Date().toISOString(),
         });
       }
     }
 
-    // ✅ Call updated service function
     const result = await adminService.updateApplication(
       id,
       updates,
@@ -464,7 +463,6 @@ export const updateApplication = async (req, res) => {
   }
 };
 
-// Approve or reject application
 export const reviewApplication = async (req, res) => {
   try {
     const { id } = req.params;
@@ -478,7 +476,6 @@ export const reviewApplication = async (req, res) => {
   }
 };
 
-/* -------------------- Final Review (Second Phase) -------------------- */
 export const finalizeApplicationReview = async (req, res) => {
   try {
     const { id } = req.params;
@@ -487,7 +484,7 @@ export const finalizeApplicationReview = async (req, res) => {
     const role = req.user.roles[0];
 
     if (!(role === "admin" || role === "manager")) {
-      return res.status(403).json({ error: "Unauthorized" });
+      return res.status(403).json({ error: req.t("auth.unauthorized") });
     }
 
     const result = await adminService.updateApplication(
@@ -611,17 +608,16 @@ export async function getBuyerRequests(req, res) {
     res.status(500).json({ error: err.message });
   }
 }
+
 export const getBuyerRequestById = async (req, res) => {
   try {
-    const { id } = req.params; // buyer_request_id
+    const { id } = req.params;
 
-    // 1️⃣ Fetch base buyer request with full details and all user joins
     const request = await db("buyer_requests as br")
       .leftJoin("users as buyer", "br.buyer_id", "buyer.id")
       .leftJoin("users as ps", "br.preferred_supplier_id", "ps.id")
       .leftJoin("users as creator", "br.creator_id", "creator.id")
       .select(
-        // Buyer Request Core
         "br.id",
         "br.buyer_id",
         "br.status",
@@ -650,12 +646,9 @@ export const getBuyerRequestById = async (req, res) => {
         "br.deadline_start",
         "br.deadline_end",
         "br.order_number",
-        // Buyer Info
         "buyer.name as buyer_name",
         "buyer.email as buyer_email",
         "buyer.mobile as buyer_mobile",
-
-        // Preferred Supplier Info
         "ps.name as preferred_supplier_name",
         "ps.email as preferred_supplier_email",
         "ps.mobile as preferred_supplier_mobile",
@@ -664,14 +657,12 @@ export const getBuyerRequestById = async (req, res) => {
       .first();
 
     if (!request)
-      return res.status(404).json({ error: "Buyer request not found" });
+      return res.status(404).json({ error: req.t("buyer.request_not_found") });
 
-    // 2️⃣ Fetch farmer plans linked to this buyer request
     const plans = await db("farmer_plans as fp")
       .select("fp.id", "fp.plan_date", "fp.created_at", "fp.request_id")
       .where("fp.request_id", id);
 
-    // 3️⃣ Assigned suppliers (request-level)
     request.assigned_suppliers = await db("buyer_request_suppliers as brs")
       .leftJoin("users as s", "brs.supplier_id", "s.id")
       .select(
@@ -685,7 +676,6 @@ export const getBuyerRequestById = async (req, res) => {
       )
       .where("brs.buyer_request_id", id);
 
-    // 4️⃣ For each plan → include containers, files, tracking, metadata
     for (const plan of plans) {
       const containers = await db("farmer_plan_containers as c")
         .leftJoin("farmer_plans as p", "c.plan_id", "p.id")
@@ -715,18 +705,15 @@ export const getBuyerRequestById = async (req, res) => {
         .orderBy("c.id", "asc");
 
       for (const c of containers) {
-        // 🧾 Files
         c.files = await db("farmer_plan_files")
           .where({ container_id: c.id })
           .select("id", "file_key", "original_name", "path", "status");
 
-        // 🛰 Tracking
         c.tracking_history = await db("container_tracking_statuses")
           .where({ container_id: c.id })
           .select("id", "status", "created_at")
           .orderBy("created_at", "desc");
 
-        // 🧠 Safe JSON parse
         try {
           c.admin_metadata = c.admin_metadata
             ? JSON.parse(c.admin_metadata)
@@ -741,11 +728,10 @@ export const getBuyerRequestById = async (req, res) => {
 
     request.farmer_plans = plans;
 
-    // ✅ Final response
     res.json(request);
   } catch (err) {
     console.error("getBuyerRequestById error:", err);
-    res.status(500).json({ error: "Failed to load buyer request details" });
+    res.status(500).json({ error: req.t("errors.load_request") });
   }
 };
 
@@ -772,9 +758,8 @@ export async function addAdminDocs(req, res) {
       fs.renameSync(f.path, newPath);
 
       return {
-        type: req.body.type || null, // frontend may send doc type
+        type: req.body.type || null,
         filename: f.originalname,
-        // 🔥 store only relative path
         path: "/" + newPath.replace(/\\/g, "/"),
       };
     });
@@ -813,6 +798,7 @@ export async function addAdminDocs(req, res) {
     res.status(400).json({ error: err.message });
   }
 }
+
 export async function updateBuyerRequest(req, res) {
   const { id } = req.params;
   const { preferred_supplier_id } = req.body;
@@ -820,16 +806,15 @@ export async function updateBuyerRequest(req, res) {
   try {
     const existing = await db("buyer_requests").where({ id }).first();
     if (!existing) {
-      return res.status(404).json({ error: "درخواست یافت نشد." });
+      return res.status(404).json({ error: req.t("buyer.request_not_found") });
     }
 
-    // optional: validate supplier exists and is a farmer
     if (preferred_supplier_id) {
       const supplier = await db("users")
         .where({ id: preferred_supplier_id })
         .first();
       if (!supplier) {
-        return res.status(400).json({ error: "تامین‌کننده معتبر نیست." });
+        return res.status(400).json({ error: req.t("buyer.invalid_supplier") });
       }
     }
 
@@ -846,34 +831,35 @@ export async function updateBuyerRequest(req, res) {
     return res.json(updated[0]);
   } catch (err) {
     console.error("updateBuyerRequest error:", err);
-    return res.status(500).json({ error: "خطا در بروزرسانی درخواست." });
+    return res.status(500).json({ error: req.t("errors.update_request") });
   }
 }
+
 export async function toggleFinalStatus(req, res) {
   try {
     const { id } = req.params;
-    const { action } = req.body; // expected: "accepted" or "cancelled"
+    const { action } = req.body;
 
     if (!["accepted", "cancelled"].includes(action)) {
-      return res.status(400).json({ error: "Invalid action" });
+      return res
+        .status(400)
+        .json({ error: req.t("validation.invalid_action") });
     }
 
     const oldRequest = await db("buyer_requests").where({ id }).first();
     if (!oldRequest)
-      return res.status(404).json({ error: "Request not found" });
+      return res.status(404).json({ error: req.t("buyer.request_not_found") });
 
     const [updated] = await db("buyer_requests")
       .where({ id })
       .update({ status: action, updated_at: db.fn.now() })
       .returning("*");
 
-    // ✅ Notify Buyer
     await NotificationService.create(updated.buyer_id, action, id, {
       request_id: id,
       final_status: action,
     });
 
-    // ✅ Notify Admins
     const admins = await db("users")
       .join("user_roles", "users.id", "user_roles.user_id")
       .join("roles", "user_roles.role_id", "roles.id")
@@ -889,7 +875,7 @@ export async function toggleFinalStatus(req, res) {
     }
 
     res.json({
-      message: `درخواست با وضعیت '${action}' به‌روزرسانی شد`,
+      message: req.t("buyer.request_status_updated", { action }),
       updated,
     });
   } catch (err) {
@@ -915,12 +901,12 @@ export async function reviewFarmerFile(req, res) {
   }
 }
 
-/** 📤 Upload container file (by admin/manager) */
 export const uploadContainerFile = async (req, res) => {
   try {
     const { containerId } = req.params;
     const file = req.file;
-    if (!file) return res.status(400).json({ error: "File is required" });
+    if (!file)
+      return res.status(400).json({ error: req.t("validation.file_required") });
 
     const destDir = path.join("uploads", "containers", String(containerId));
     fs.mkdirSync(destDir, { recursive: true });
@@ -935,7 +921,7 @@ export const uploadContainerFile = async (req, res) => {
         mimetype: file.mimetype,
         size: file.size,
         path: "/" + newPath.replace(/\\/g, "/"),
-        type: req.body.type || null, // ✅ Accept type from frontend
+        type: req.body.type || null,
       },
     );
 
@@ -946,7 +932,6 @@ export const uploadContainerFile = async (req, res) => {
   }
 };
 
-/** 🗑️ Delete a container file (by admin/manager) */
 export const deleteContainerFile = async (req, res) => {
   try {
     const { containerId, fileId } = req.params;
@@ -956,10 +941,9 @@ export const deleteContainerFile = async (req, res) => {
       .first();
 
     if (!fileRecord) {
-      return res.status(404).json({ error: "File not found" });
+      return res.status(404).json({ error: req.t("common.file_not_found") });
     }
 
-    // Delete physical file
     const filePath = path.join(
       process.cwd(),
       fileRecord.path.replace(/^\//, ""),
@@ -968,13 +952,11 @@ export const deleteContainerFile = async (req, res) => {
       fs.unlinkSync(filePath);
     }
 
-    // Delete DB record
     await db("farmer_plan_files").where({ id: fileId }).del();
 
-    // Optional: Notify relevant parties
     await adminFarmerPlansService.notifyFileDeletion(fileRecord, req.user.id);
 
-    res.status(200).json({ message: "File deleted successfully" });
+    res.status(200).json({ message: req.t("common.success") });
   } catch (err) {
     console.error("Delete error:", err);
     res.status(400).json({ error: err.message });
@@ -1003,33 +985,30 @@ export async function assignSuppliers(req, res) {
       }
     });
 
-    res.json({ message: "Suppliers assigned successfully" });
+    res.json({ message: req.t("supplier.assigned_success") });
   } catch (err) {
     console.error("assignSuppliers error:", err);
     res.status(400).json({ error: err.message });
   }
 }
 
-/* -------------------- List Containers by Request (Safe + Idempotent) -------------------- */
 export const listContainersByRequestId = async (req, res) => {
   try {
     const { requestId } = req.query;
     if (!requestId)
-      return res.status(400).json({ error: "Missing requestId parameter" });
+      return res
+        .status(400)
+        .json({ error: req.t("validation.missing_request_id") });
 
-    // 1️⃣ Fetch buyer request
     const buyerReq = await db("buyer_requests")
       .select("id", "container_amount")
       .where("id", requestId)
       .first();
 
     if (!buyerReq)
-      return res.status(404).json({ error: "Buyer request not found" });
+      return res.status(404).json({ error: req.t("buyer.request_not_found") });
 
     const containers = await db.transaction(async (trx) => {
-      /* ------------------------------------------------------------------
-         2️⃣ Ensure exactly ONE farmer_plan per buyer_request (idempotent)
-      ------------------------------------------------------------------ */
       await trx("farmer_plans")
         .insert({
           request_id: buyerReq.id,
@@ -1043,9 +1022,6 @@ export const listContainersByRequestId = async (req, res) => {
         .where({ request_id: buyerReq.id })
         .first();
 
-      /* ------------------------------------------------------------------
-         3️⃣ Ensure containers exist (safe even if double-called)
-      ------------------------------------------------------------------ */
       const existingCount = await trx("farmer_plan_containers")
         .where({ plan_id: plan.id })
         .count("* as count")
@@ -1068,9 +1044,6 @@ export const listContainersByRequestId = async (req, res) => {
           .ignore();
       }
 
-      /* ------------------------------------------------------------------
-         4️⃣ Return enriched container list with supplier info
-      ------------------------------------------------------------------ */
       const rows = await trx("farmer_plan_containers as c")
         .leftJoin("users as u", "c.supplier_id", "u.id")
         .select(
@@ -1091,11 +1064,10 @@ export const listContainersByRequestId = async (req, res) => {
     res.json({ containers });
   } catch (err) {
     console.error("listContainersByRequestId (safe) error:", err);
-    res.status(500).json({ error: "Failed to load containers" });
+    res.status(500).json({ error: req.t("errors.load_containers") });
   }
 };
 
-/* -------------------- List ALL Containers (for Admin) -------------------- */
 export const listAllContainersWithTracking = async (req, res) => {
   try {
     const containers = await db("farmer_plan_containers as c")
@@ -1104,8 +1076,6 @@ export const listAllContainersWithTracking = async (req, res) => {
       .leftJoin("users as supplier", "c.supplier_id", "supplier.id")
       .leftJoin("users as buyer", "br.buyer_id", "buyer.id")
       .leftJoin("users as operator", "br.creator_id", "operator.id")
-
-      // 🧩 latest tracking join
       .leftJoin(
         db("container_tracking_statuses as t")
           .select("container_id")
@@ -1122,48 +1092,31 @@ export const listAllContainersWithTracking = async (req, res) => {
           "last.latest_time",
         );
       })
-
-      // 🔸 Check if any related file is 'submitted'
       .leftJoin("farmer_plan_files as fpf", "c.id", "fpf.container_id")
       .select(
-        // 🔹 container basic info
         "c.id as container_id",
         "c.container_no",
         "c.status as container_status",
         "c.created_at",
         "c.updated_at",
-
-        // 🔹 status flags
         "c.in_progress",
         "c.is_completed",
         "c.is_rejected",
         "c.farmer_status",
-
-        // 🔹 metadata statuses
         "c.metadata_status",
         "c.admin_metadata_status",
-
-        // 🔹 optional metadata
         "c.metadata",
         "c.admin_metadata",
-
-        // 🔹 supplier / buyer
         "supplier.name as supplier_name",
         "buyer.name as buyer_name",
         "operator.name as operator_name",
-
-        // 🔹 buyer request info
         "br.import_country",
         "br.product_type",
         "br.egg_type",
         "br.cartons",
-
-        // 🔹 tracking info
         "ct.status as latest_status",
         "ct.note as latest_note",
         "ct.created_at as latest_tracking_time",
-
-        // 🔹 Smart TY number extraction
         db.raw(`
           COALESCE(
             NULLIF(TRIM(ct.tracking_code), ''),
@@ -1171,8 +1124,6 @@ export const listAllContainersWithTracking = async (req, res) => {
             NULLIF(TRIM((c.metadata->'metadata'->>'ty_number')), '')
           ) AS ty_number
         `),
-
-        // 🔸 NEW: flag if any file is submitted
         db.raw(`
           BOOL_OR(fpf.status = 'submitted') AS has_submitted_file
         `),
@@ -1192,23 +1143,22 @@ export const listAllContainersWithTracking = async (req, res) => {
     res.json(containers);
   } catch (err) {
     console.error("listAllContainersWithTracking error:", err);
-    res.status(500).json({ error: "Failed to load all containers" });
+    res.status(500).json({ error: req.t("errors.load_containers") });
   }
 };
 
-/* -------------------- Assign Containers to Suppliers -------------------- */
-/* -------------------- Assign Containers to Suppliers -------------------- */
 export const assignContainersToSuppliers = async (req, res) => {
   try {
     const { requestId, assignments } = req.body;
 
     if (!requestId) {
-      return res.status(400).json({ error: "Missing requestId" });
+      return res
+        .status(400)
+        .json({ error: req.t("validation.missing_request_id") });
     }
 
     const isClearAll = !Array.isArray(assignments) || assignments.length === 0;
 
-    // Deduplicate
     const seen = new Set();
     const uniqueAssignments = Array.isArray(assignments)
       ? assignments
@@ -1225,7 +1175,6 @@ export const assignContainersToSuppliers = async (req, res) => {
       : [];
 
     await db.transaction(async (trx) => {
-      // 1️⃣ Clear all assignments
       await trx.raw(
         `
         UPDATE farmer_plan_containers AS c
@@ -1237,7 +1186,6 @@ export const assignContainersToSuppliers = async (req, res) => {
         [requestId],
       );
 
-      // 2️⃣ Apply assignments
       for (const { supplier_id, container_id } of uniqueAssignments) {
         await trx.raw(
           `
@@ -1255,12 +1203,11 @@ export const assignContainersToSuppliers = async (req, res) => {
           supplier_id,
           "request_status_changed",
           requestId,
-          { status: "تخصیص شده", container_id },
+          { status: "assigned", container_id },
           trx,
         );
       }
 
-      // 3️⃣ Recalculate allocation ONCE
       const [{ count }] = await trx("farmer_plan_containers as c")
         .join("farmer_plans as fp", "fp.id", "c.plan_id")
         .where("fp.request_id", requestId)
@@ -1290,33 +1237,27 @@ export const assignContainersToSuppliers = async (req, res) => {
     res.json({
       success: true,
       message: isClearAll
-        ? "✅ تمام تامین‌کنندگان حذف شدند"
-        : "✅ تخصیص تامین‌کنندگان بروزرسانی شد",
+        ? req.t("supplier.cleared_success")
+        : req.t("supplier.assigned_success"),
     });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed to assign suppliers" });
+    res.status(500).json({ error: req.t("errors.assign_suppliers") });
   }
 };
 
-/* -------------------- Update deadline -------------------- */
 export const updateBuyerRequestDeadline = async (req, res) => {
   try {
     const { id } = req.params;
-    const {
-      new_deadline_start,
-      new_deadline_end,
-      new_deadline_date, // legacy support
-    } = req.body;
+    const { new_deadline_start, new_deadline_end, new_deadline_date } =
+      req.body;
 
-    // ✅ Validate input: at least one field is required
     if (!new_deadline_start && !new_deadline_end && !new_deadline_date) {
       return res
         .status(400)
-        .json({ error: "حداقل یکی از تاریخ‌های جدید الزامی است." });
+        .json({ error: req.t("validation.profile_field_required") });
     }
 
-    // ✅ Call the updated service (supports both start/end & legacy)
     const updated = await adminBuyerService.updateBuyerRequestDeadline(
       id,
       { new_deadline_start, new_deadline_end, new_deadline_date },
@@ -1325,7 +1266,7 @@ export const updateBuyerRequestDeadline = async (req, res) => {
 
     return res.json({
       success: true,
-      message: "بازه تحویل با موفقیت به‌روزرسانی شد",
+      message: req.t("buyer.delivery_range_updated"),
       request: updated,
     });
   } catch (err) {
@@ -1338,7 +1279,7 @@ export async function reviewContainerMetadataController(req, res) {
   try {
     const { id } = req.params;
     const { status, note } = req.body;
-    const reviewerId = req.user.licenseId; // From middleware
+    const reviewerId = req.user.licenseId;
 
     const result = await adminFarmerPlansService.reviewContainerMetadata(
       id,
@@ -1353,13 +1294,10 @@ export async function reviewContainerMetadataController(req, res) {
   }
 }
 
-/**
- * Controller: PATCH /api/admin/containers/:id/admin-metadata
- */
 export async function updateContainerAdminMetadataController(req, res) {
   try {
     const { id } = req.params;
-    const reviewerId = req.user.licenseId; // from authenticate middleware
+    const reviewerId = req.user.licenseId;
     const { metadata } = req.body;
 
     const result = await adminFarmerPlansService.updateContainerAdminMetadata(
@@ -1369,7 +1307,7 @@ export async function updateContainerAdminMetadataController(req, res) {
     );
 
     res.json({
-      message: "✅ Admin metadata saved successfully",
+      message: req.t("container.metadata_saved"),
       container: result,
     });
   } catch (err) {
@@ -1378,36 +1316,30 @@ export async function updateContainerAdminMetadataController(req, res) {
   }
 }
 
-/* -------------------- completion of a request -------------------- */
-
 export const completeBuyerRequest = async (req, res) => {
   try {
-    const { id } = req.params; // Get the ID from URL params
-    const { completed_at } = req.body; // Get completed_at from the request body
-    const adminId = req.user.id; // Assuming the admin's user ID is stored in the request user object
+    const { id } = req.params;
+    const { completed_at } = req.body;
+    const adminId = req.user.id;
 
-    // Check if the completed_at is provided and is a valid date
     if (!completed_at || isNaN(new Date(completed_at).getTime())) {
       return res
         .status(400)
-        .json({ error: "Invalid or missing completed_at date" });
+        .json({ error: req.t("validation.invalid_completed_date") });
     }
 
-    // Ensure that the date is parsed as a Date object for database consistency
     const parsedCompletedAt = new Date(completed_at);
 
     await db.transaction(async (trx) => {
-      // Update the buyer request with the completed status and provided completed_at
       const [updated] = await trx("buyer_requests")
         .where({ id })
         .update({
           status: "completed",
-          updated_at: trx.fn.now(), // Use database function to set the current timestamp
-          completed_at: parsedCompletedAt, // Store the provided completed_at date
+          updated_at: trx.fn.now(),
+          completed_at: parsedCompletedAt,
         })
         .returning("*");
 
-      // Update the farmer plan containers associated with this request, marking them as completed
       await trx("farmer_plan_containers")
         .whereIn(
           "plan_id",
@@ -1415,29 +1347,25 @@ export const completeBuyerRequest = async (req, res) => {
         )
         .update({
           is_completed: true,
-          completed_at: parsedCompletedAt, // Set the completed_at date for the container
+          completed_at: parsedCompletedAt,
         });
 
-      // Create a notification for the buyer indicating the request has been completed
       await NotificationService.create(updated.buyer_id, "completed", id, {
         request_id: id,
         status: "completed",
       });
 
-      // Return the updated request details as a response
       res.json({
-        message: "Request and containers marked as completed",
+        message: req.t("container.completed_success"),
         request: updated,
       });
     });
   } catch (err) {
-    // Log the error and return a response with the error message
     console.error("completeBuyerRequest error:", err);
     res.status(400).json({ error: err.message });
   }
 };
 
-/* -------------------- Toggle In-Progress -------------------- */
 export async function toggleInProgress(req, res) {
   try {
     const { id } = req.params;
@@ -1448,11 +1376,11 @@ export async function toggleInProgress(req, res) {
     res.status(400).json({ error: err.message });
   }
 }
-/* -------------------- ADMIN: Mark Container as Completed -------------------- */
+
 export async function markContainerCompleted(req, res) {
   try {
     const { id } = req.params;
-    const user = req.user; // assuming authenticate middleware attaches user info
+    const user = req.user;
 
     const result = await adminService.markContainerCompleted(id, user.id);
     res.json(result);
@@ -1461,7 +1389,7 @@ export async function markContainerCompleted(req, res) {
     res.status(400).json({ error: err.message });
   }
 }
-/* -------------------- ADMIN: Update Container Completed Date -------------------- */
+
 export async function updateContainerCompletedAt(req, res) {
   try {
     const { id } = req.params;
@@ -1470,7 +1398,7 @@ export async function updateContainerCompletedAt(req, res) {
     if (!completed_at || isNaN(new Date(completed_at).getTime())) {
       return res
         .status(400)
-        .json({ error: "Invalid or missing completed_at date" });
+        .json({ error: req.t("validation.invalid_completed_date") });
     }
 
     const parsedCompletedAt = new Date(completed_at);
@@ -1487,28 +1415,21 @@ export async function updateContainerCompletedAt(req, res) {
     res.status(400).json({ error: err.message });
   }
 }
-/**
- * Get full container details with related buyer request, farmer, supplier, files, and tracking info
- */
+
 export const getContainerById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // 1️⃣ Get main container with plan + request + user info
     const container = await db("farmer_plan_containers as c")
       .leftJoin("farmer_plans as fp", "c.plan_id", "fp.id")
       .leftJoin("buyer_requests as br", "fp.request_id", "br.id")
       .leftJoin("users as supplier", "c.supplier_id", "supplier.id")
       .leftJoin("users as buyer", "br.buyer_id", "buyer.id")
       .select(
-        "c.*", // includes c.plan_date from farmer_plan_containers
-
-        // 🧩 Plan info
+        "c.*",
         "fp.id as plan_id",
-        "fp.plan_date as fp_plan_date", // alias to avoid confusion
+        "fp.plan_date as fp_plan_date",
         "fp.status as plan_status",
-
-        // 🧾 Buyer Request - include all columns from buyer_requests
         "br.id as buyer_request_id",
         "br.order_number",
         "br.buyer_id",
@@ -1537,14 +1458,10 @@ export const getContainerById = async (req, res) => {
         "br.admin_extra_files",
         "br.deadline_start",
         "br.deadline_end",
-
-        // 🏢 Supplier Info
         "supplier.id as supplier_id",
         "supplier.name as supplier_name",
         "supplier.email as supplier_email",
         "supplier.mobile as supplier_mobile",
-
-        // 🧍 Buyer Info
         "buyer.id as buyer_id",
         "buyer.name as buyer_name",
         "buyer.email as buyer_email",
@@ -1554,10 +1471,9 @@ export const getContainerById = async (req, res) => {
       .first();
 
     if (!container) {
-      return res.status(404).json({ error: "Container not found" });
+      return res.status(404).json({ error: req.t("container.not_found") });
     }
 
-    // 2️⃣ Get all suppliers assigned to this buyer request
     const buyerSuppliers = await db("buyer_request_suppliers as brs")
       .leftJoin("users as s", "brs.supplier_id", "s.id")
       .select(
@@ -1571,7 +1487,6 @@ export const getContainerById = async (req, res) => {
       )
       .where("brs.buyer_request_id", container.buyer_request_id);
 
-    // 3️⃣ Fetch all related files for this container
     const files = await db("farmer_plan_files")
       .where("container_id", id)
       .select(
@@ -1586,7 +1501,6 @@ export const getContainerById = async (req, res) => {
       )
       .orderBy("created_at", "desc");
 
-    // 4️⃣ Container tracking timeline
     const tracking = await db("container_tracking_statuses as t")
       .leftJoin("users as u", "t.created_by", "u.id")
       .select(
@@ -1599,12 +1513,10 @@ export const getContainerById = async (req, res) => {
       .where("t.container_id", id)
       .orderBy("t.created_at", "asc");
 
-    // 5️⃣ Other containers in the same plan
     const siblingContainers = await db("farmer_plan_containers")
       .where("plan_id", container.plan_id)
       .select("id", "container_no", "status", "plan_date");
 
-    // ✅ Final response — everything enriched
     res.json({
       ...container,
       buyer_request_suppliers: buyerSuppliers,
@@ -1614,7 +1526,7 @@ export const getContainerById = async (req, res) => {
     });
   } catch (err) {
     console.error("getContainerById error:", err);
-    res.status(500).json({ error: "Failed to fetch container details" });
+    res.status(500).json({ error: req.t("container.details_failed") });
   }
 };
 
@@ -1622,50 +1534,36 @@ export const toggleRejectStatus = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Validate ID (basic check — enhance with your validation lib if needed)
     const containerId = Number(id);
     if (isNaN(containerId) || containerId <= 0) {
-      return res.status(400).json({ error: "شناسه نامعتبر است" });
+      return res.status(400).json({ error: req.t("validation.invalid_id") });
     }
-
-    // Optional: Add authz check here (e.g., is admin?)
-    // if (!req.user.isAdmin) return res.status(403).json({ error: 'دسترسی مجاز نیست' });
 
     const updatedContainer =
       await adminFarmerPlansService.toggleRejectStatus(containerId);
 
     if (!updatedContainer) {
-      return res.status(404).json({ error: "ظرف یافت نشد" });
+      return res.status(404).json({ error: req.t("container.not_found") });
     }
 
     res.json({
-      message: "وضعیت رد/تایید با موفقیت بروزرسانی شد",
+      message: req.t("container.reject_toggle_success"),
       data: updatedContainer,
     });
   } catch (err) {
     console.error("Toggle reject error:", err);
-    res.status(500).json({ error: "خطای داخلی سرور" });
+    res.status(500).json({ error: req.t("common.server_error") });
   }
 };
 
-/**
- * Admin import Excel → creates buyer_requests per consignee + containers + suppliers (auto-create if missing)
- * creator_id = Al Jabali Trading and Refrigeration Company
- * Groups ALL files by Customer/Consignee → one buyer_request per consignee
- * Automatically marks containers completed + logs tracking + notifies supplier
- * Automatically creates license key for each new consignee (buyer)
- */
 export const importExcelData = async (req, res) => {
   try {
-    /* --------------------- Validate input --------------------- */
     if (!req.files || req.files.length === 0)
-      throw new Error("No Excel files uploaded");
+      throw new Error(req.t("validation.excel_files_required"));
 
-    const { import_country } = req.body; // optional
+    const { import_country } = req.body;
 
     const results = [];
-
-    /* --------------------- Helpers --------------------- */
 
     const normalizeKeys = (obj) => {
       const normalized = {};
@@ -1741,7 +1639,7 @@ export const importExcelData = async (req, res) => {
     };
 
     const normalizeName = (str) =>
-      str ? str.toString().trim().toLowerCase().replace(/\s+/g, " ") : "";
+      str ? str.toString().trim().toLowerCase().replace(/\s+/g, " ") : null;
 
     const getConsigneeName = (row) => {
       const raw =
@@ -1758,9 +1656,7 @@ export const importExcelData = async (req, res) => {
     const generateLicenseKey = () =>
       "BUY-" + crypto.randomBytes(12).toString("hex");
 
-    /* --------------------- Database Transaction --------------------- */
     await db.transaction(async (trx) => {
-      /* --------------------- Ensure Main Buyer (creator) Exists --------------------- */
       const mainName = "Al Jabali Trading and Refrigeration Company";
       let buyerUser = await trx("users").where("name", mainName).first();
       const placeholderPassword = await bcrypt.hash("NO_PASSWORD", 10);
@@ -1789,12 +1685,10 @@ export const importExcelData = async (req, res) => {
         .onConflict(["user_id", "role_id"])
         .ignore();
 
-      /* --------------------- Load all suppliers once --------------------- */
       let suppliers = await trx("users")
         .select("id", "name")
         .where("status", "active");
 
-      /* --------------------- Read ALL files and flatten rows --------------------- */
       const allRows = [];
 
       for (const file of req.files) {
@@ -1810,7 +1704,7 @@ export const importExcelData = async (req, res) => {
         const cleanName = file.originalname
           .replace(/\.xlsx?$/i, "")
           .trim()
-          .replace(/[^\w\s]/g, ""); // remove invisible unicode
+          .replace(/[^\w\s]/g, "");
 
         const derivedCountry = import_country || cleanName;
         const finalCountry = normalizeCountry(derivedCountry);
@@ -1824,9 +1718,8 @@ export const importExcelData = async (req, res) => {
         }
       }
 
-      if (!allRows.length) throw new Error("Excel sheets are empty");
+      if (!allRows.length) throw new Error(req.t("validation.excel_empty"));
 
-      /* --------------------- Group by Consignee --------------------- */
       const groups = new Map();
 
       for (const item of allRows) {
@@ -1842,14 +1735,12 @@ export const importExcelData = async (req, res) => {
       }
 
       if (groups.size === 0)
-        throw new Error("No Customer / Consignee found in Excel");
+        throw new Error(req.t("validation.no_consignee_found"));
 
-      /* --------------------- Process Each Consignee --------------------- */
       for (const [key, group] of groups) {
         const consigneeName = group.name;
         const rows = group.rows;
 
-        /* ---- Ensure consignee user exists ---- */
         let consigneeUser = await trx("users")
           .where("name", consigneeName)
           .first();
@@ -1869,7 +1760,6 @@ export const importExcelData = async (req, res) => {
             })
             .returning("*");
 
-          /* ---------- Create license key ---------- */
           await trx("admin_license_keys").insert({
             key: generateLicenseKey(),
             role_id: roleBuyer.id,
@@ -1879,7 +1769,6 @@ export const importExcelData = async (req, res) => {
           });
         }
 
-        /* Ensure buyer role */
         await trx("user_roles")
           .insert({
             user_id: consigneeUser.id,
@@ -1888,14 +1777,12 @@ export const importExcelData = async (req, res) => {
           .onConflict(["user_id", "role_id"])
           .ignore();
 
-        /* Determine country */
         const countries = [
           ...new Set(rows.map((r) => r.country).filter(Boolean)),
         ];
         const requestCountry =
           countries.length === 1 ? countries[0] : (countries[0] ?? null);
 
-        /* --------------------- Create buyer_request --------------------- */
         const [buyerRequest] = await trx("buyer_requests")
           .insert({
             buyer_id: consigneeUser.id,
@@ -1910,7 +1797,6 @@ export const importExcelData = async (req, res) => {
           })
           .returning("*");
 
-        /* --------------------- Create farmer plan --------------------- */
         const [plan] = await trx("farmer_plans")
           .insert({
             request_id: buyerRequest.id,
@@ -1919,7 +1805,6 @@ export const importExcelData = async (req, res) => {
           })
           .returning("*");
 
-        /* --------------------- Create containers --------------------- */
         let index = 1;
         let count = 0;
 
@@ -2001,7 +1886,7 @@ export const importExcelData = async (req, res) => {
                 ? JSON.stringify(adminMetadata)
                 : null,
               tracking_code: normalizedMeta.tracking_code || null,
-              farmer_status: "accepted", // <-- required
+              farmer_status: "accepted",
               status: "completed",
               is_completed: true,
               in_progress: false,
@@ -2057,10 +1942,8 @@ export const importExcelData = async (req, res) => {
       }
     });
 
-    /* --------------------- Final Response --------------------- */
     return res.json({
-      message:
-        "✅ Excel import completed successfully — grouped by consignee/customer.",
+      message: req.t("import.success"),
       total_consignees: results.length,
       details: results,
     });
@@ -2096,7 +1979,9 @@ export const resolveContainerQcHold = async (req, res) => {
     const { resolution_action, resolution_note } = req.body;
 
     if (!resolution_action) {
-      return res.status(400).json({ error: "resolution_action is required" });
+      return res
+        .status(400)
+        .json({ error: req.t("validation.resolution_action_required") });
     }
 
     const container = await adminService.resolveInternalQcHold({
@@ -2107,7 +1992,7 @@ export const resolveContainerQcHold = async (req, res) => {
     });
 
     res.json({
-      message: "QC hold resolved successfully",
+      message: req.t("qc.hold_resolved"),
       container,
     });
   } catch (err) {

@@ -15,11 +15,12 @@ import * as ticketService from "../services/ticket.service.js";
 export async function getProfile(req, res) {
   try {
     const me = await db("users").where({ id: req.user.id }).first();
-    if (!me) return res.status(404).json({ error: "Profile not found" });
+    if (!me)
+      return res.status(404).json({ error: req.t("buyer.profile_not_found") });
     res.json(me);
   } catch (err) {
     console.error("getProfile (buyer) error:", err);
-    res.status(500).json({ error: "Failed to fetch profile" });
+    res.status(500).json({ error: req.t("errors.fetch_profile") });
   }
 }
 
@@ -38,7 +39,8 @@ export async function updateProfile(req, res) {
 export const uploadProfilePicture = async (req, res) => {
   try {
     const buyerId = req.user.id;
-    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+    if (!req.file)
+      return res.status(400).json({ error: req.t("errors.no_file") });
 
     const dir = path.join("uploads", "profiles");
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -71,12 +73,12 @@ export const uploadProfilePicture = async (req, res) => {
     });
 
     res.json({
-      message: "Profile picture updated successfully",
+      message: req.t("buyer.profile_picture_updated"),
       profile_picture: newFilePath,
     });
   } catch (err) {
     console.error("uploadProfilePicture (buyer) error:", err);
-    res.status(500).json({ error: "Failed to upload profile picture" });
+    res.status(500).json({ error: req.t("errors.upload_picture") });
   }
 };
 
@@ -119,7 +121,7 @@ export const getProfilePicture = async (req, res) => {
     fs.createReadStream(filePath).pipe(res);
   } catch (err) {
     console.error("getProfilePicture (buyer) error:", err);
-    res.status(500).json({ error: "Failed to fetch profile picture" });
+    res.status(500).json({ error: req.t("errors.fetch_picture") });
   }
 };
 
@@ -135,10 +137,10 @@ export const deleteProfile = async (req, res) => {
       // Delete buyer
       await trx("users").where({ id: req.user.id }).del();
     });
-    res.json({ message: "Buyer profile deleted successfully" });
+    res.json({ message: req.t("buyer.profile_deleted") });
   } catch (err) {
     console.error("deleteProfile (buyer) error:", err);
-    res.status(500).json({ error: "Failed to delete buyer profile" });
+    res.status(500).json({ error: req.t("errors.delete_profile") });
   }
 };
 
@@ -164,9 +166,7 @@ export const createRequest = async (req, res) => {
       deadline_end &&
       new Date(deadline_start) > new Date(deadline_end)
     ) {
-      return res
-        .status(400)
-        .json({ error: "Start date cannot be after end date" });
+      return res.status(400).json({ error: req.t("buyer.invalid_date_range") });
     }
 
     const result = await buyerReqService.createRequestWithBuyerAndLicense({
@@ -187,7 +187,7 @@ export const createRequest = async (req, res) => {
   }
 };
 
-/** 📋 List buyer’s own requests */
+/** 📋 List buyer's own requests */
 export async function getMyRequests(req, res) {
   try {
     const { search = "" } = req.query;
@@ -199,7 +199,7 @@ export async function getMyRequests(req, res) {
     res.json(list);
   } catch (err) {
     console.error("❌ getMyRequests error:", err);
-    res.status(500).json({ error: "Failed to fetch requests" });
+    res.status(500).json({ error: req.t("errors.fetch_requests") });
   }
 }
 
@@ -210,11 +210,12 @@ export async function getRequestById(req, res) {
       req.user.id,
       req.params.id,
     );
-    if (!item) return res.status(404).json({ error: "Request not found" });
+    if (!item)
+      return res.status(404).json({ error: req.t("buyer.request_not_found") });
     res.json(item);
   } catch (err) {
     console.error("getRequestById error:", err);
-    res.status(400).json({ error: "Failed to load request" });
+    res.status(400).json({ error: req.t("errors.load_request") });
   }
 }
 
@@ -256,7 +257,8 @@ export const createBuyerTicket = async (req, res) => {
     const buyerId = req.user.id;
     const role = "buyer";
 
-    if (!message) return res.status(400).json({ error: "متن تیکت الزامی است" });
+    if (!message)
+      return res.status(400).json({ error: req.t("ticket.message_required") });
 
     // Handle optional file upload
     let fileInfo = null;
@@ -288,7 +290,7 @@ export const createBuyerTicket = async (req, res) => {
     });
 
     res.status(201).json({
-      message: "تیکت با موفقیت ارسال شد",
+      message: req.t("ticket.created"),
       ticket,
     });
   } catch (err) {
@@ -344,7 +346,7 @@ export const updateBuyerTicket = async (req, res) => {
     });
 
     res.json({
-      message: "تیکت با موفقیت به‌روزرسانی شد",
+      message: req.t("ticket.updated"),
       ticket: updated,
     });
   } catch (err) {
@@ -364,7 +366,7 @@ export const getMinimalUsers = async (req, res) => {
     res.json(users);
   } catch (err) {
     console.error("Error fetching minimal users:", err);
-    res.status(500).json({ error: "Failed to fetch users" });
+    res.status(500).json({ error: req.t("errors.fetch_users") });
   }
 };
 
@@ -382,7 +384,7 @@ export const getMinimalBuyers = async (req, res) => {
     res.json(buyers);
   } catch (err) {
     console.error("❌ getMinimalBuyers error:", err);
-    res.status(500).json({ error: "Failed to fetch buyers list" });
+    res.status(500).json({ error: req.t("errors.fetch_buyers") });
   }
 };
 
@@ -393,6 +395,6 @@ export async function listUserRoleUsers(req, res) {
     res.json(users);
   } catch (err) {
     console.error("Error fetching user-role users:", err);
-    res.status(500).json({ message: "Failed to fetch users with 'user' role" });
+    res.status(500).json({ message: req.t("errors.fetch_user_role") });
   }
 }

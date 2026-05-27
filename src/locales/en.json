@@ -1,0 +1,147 @@
+{
+  "auth": {
+    "invalid_credentials": "Invalid email or password",
+    "unauthorized": "Unauthorized access",
+    "token_expired": "Token has expired",
+    "login_success": "Login successful",
+    "license_required": "License key is required",
+    "invalid_key": "Invalid key",
+    "key_not_configured": "Super admin key not configured"
+  },
+  "validation": {
+    "required": "This field is required",
+    "mobile_password_required": "Mobile number and password are required",
+    "email_required": "Email is required",
+    "code_required": "Code is required",
+    "all_fields_required": "All fields are required",
+    "file_required": "File is required",
+    "status_required": "Status is required",
+    "message_required": "Ticket message is required",
+    "reply_required": "Reply message is required",
+    "profile_field_required": "At least one profile field is required",
+    "incomplete_user_info": "User information is incomplete",
+    "invalid_date_range": "Start date cannot be after end date",
+    "invalid_action": "Invalid action",
+    "invalid_id": "Invalid ID",
+    "missing_request_id": "Request ID is required",
+    "invalid_completed_date": "Invalid or missing completed_at date",
+    "resolution_action_required": "Resolution action is required",
+    "excel_files_required": "No Excel files uploaded",
+    "excel_empty": "Excel sheets are empty",
+    "no_consignee_found": "No Customer / Consignee found in Excel",
+    "arrival_info_required": "Arrival time and place are required",
+    "inspection_data_required": "Inspection data is required",
+    "hold_reason_required": "Hold reason is required",
+    "quantity_required": "Actual quantity is required",
+    "invalid_qc_status": "Invalid QC status"
+  },
+  "common": {
+    "success": "Operation completed successfully",
+    "error": "An error occurred",
+    "not_found": "Resource not found",
+    "server_error": "Internal server error",
+    "no_file": "No file uploaded",
+    "file_not_found": "File not found on server",
+    "email_error": "Failed to send email"
+  },
+  "user": {
+    "registration_pending": "Registration submitted, awaiting admin approval",
+    "profile_picture_updated": "Profile picture updated",
+    "deleted": "User deleted",
+    "verification_code_sent": "Verification code sent",
+    "email_verified": "Email verified",
+    "password_changed": "Password changed",
+    "profile_not_found": "Profile not found",
+    "profile_updated": "Profile updated successfully",
+    "profile_deleted": "Profile deleted successfully"
+  },
+  "buyer": {
+    "profile_not_found": "Profile not found",
+    "profile_deleted": "Buyer profile deleted successfully",
+    "profile_picture_updated": "Profile picture updated",
+    "request_not_found": "Request not found",
+    "request_created": "Request created successfully",
+    "request_updated": "Request updated successfully",
+    "request_cancelled": "Request cancelled",
+    "invalid_supplier": "Invalid supplier",
+    "request_status_updated": "Request updated with status '{{action}}'",
+    "delivery_range_updated": "Delivery range updated successfully"
+  },
+  "container": {
+    "not_found": "Container not found",
+    "unauthorized": "Unauthorized access",
+    "not_owner": "You do not own this container",
+    "tracking_not_found": "Tracking code not found",
+    "status_required": "Status is required",
+    "ty_required": "TY number is required",
+    "status_updated": "Container status updated",
+    "workflow_not_found": "Container workflow not found",
+    "details_failed": "Failed to fetch container details",
+    "reject_toggle_success": "Reject/approve status updated successfully",
+    "completed_success": "Request and containers marked as completed",
+    "metadata_saved": "Admin metadata saved successfully",
+    "transferred": "Container transferred",
+    "supplier_changed": "Container supplier changed"
+  },
+  "ticket": {
+    "message_required": "Ticket message is required",
+    "created": "Ticket submitted successfully",
+    "updated": "Ticket updated successfully",
+    "reply_success": "Reply submitted successfully",
+    "closed": "Ticket closed",
+    "deleted": "Ticket and replies deleted"
+  },
+  "application": {
+    "not_found": "No application found for this user",
+    "reviewed": "Application reviewed",
+    "finalized": "Final application review completed"
+  },
+  "supplier": {
+    "assigned_success": "Supplier assignment updated",
+    "cleared_success": "All suppliers removed",
+    "assignment_failed": "Failed to assign suppliers"
+  },
+  "report": {
+    "export_failed": "Failed to export reports",
+    "qc_not_found": "QC report not found"
+  },
+  "import": {
+    "success": "✅ Excel import completed successfully — grouped by consignee/customer",
+    "failed": "Failed to import Excel data"
+  },
+  "qc": {
+    "hold_resolved": "QC hold resolved successfully",
+    "arrived": "Container arrived",
+    "inspection_started": "QC inspection started",
+    "cleared": "Container approved and cleared",
+    "held": "Container held",
+    "report_submitted": "External QC report submitted"
+  },
+  "dashboard": {
+    "load_failed": "Failed to load dashboard",
+    "specs_failed": "Failed to load server specs"
+  },
+  "errors": {
+    "fetch_profile": "Failed to fetch profile",
+    "upload_picture": "Failed to upload profile picture",
+    "fetch_picture": "Failed to fetch profile picture",
+    "delete_profile": "Failed to delete profile",
+    "load_dashboard": "Failed to load dashboard",
+    "fetch_requests": "Failed to fetch requests",
+    "load_request": "Failed to load request",
+    "fetch_users": "Failed to fetch users",
+    "fetch_buyers": "Failed to fetch buyers list",
+    "fetch_user_role": "Failed to fetch users with 'user' role",
+    "update_request": "Failed to update request",
+    "load_containers": "Failed to load containers",
+    "assign_suppliers": "Failed to assign suppliers",
+    "complete_request": "Failed to complete request",
+    "toggle_status": "Failed to toggle status",
+    "import_excel": "Failed to import Excel data",
+    "resolve_qc_hold": "Failed to resolve QC hold",
+    "fetch_qc_containers": "Failed to load QC containers",
+    "fetch_container": "Failed to fetch container",
+    "fetch_tracking": "Failed to fetch tracking history",
+    "fetch_external_qc": "Failed to fetch external QC report"
+  }
+}

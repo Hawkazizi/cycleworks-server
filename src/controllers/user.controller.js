@@ -17,7 +17,7 @@ export const register = async (req, res) => {
     if (!mobile || !password) {
       return res
         .status(400)
-        .json({ error: "شماره موبایل و رمز عبور الزامی است" });
+        .json({ error: req.t("validation.mobile_password_required") });
     }
 
     const chosenRole = role || "user";
@@ -71,7 +71,7 @@ export const register = async (req, res) => {
     res.status(201).json({
       user,
       application: { ...application, ...fileInfos },
-      message: "درخواست ثبت شد، منتظر تأیید مدیر",
+      message: req.t("user.registration_pending"),
     });
   } catch (err) {
     console.error("REGISTER ERROR:", err);
@@ -86,7 +86,7 @@ export const login = async (req, res) => {
     if (!mobile || !password)
       return res
         .status(400)
-        .json({ error: "شماره موبایل و رمز عبور الزامی است" });
+        .json({ error: req.t("validation.mobile_password_required") });
 
     const result = await userService.loginUser({ mobile, password });
     res.json(result);
@@ -115,7 +115,7 @@ export async function updateProfile(req, res) {
     const updated = await userService.updateProfileById(req.user.id, req.body);
     res.json({ profile: updated });
   } catch {
-    res.status(500).json({ error: "Failed to update profile" });
+    res.status(500).json({ error: req.t("common.server_error") });
   }
 }
 
@@ -123,7 +123,8 @@ export async function updateProfile(req, res) {
 export const uploadProfilePicture = async (req, res) => {
   try {
     const userId = req.user.id;
-    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+    if (!req.file)
+      return res.status(400).json({ error: req.t("errors.no_file") });
 
     const dir = path.join("uploads", "profiles");
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -155,12 +156,12 @@ export const uploadProfilePicture = async (req, res) => {
     });
 
     res.json({
-      message: "Profile picture updated",
+      message: req.t("user.profile_picture_updated"),
       profile_picture: newFilePath,
     });
   } catch (err) {
     console.error("uploadProfilePicture error:", err);
-    res.status(500).json({ error: "Failed to upload profile picture" });
+    res.status(500).json({ error: req.t("common.server_error") });
   }
 };
 
@@ -201,16 +202,17 @@ export const getProfilePicture = async (req, res) => {
     fs.createReadStream(filePath).pipe(res);
   } catch (err) {
     console.error("getProfilePicture error:", err);
-    res.status(500).json({ error: "Failed to fetch profile picture" });
+    res.status(500).json({ error: req.t("common.server_error") });
   }
 };
+
 /** ❌ Delete farmer profile */
 export async function deleteProfile(req, res) {
   try {
     await userService.deleteProfileById(req.user.id);
-    res.json({ message: "User deleted" });
+    res.json({ message: req.t("user.deleted") });
   } catch {
-    res.status(500).json({ error: "Failed to delete user" });
+    res.status(500).json({ error: req.t("common.server_error") });
   }
 }
 
@@ -222,7 +224,10 @@ export async function deleteProfile(req, res) {
 export async function requestEmailVerification(req, res) {
   try {
     const { email } = req.body;
-    if (!email) return res.status(400).json({ error: "ایمیل الزامی است" });
+    if (!email)
+      return res
+        .status(400)
+        .json({ error: req.t("validation.email_required") });
 
     const { code } = await userService.requestEmailVerification(
       req.user.id,
@@ -230,13 +235,13 @@ export async function requestEmailVerification(req, res) {
     );
     await sendMail({
       to: email,
-      subject: "کد تایید ایمیل",
+      subject: "کد تایید ایمیل", // Keep subject in Persian for now, or i18n later
       html: `<h2>کد تایید شما</h2><p style="font-size:20px;font-weight:bold">${code}</p>`,
     });
 
-    res.json({ message: "کد تایید ارسال شد" });
+    res.json({ message: req.t("user.verification_code_sent") });
   } catch (err) {
-    res.status(500).json({ error: err.message || "خطا در ارسال ایمیل" });
+    res.status(500).json({ error: err.message || req.t("common.email_error") });
   }
 }
 
@@ -244,10 +249,11 @@ export async function requestEmailVerification(req, res) {
 export async function verifyEmail(req, res) {
   try {
     const { code } = req.body;
-    if (!code) return res.status(400).json({ error: "کد الزامی است" });
+    if (!code)
+      return res.status(400).json({ error: req.t("validation.code_required") });
 
     const user = await userService.verifyEmailCode(req.user.id, code);
-    res.json({ profile: user, message: "ایمیل تایید شد" });
+    res.json({ profile: user, message: req.t("user.email_verified") });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -258,10 +264,12 @@ export async function changePassword(req, res) {
   try {
     const { currentPassword, newPassword } = req.body;
     if (!currentPassword || !newPassword)
-      return res.status(400).json({ error: "تمامی فیلدها الزامی است" });
+      return res
+        .status(400)
+        .json({ error: req.t("validation.all_fields_required") });
 
     await userService.changePassword(req.user.id, currentPassword, newPassword);
-    res.json({ message: "رمز عبور تغییر یافت" });
+    res.json({ message: req.t("user.password_changed") });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -321,7 +329,8 @@ export async function uploadFile(req, res) {
   try {
     const { containerId } = req.params;
     const file = req.file;
-    if (!file) return res.status(400).json({ error: "File is required" });
+    if (!file)
+      return res.status(400).json({ error: req.t("validation.file_required") });
 
     const destDir = path.join("uploads", "containers", String(containerId));
     fs.mkdirSync(destDir, { recursive: true });
@@ -387,7 +396,7 @@ export const getContainerMetadata = async (req, res) => {
     if (!container) {
       return res
         .status(404)
-        .json({ error: "Container not found or unauthorized" });
+        .json({ error: req.t("container.not_found_or_unauthorized") });
     }
 
     let metadata = {};
@@ -409,7 +418,7 @@ export const getContainerMetadata = async (req, res) => {
     });
   } catch (err) {
     console.error("getContainerMetadata error:", err);
-    res.status(500).json({ error: "Failed to fetch container metadata" });
+    res.status(500).json({ error: req.t("common.server_error") });
   }
 };
 
@@ -434,7 +443,7 @@ export async function listAssignedContainers(req, res) {
   try {
     const supplierId = req.user?.id;
     if (!supplierId) {
-      return res.status(401).json({ error: "Unauthorized" });
+      return res.status(401).json({ error: req.t("auth.unauthorized") });
     }
 
     const {
@@ -462,7 +471,7 @@ export async function listAssignedContainers(req, res) {
         : 500;
 
     return res.status(status).json({
-      error: status === 500 ? "Internal server error" : err.message,
+      error: status === 500 ? req.t("common.server_error") : err.message,
     });
   }
 }
@@ -476,7 +485,7 @@ export async function updateContainerStatusController(req, res) {
       req.body,
     );
     res.json({
-      message: "Container status updated successfully",
+      message: req.t("container.status_updated"),
       container: result,
     });
   } catch (err) {
@@ -497,7 +506,7 @@ export async function listContainerTracking(req, res) {
     );
     res.json(history);
   } catch {
-    res.status(500).json({ error: "Failed to fetch tracking history" });
+    res.status(500).json({ error: req.t("common.server_error") });
   }
 }
 
@@ -506,7 +515,10 @@ export async function addContainerTracking(req, res) {
   try {
     const { id } = req.params;
     const { status, note, tracking_code } = req.body;
-    if (!status) return res.status(400).json({ error: "Status is required" });
+    if (!status)
+      return res
+        .status(400)
+        .json({ error: req.t("validation.status_required") });
 
     const result = await farmerPlansService.addContainerTracking({
       containerId: id,
@@ -531,6 +543,6 @@ export async function getMinimalUsers(req, res) {
     const users = await userService.getMinimalUsers(req.query.role || null);
     res.json(users);
   } catch (err) {
-    res.status(500).json({ error: "Failed to fetch users." });
+    res.status(500).json({ error: req.t("common.server_error") });
   }
 }

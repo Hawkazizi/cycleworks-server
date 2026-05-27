@@ -1,6 +1,5 @@
+// controllers/QC/externalQc.controller.js
 import * as externalQcService from "../../services/QC/externalQc.service.js";
-
-/* ================= LIST APPROVED CONTAINERS ================= */
 
 export const getApprovedContainers = async (req, res) => {
   try {
@@ -19,8 +18,6 @@ export const getApprovedContainers = async (req, res) => {
   }
 };
 
-/* ================= SUBMIT REPORT ================= */
-
 export const submitReport = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -35,7 +32,7 @@ export const submitReport = async (req, res) => {
 
     if (!actual_quantity) {
       return res.status(400).json({
-        error: "actual_quantity is required",
+        error: req.t("validation.quantity_required"),
       });
     }
 
@@ -48,13 +45,14 @@ export const submitReport = async (req, res) => {
       discrepancies,
     });
 
-    res.json(result);
+    res.json({
+      message: req.t("qc.report_submitted"),
+      ...result,
+    });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 };
-
-/* ================= REPORTED CONTAINERS HISTORY ================= */
 
 export const getReportedContainers = async (req, res) => {
   try {

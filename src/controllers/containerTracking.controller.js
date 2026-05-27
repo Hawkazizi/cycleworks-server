@@ -220,7 +220,10 @@ export async function listAllContainersWithTracking(req, res) {
     });
   } catch (err) {
     console.error("listAllContainersWithTracking error:", err);
-    res.status(500).json({ error: err.message || "Internal server error" });
+
+    res
+      .status(500)
+      .json({ error: err.message || req.t("common.server_error") });
   }
 }
 
@@ -260,7 +263,10 @@ export async function addTracking(req, res) {
     const userId = req.user.id;
     const roles = req.user.roles || [];
 
-    if (!status) return res.status(400).json({ error: "Status is required" });
+    if (!status)
+      return res
+        .status(400)
+        .json({ error: req.t("container.status_required") });
 
     if (!roles.includes("admin") && !roles.includes("manager")) {
       const owns = await db("farmer_plan_containers as c")
@@ -270,7 +276,8 @@ export async function addTracking(req, res) {
         .andWhere("c.id", id)
         .first();
 
-      if (!owns) return res.status(403).json({ error: "Unauthorized" });
+      if (!owns)
+        return res.status(403).json({ error: req.t("container.unauthorized") });
     }
 
     const result = await trackingService.addTracking(
@@ -302,7 +309,7 @@ export async function listTracking(req, res) {
         .first();
 
       if (!ownsContainer)
-        return res.status(403).json({ error: "You do not own this container" });
+        return res.status(403).json({ error: req.t("container.not_owner") });
     }
 
     const items = await trackingService.listTracking(id);
@@ -449,7 +456,9 @@ export async function findByTrackingCode(req, res) {
     const { code } = req.params;
     const record = await trackingService.findByTrackingCode(code);
     if (!record)
-      return res.status(404).json({ error: "Tracking code not found" });
+      return res
+        .status(404)
+        .json({ error: req.t("container.tracking_not_found") });
     res.json(record);
   } catch (err) {
     console.error("findByTrackingCode error:", err);
@@ -470,7 +479,7 @@ export async function updateTyNumber(req, res) {
     const roles = req.user.roles || [];
 
     if (!ty_number)
-      return res.status(400).json({ error: "TY number is required" });
+      return res.status(400).json({ error: req.t("container.ty_required") });
 
     // Ownership check for non-admins
     if (!roles.includes("admin") && !roles.includes("manager")) {
@@ -481,7 +490,8 @@ export async function updateTyNumber(req, res) {
         .andWhere("c.id", id)
         .first();
 
-      if (!owns) return res.status(403).json({ error: "Unauthorized" });
+      if (!owns)
+        return res.status(403).json({ error: req.t("container.unauthorized") });
     }
 
     const result = await trackingService.updateTyNumber(id, ty_number, userId);
@@ -504,7 +514,7 @@ export const getContainerWorkflow = async (req, res, next) => {
 
     if (!workflow) {
       return res.status(404).json({
-        message: "Container not found",
+        message: req.t("container.workflow_not_found"),
       });
     }
 

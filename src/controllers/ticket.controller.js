@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import * as ticketService from "../services/ticket.service.js";
 
-// you already have authorize middleware; we’ll use req.user.roles
+// you already have authorize middleware; we'll use req.user.roles
 function isAdminLike(req) {
   const roles = req.user?.roles || [];
   return roles.includes("admin") || roles.includes("manager");
@@ -39,7 +39,10 @@ function deleteFileIfExists(filePath) {
 export const createTicket = async (req, res) => {
   try {
     const { subject, message, assignedTo } = req.body;
-    if (!message) return res.status(400).json({ error: "متن تیکت الزامی است" });
+    if (!message)
+      return res
+        .status(400)
+        .json({ error: req.t("validation.message_required") });
 
     const userId = req.user.id;
     const role = (req.user.roles && req.user.roles[0]) || "user";
@@ -56,7 +59,7 @@ export const createTicket = async (req, res) => {
       file: fileInfo,
     });
 
-    res.status(201).json({ message: "تیکت ارسال شد", ticket });
+    res.status(201).json({ message: req.t("ticket.created"), ticket });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -101,12 +104,16 @@ export async function getTicketThread(req, res) {
     res.status(400).json({ error: e.message });
   }
 }
+
 /** POST /tickets/:id/replies */
 export const replyToTicket = async (req, res) => {
   try {
     const ticketId = Number(req.params.id);
     const { message } = req.body;
-    if (!message) return res.status(400).json({ error: "متن پاسخ الزامی است" });
+    if (!message)
+      return res
+        .status(400)
+        .json({ error: req.t("validation.reply_required") });
 
     const userId = req.user.id;
 
@@ -121,7 +128,7 @@ export const replyToTicket = async (req, res) => {
       isAdmin: false,
     });
 
-    res.status(201).json({ message: "پاسخ با موفقیت ثبت شد", reply });
+    res.status(201).json({ message: req.t("ticket.reply_success"), reply });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -145,7 +152,7 @@ export const updateTicket = async (req, res) => {
       file: fileInfo,
     });
 
-    res.json({ message: "تیکت به‌روزرسانی شد", ticket: updated });
+    res.json({ message: req.t("ticket.updated"), ticket: updated });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -162,7 +169,7 @@ export const closeTicket = async (req, res) => {
       isAdmin: false, // ✅
     });
 
-    res.json({ message: "تیکت بسته شد", ticket: updated });
+    res.json({ message: req.t("ticket.closed"), ticket: updated });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -172,7 +179,7 @@ export const closeTicket = async (req, res) => {
 export const deleteTicket = async (req, res) => {
   try {
     if (!isAdminLike(req)) {
-      return res.status(403).json({ error: "دسترسی غیرمجاز" });
+      return res.status(403).json({ error: req.t("auth.unauthorized") });
     }
 
     const ticketId = Number(req.params.id);
@@ -186,11 +193,12 @@ export const deleteTicket = async (req, res) => {
     deleteFileIfExists(ticket.attachment_path);
     replies.forEach((r) => deleteFileIfExists(r.attachment_path));
 
-    res.json({ message: "تیکت و پاسخ‌ها حذف شدند" });
+    res.json({ message: req.t("ticket.deleted") });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 };
+
 // controllers/ticket.controller.js
 export const listRecipients = async (req, res) => {
   try {

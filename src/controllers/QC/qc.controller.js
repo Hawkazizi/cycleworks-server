@@ -1,3 +1,4 @@
+// controllers/QC/qc.controller.js
 import * as qcService from "../../services/QC/qc.service.js";
 
 export const getProfile = async (req, res) => {
@@ -6,8 +7,6 @@ export const getProfile = async (req, res) => {
       userId: req.user.id,
       licenseId: req.user.licenseId,
     });
-
-    // roles are already inside req.user.roles from JWT
     res.json({
       ...profile,
       roles: req.user.roles || [],
@@ -17,29 +16,24 @@ export const getProfile = async (req, res) => {
   }
 };
 
-/* ---------------- UPDATE PROFILE ---------------- */
 export const updateProfile = async (req, res) => {
   try {
     const userId = req.user.id;
     const { name, email, mobile } = req.body;
-
     const updated = await qcService.updateProfile(userId, {
       name,
       email,
       mobile,
     });
-
     res.json(updated);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 };
 
-/* ---------------- GET CONTAINERS ---------------- */
 export const getQcContainers = async (req, res) => {
   try {
     const userId = req.user.id;
-
     const {
       page = 1,
       limit = 20,
@@ -68,11 +62,10 @@ export const getQcContainers = async (req, res) => {
     res.json(result);
   } catch (err) {
     res.status(400).json({
-      error: err.message || "Failed to load QC containers",
+      error: err.message || req.t("errors.fetch_qc_containers"),
     });
   }
 };
-/* ---------------- GET SINGLE CONTAINER ---------------- */
 
 export const getQcContainerById = async (req, res) => {
   try {
@@ -80,7 +73,7 @@ export const getQcContainerById = async (req, res) => {
     const containerId = Number(req.params.id);
 
     if (!containerId) {
-      return res.status(400).json({ error: "Invalid container id" });
+      return res.status(400).json({ error: req.t("validation.invalid_id") });
     }
 
     const container = await qcService.getQcContainerById({
@@ -91,22 +84,22 @@ export const getQcContainerById = async (req, res) => {
     res.json(container);
   } catch (err) {
     res.status(404).json({
-      error: err.message || "Container not found",
+      error: err.message || req.t("container.not_found"),
     });
   }
 };
+
 export const getArrivedContainers = async (req, res) => {
   try {
     const userId = req.user.id;
     const { page = 1, limit = 20, qc_status } = req.query;
 
     const ALLOWED_STATUSES = ["arrived", "qc_submitted", "approved", "held"];
-
     const finalStatus = qc_status || "arrived";
 
     if (!ALLOWED_STATUSES.includes(finalStatus)) {
       return res.status(400).json({
-        error: "Invalid qc_status",
+        error: req.t("validation.invalid_qc_status"),
       });
     }
 
@@ -159,7 +152,6 @@ export const getApprovedContainers = async (req, res) => {
   }
 };
 
-/* ================= MARK ARRIVED ================= */
 export const markArrived = async (req, res) => {
   try {
     const { id } = req.params;
@@ -168,7 +160,7 @@ export const markArrived = async (req, res) => {
 
     if (!arrived_at || !arrival_place) {
       return res.status(400).json({
-        error: "Arrival time and place are required",
+        error: req.t("validation.arrival_info_required"),
       });
     }
 
@@ -179,22 +171,25 @@ export const markArrived = async (req, res) => {
       userId,
     });
 
-    res.json(result);
+    res.json({
+      message: req.t("qc.arrived"),
+      ...result,
+    });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 };
-/* ================= QC in progress ================= */
 
 export const startQcInspection = async (req, res) => {
   try {
     const containerId = Number(req.params.id);
     const userId = req.user.id;
-
     const inspectionData = req.body;
 
     if (!inspectionData?.actual_carton_count) {
-      return res.status(400).json({ error: "Inspection data is required" });
+      return res
+        .status(400)
+        .json({ error: req.t("validation.inspection_data_required") });
     }
 
     const result = await qcService.startQcInspection({
@@ -203,13 +198,15 @@ export const startQcInspection = async (req, res) => {
       inspectionData,
     });
 
-    res.json(result);
+    res.json({
+      message: req.t("qc.inspection_started"),
+      ...result,
+    });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 };
 
-/* ================= CLEAR ================= */
 export const clearContainer = async (req, res) => {
   try {
     const { id } = req.params;
@@ -220,13 +217,15 @@ export const clearContainer = async (req, res) => {
       userId,
     });
 
-    res.json(result);
+    res.json({
+      message: req.t("qc.cleared"),
+      ...result,
+    });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 };
 
-/* ================= HOLD ================= */
 export const holdContainer = async (req, res) => {
   try {
     const { id } = req.params;
@@ -235,7 +234,7 @@ export const holdContainer = async (req, res) => {
 
     if (!reason) {
       return res.status(400).json({
-        error: "Hold reason is required",
+        error: req.t("validation.hold_reason_required"),
       });
     }
 
@@ -246,7 +245,10 @@ export const holdContainer = async (req, res) => {
       userId,
     });
 
-    res.json(result);
+    res.json({
+      message: req.t("qc.held"),
+      ...result,
+    });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

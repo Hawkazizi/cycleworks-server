@@ -4,6 +4,7 @@ import db from "../../db/knex.js";
 import fs from "fs";
 import path from "path";
 import * as superAdminService from "../../services/superAdmin/superAdmin.service.js";
+
 const SUPER_ADMIN_KEY = process.env.SUPER_ADMIN_KEY;
 
 /* =======================================================================
@@ -13,11 +14,11 @@ export const login = async (req, res) => {
   const { key } = req.body;
 
   if (!SUPER_ADMIN_KEY) {
-    return res.status(500).json({ error: "SUPER_ADMIN_KEY not configured" });
+    return res.status(500).json({ error: req.t("auth.key_not_configured") });
   }
 
   if (!key || key !== SUPER_ADMIN_KEY) {
-    return res.status(401).json({ error: "Invalid credentials" });
+    return res.status(401).json({ error: req.t("auth.invalid_key") });
   }
 
   const token = jwt.sign(
@@ -43,41 +44,35 @@ export const login = async (req, res) => {
 export const me = (req, res) => {
   res.json({ user: req.user });
 };
+
 /* =======================================================================
    🧩 DASHBOARD (Super Admin)
 ======================================================================= */
-
 export const getAdminDashboard = async (req, res) => {
   try {
     const data = await superAdminService.getAdminDashboard();
-
-    // small cache for dashboard
     res.set("Cache-Control", "private, max-age=20");
-
     return res.json(data);
   } catch (err) {
     console.error("superadmin getAdminDashboard error:", err);
-    return res.status(500).json({ error: "Failed to load dashboard" });
+    return res.status(500).json({ error: req.t("dashboard.load_failed") });
   }
 };
 
 export const getServerSpecs = async (req, res) => {
   try {
     const data = await superAdminService.getServerSpecs();
-
-    // Short cache (optional)
     res.set("Cache-Control", "private, max-age=10");
     return res.json(data);
   } catch (err) {
     console.error("superadmin getServerSpecs error:", err);
-    return res.status(500).json({ error: "Failed to load server specs" });
+    return res.status(500).json({ error: req.t("dashboard.specs_failed") });
   }
 };
 
 /* =======================================================================
    🧩 ROLES & SETTINGS (Super Admin)
 ======================================================================= */
-
 export const getRoles = async (req, res) => {
   try {
     const roles = await superAdminService.getRoles();
@@ -100,23 +95,24 @@ export const updateSetting = async (req, res) => {
   try {
     const { key } = req.params;
     const { value } = req.body;
-
     const updated = await superAdminService.updateSetting(key, value);
     res.json({ setting: updated });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 };
+
 /* =======================================================================
    👥 USER MANAGEMENT (Super Admin)
 ======================================================================= */
-
 export const createUser = async (req, res) => {
   try {
     const { name, email, password, role_id, mobile } = req.body;
 
     if (!name || !email || !password || !role_id || !mobile) {
-      return res.status(400).json({ error: "اطلاعات کاربر ناقص است." });
+      return res
+        .status(400)
+        .json({ error: req.t("validation.incomplete_user_info") });
     }
 
     const user = await superAdminService.createUserWithRole({
@@ -181,7 +177,8 @@ export async function getUserById(req, res) {
       .where("u.id", id)
       .first();
 
-    if (!user) return res.status(404).json({ error: "User not found" });
+    if (!user)
+      return res.status(404).json({ error: req.t("common.not_found") });
 
     const buyerRequests = await db("buyer_requests as br")
       .leftJoin("users as b", "br.buyer_id", "b.id")
@@ -252,7 +249,7 @@ export const getUserProfilePicture = async (req, res) => {
     );
 
     if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: "File not found on server" });
+      return res.status(404).json({ error: req.t("common.file_not_found") });
     }
 
     const ext = path.extname(filePath).toLowerCase();
@@ -267,7 +264,7 @@ export const getUserProfilePicture = async (req, res) => {
     fs.createReadStream(filePath).pipe(res);
   } catch (err) {
     console.error("superadmin getUserProfilePicture error:", err);
-    res.status(500).json({ error: "Failed to fetch profile picture" });
+    res.status(500).json({ error: req.t("errors.fetch_picture") });
   }
 };
 
@@ -275,7 +272,7 @@ export const deleteUser = async (req, res) => {
   try {
     const { id } = req.params;
     await superAdminService.deleteUser(Number(id));
-    res.json({ success: true, message: "User and related data deleted" });
+    res.json({ success: true, message: req.t("user.deleted") });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -284,7 +281,6 @@ export const deleteUser = async (req, res) => {
 /* =======================================================================
    🔑 LICENSE KEYS (Super Admin)
 ======================================================================= */
-
 export const getLicenseKeys = async (req, res) => {
   try {
     const keys = await superAdminService.getAllLicenseKeys();
@@ -297,7 +293,6 @@ export const getLicenseKeys = async (req, res) => {
 export const createLicenseKey = async (req, res) => {
   try {
     const { key, role_id, country_code, assigned_to, user } = req.body;
-
     const created = await superAdminService.createLicenseKey({
       key,
       role_id,
@@ -305,7 +300,6 @@ export const createLicenseKey = async (req, res) => {
       assigned_to,
       user,
     });
-
     res.status(201).json({ key: created });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -316,7 +310,6 @@ export const updateLicenseKey = async (req, res) => {
   try {
     const { id } = req.params;
     const { key, role_id, country_code, assigned_to } = req.body;
-
     const updated = await superAdminService.updateLicenseKey({
       id,
       key,
@@ -324,7 +317,6 @@ export const updateLicenseKey = async (req, res) => {
       country_code,
       assigned_to,
     });
-
     res.json({ key: updated });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -354,7 +346,6 @@ export const deleteLicenseKey = async (req, res) => {
 /* =======================================================================
    📋 APPLICATIONS (Super Admin)
 ======================================================================= */
-
 export const getApplications = async (req, res) => {
   try {
     const {
@@ -386,16 +377,13 @@ export const getApplications = async (req, res) => {
   }
 };
 
-// Get applications by user
 export const getApplicationsByUser = async (req, res) => {
   try {
     const { userId } = req.params;
     const apps = await superAdminService.getApplicationsByUser(userId);
 
     if (!apps || apps.length === 0) {
-      return res
-        .status(404)
-        .json({ message: "No application found for this user" });
+      return res.status(404).json({ message: req.t("application.not_found") });
     }
 
     res.json(apps);
@@ -405,16 +393,11 @@ export const getApplicationsByUser = async (req, res) => {
   }
 };
 
-// Update application (Super Admin)
 export const updateApplication = async (req, res) => {
   try {
     const { id } = req.params;
-
-    // superadmin identity from JWT
     const userId = req.user.id;
     const role = "super_admin";
-
-    // body + uploaded files
     const updates = { ...req.body };
 
     if (req.files && Object.keys(req.files).length > 0) {
@@ -446,11 +429,10 @@ export const updateApplication = async (req, res) => {
   }
 };
 
-// Approve / reject (Super Admin)
 export const reviewApplication = async (req, res) => {
   try {
     const { id } = req.params;
-    const { status } = req.body; // "approved" | "rejected" | etc
+    const { status } = req.body;
     const reviewerId = req.user.id;
 
     const result = await superAdminService.reviewApplication(
@@ -466,12 +448,10 @@ export const reviewApplication = async (req, res) => {
   }
 };
 
-// Final review (Super Admin)
 export const finalizeApplicationReview = async (req, res) => {
   try {
     const { id } = req.params;
     const { final_approved, final_admin_comment } = req.body;
-
     const userId = req.user.id;
     const role = "super_admin";
 

@@ -1,0 +1,147 @@
+{
+  "auth": {
+    "invalid_credentials": "ایمیل یا رمز عبور اشتباه است",
+    "unauthorized": "دسترسی غیرمجاز",
+    "token_expired": "توکن منقضی شده است",
+    "login_success": "ورود با موفقیت انجام شد",
+    "license_required": "کلید لایسنس الزامی است",
+    "invalid_key": "کلید نامعتبر است",
+    "key_not_configured": "کلید سوپر ادمین پیکربندی نشده است"
+  },
+  "validation": {
+    "required": "این فیلد الزامی است",
+    "mobile_password_required": "شماره موبایل و رمز عبور الزامی است",
+    "email_required": "ایمیل الزامی است",
+    "code_required": "کد الزامی است",
+    "all_fields_required": "تمامی فیلدها الزامی است",
+    "file_required": "فایل الزامی است",
+    "status_required": "وضعیت الزامی است",
+    "message_required": "متن تیکت الزامی است",
+    "reply_required": "متن پاسخ الزامی است",
+    "profile_field_required": "حداقل یکی از فیلدهای پروفایل الزامی است",
+    "incomplete_user_info": "اطلاعات کاربر ناقص است",
+    "invalid_date_range": "تاریخ شروع نمی‌تواند بعد از تاریخ پایان باشد",
+    "invalid_action": "عملیات نامعتبر است",
+    "invalid_id": "شناسه نامعتبر است",
+    "missing_request_id": "شناسه درخواست الزامی است",
+    "invalid_completed_date": "تاریخ تکمیل نامعتبر یا خالی است",
+    "resolution_action_required": "عملیات رفع توقف الزامی است",
+    "excel_files_required": "فایل اکسل آپلود نشده است",
+    "excel_empty": "برگه‌های اکسل خالی هستند",
+    "no_consignee_found": "مشتری/گیرنده‌ای در اکسل یافت نشد",
+    "arrival_info_required": "زمان و مکان ورود الزامی است",
+    "inspection_data_required": "داده‌های بازرسی الزامی است",
+    "hold_reason_required": "دلیل توقف الزامی است",
+    "quantity_required": "مقدار واقعی الزامی است",
+    "invalid_qc_status": "وضعیت کنترل کیفیت نامعتبر است"
+  },
+  "common": {
+    "success": "عملیات با موفقیت انجام شد",
+    "error": "خطایی رخ داد",
+    "not_found": "موردی یافت نشد",
+    "server_error": "خطای داخلی سرور",
+    "no_file": "فایلی آپلود نشده است",
+    "file_not_found": "فایل در سرور یافت نشد",
+    "email_error": "خطا در ارسال ایمیل"
+  },
+  "user": {
+    "registration_pending": "درخواست ثبت شد، منتظر تأیید مدیر",
+    "profile_picture_updated": "عکس پروفایل به‌روزرسانی شد",
+    "deleted": "کاربر حذف شد",
+    "verification_code_sent": "کد تایید ارسال شد",
+    "email_verified": "ایمیل تایید شد",
+    "password_changed": "رمز عبور تغییر یافت",
+    "profile_not_found": "پروفایل یافت نشد",
+    "profile_updated": "پروفایل با موفقیت بروزرسانی شد",
+    "profile_deleted": "پروفایل با موفقیت حذف شد"
+  },
+  "buyer": {
+    "profile_not_found": "پروفایل یافت نشد",
+    "profile_deleted": "پروفایل خریدار با موفقیت حذف شد",
+    "profile_picture_updated": "عکس پروفایل به‌روزرسانی شد",
+    "request_not_found": "درخواست یافت نشد",
+    "request_created": "درخواست با موفقیت ثبت شد",
+    "request_updated": "درخواست به‌روزرسانی شد",
+    "request_cancelled": "درخواست لغو شد",
+    "invalid_supplier": "تامین‌کننده معتبر نیست",
+    "request_status_updated": "درخواست با وضعیت '{{action}}' به‌روزرسانی شد",
+    "delivery_range_updated": "بازه تحویل با موفقیت به‌روزرسانی شد"
+  },
+  "container": {
+    "not_found": "کانتینر یافت نشد",
+    "unauthorized": "دسترسی غیرمجاز",
+    "not_owner": "شما مالک این کانتینر نیستید",
+    "tracking_not_found": "کد رهگیری یافت نشد",
+    "status_required": "وضعیت الزامی است",
+    "ty_required": "شماره TY الزامی است",
+    "status_updated": "وضعیت کانتینر به‌روزرسانی شد",
+    "workflow_not_found": "گردش کار کانتینر یافت نشد",
+    "details_failed": "خطا در دریافت جزئیات کانتینر",
+    "reject_toggle_success": "وضعیت رد/تایید با موفقیت بروزرسانی شد",
+    "completed_success": "درخواست و کانتینرها به عنوان تکمیل‌شده علامت‌گذاری شدند",
+    "metadata_saved": "متادیتای ادمین با موفقیت ذخیره شد",
+    "transferred": "کانتینر منتقل شد",
+    "supplier_changed": "تامین‌کننده کانتینر تغییر یافت"
+  },
+  "ticket": {
+    "message_required": "متن تیکت الزامی است",
+    "created": "تیکت با موفقیت ارسال شد",
+    "updated": "تیکت با موفقیت به‌روزرسانی شد",
+    "reply_success": "پاسخ با موفقیت ثبت شد",
+    "closed": "تیکت بسته شد",
+    "deleted": "تیکت و پاسخ‌ها حذف شدند"
+  },
+  "application": {
+    "not_found": "درخواستی برای این کاربر یافت نشد",
+    "reviewed": "درخواست بررسی شد",
+    "finalized": "بررسی نهایی درخواست انجام شد"
+  },
+  "supplier": {
+    "assigned_success": "تخصیص تامین‌کنندگان بروزرسانی شد",
+    "cleared_success": "تمام تامین‌کنندگان حذف شدند",
+    "assignment_failed": "خطا در تخصیص تامین‌کنندگان"
+  },
+  "report": {
+    "export_failed": "خطا در خروجی گرفتن گزارش‌ها",
+    "qc_not_found": "گزارش کنترل کیفیت یافت نشد"
+  },
+  "import": {
+    "success": "✅ واردات اکسل با موفقیت انجام شد — گروه‌بندی شده بر اساس مشتری/گیرنده",
+    "failed": "خطا در واردات اکسل"
+  },
+  "qc": {
+    "hold_resolved": "توقف کنترل کیفیت با موفقیت رفع شد",
+    "arrived": "کانتینر وارد شد",
+    "inspection_started": "بازرسی کنترل کیفیت شروع شد",
+    "cleared": "کانتینر تایید و آزاد شد",
+    "held": "کانتینر متوقف شد",
+    "report_submitted": "گزارش کنترل کیفیت خارجی ثبت شد"
+  },
+  "dashboard": {
+    "load_failed": "خطا در بارگذاری داشبورد",
+    "specs_failed": "خطا در بارگذاری مشخصات سرور"
+  },
+  "errors": {
+    "fetch_profile": "خطا در دریافت پروفایل",
+    "upload_picture": "خطا در آپلود عکس پروفایل",
+    "fetch_picture": "خطا در دریافت عکس پروفایل",
+    "delete_profile": "خطا در حذف پروفایل",
+    "load_dashboard": "خطا در بارگذاری داشبورد",
+    "fetch_requests": "خطا در دریافت درخواست‌ها",
+    "load_request": "خطا در بارگذاری درخواست",
+    "fetch_users": "خطا در دریافت کاربران",
+    "fetch_buyers": "خطا در دریافت لیست خریداران",
+    "fetch_user_role": "خطا در دریافت کاربران با نقش کاربر",
+    "update_request": "خطا در بروزرسانی درخواست",
+    "load_containers": "خطا در بارگذاری کانتینرها",
+    "assign_suppliers": "خطا در تخصیص تامین‌کنندگان",
+    "complete_request": "خطا در تکمیل درخواست",
+    "toggle_status": "خطا در تغییر وضعیت",
+    "import_excel": "خطا در واردات اکسل",
+    "resolve_qc_hold": "خطا در رفع توقف کنترل کیفیت",
+    "fetch_qc_containers": "خطا در بارگذاری کانتینرهای کنترل کیفیت",
+    "fetch_container": "خطا در دریافت کانتینر",
+    "fetch_tracking": "خطا در دریافت تاریخچه رهگیری",
+    "fetch_external_qc": "خطا در دریافت گزارش کنترل کیفیت خارجی"
+  }
+}

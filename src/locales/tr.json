@@ -1,0 +1,147 @@
+{
+  "auth": {
+    "invalid_credentials": "Geçersiz e-posta veya şifre",
+    "unauthorized": "Yetkisiz erişim",
+    "token_expired": "Token süresi doldu",
+    "login_success": "Giriş başarılı",
+    "license_required": "Lisans anahtarı gereklidir",
+    "invalid_key": "Geçersiz anahtar",
+    "key_not_configured": "Süper yönetici anahtarı yapılandırılmadı"
+  },
+  "validation": {
+    "required": "Bu alan zorunludur",
+    "mobile_password_required": "Telefon numarası ve şifre gereklidir",
+    "email_required": "E-posta gereklidir",
+    "code_required": "Kod gereklidir",
+    "all_fields_required": "Tüm alanlar gereklidir",
+    "file_required": "Dosya gereklidir",
+    "status_required": "Durum gereklidir",
+    "message_required": "Destek talebi mesajı gereklidir",
+    "reply_required": "Yanıt mesajı gereklidir",
+    "profile_field_required": "En az bir profil alanı gereklidir",
+    "incomplete_user_info": "Kullanıcı bilgileri eksik",
+    "invalid_date_range": "Başlangıç tarihi bitiş tarihinden sonra olamaz",
+    "invalid_action": "Geçersiz işlem",
+    "invalid_id": "Geçersiz kimlik",
+    "missing_request_id": "İstek kimliği gereklidir",
+    "invalid_completed_date": "Tamamlanma tarihi geçersiz veya eksik",
+    "resolution_action_required": "Çözüm işlemi gereklidir",
+    "excel_files_required": "Excel dosyası yüklenmedi",
+    "excel_empty": "Excel sayfaları boş",
+    "no_consignee_found": "Excel'de Müşteri/Alıcı bulunamadı",
+    "arrival_info_required": "Varış zamanı ve yeri gereklidir",
+    "inspection_data_required": "Denetim verileri gereklidir",
+    "hold_reason_required": "Durdurma nedeni gereklidir",
+    "quantity_required": "Gerçek miktar gereklidir",
+    "invalid_qc_status": "Geçersiz kalite kontrol durumu"
+  },
+  "common": {
+    "success": "İşlem başarıyla tamamlandı",
+    "error": "Bir hata oluştu",
+    "not_found": "Kaynak bulunamadı",
+    "server_error": "Sunucu iç hatası",
+    "no_file": "Dosya yüklenmedi",
+    "file_not_found": "Dosya sunucuda bulunamadı",
+    "email_error": "E-posta gönderilemedi"
+  },
+  "user": {
+    "registration_pending": "Kayıt gönderildi, yönetici onayı bekleniyor",
+    "profile_picture_updated": "Profil fotoğrafı güncellendi",
+    "deleted": "Kullanıcı silindi",
+    "verification_code_sent": "Doğrulama kodu gönderildi",
+    "email_verified": "E-posta doğrulandı",
+    "password_changed": "Şifre değiştirildi",
+    "profile_not_found": "Profil bulunamadı",
+    "profile_updated": "Profil başarıyla güncellendi",
+    "profile_deleted": "Profil başarıyla silindi"
+  },
+  "buyer": {
+    "profile_not_found": "Profil bulunamadı",
+    "profile_deleted": "Alıcı profili başarıyla silindi",
+    "profile_picture_updated": "Profil fotoğrafı güncellendi",
+    "request_not_found": "İstek bulunamadı",
+    "request_created": "İstek başarıyla oluşturuldu",
+    "request_updated": "İstek başarıyla güncellendi",
+    "request_cancelled": "İstek iptal edildi",
+    "invalid_supplier": "Geçersiz tedarikçi",
+    "request_status_updated": "İstek '{{action}}' durumuyla güncellendi",
+    "delivery_range_updated": "Teslimat aralığı başarıyla güncellendi"
+  },
+  "container": {
+    "not_found": "Konteyner bulunamadı",
+    "unauthorized": "Yetkisiz erişim",
+    "not_owner": "Bu konteynerin sahibi değilsiniz",
+    "tracking_not_found": "Takip kodu bulunamadı",
+    "status_required": "Durum gereklidir",
+    "ty_required": "TY numarası gereklidir",
+    "status_updated": "Konteyner durumu güncellendi",
+    "workflow_not_found": "Konteyner iş akışı bulunamadı",
+    "details_failed": "Konteyner detayları alınamadı",
+    "reject_toggle_success": "Red/Onay durumu başarıyla güncellendi",
+    "completed_success": "İstek ve konteynerler tamamlandı olarak işaretlendi",
+    "metadata_saved": "Yönetici metaverisi başarıyla kaydedildi",
+    "transferred": "Konteyner aktarıldı",
+    "supplier_changed": "Konteyner tedarikçisi değiştirildi"
+  },
+  "ticket": {
+    "message_required": "Destek talebi mesajı gereklidir",
+    "created": "Destek talebi başarıyla gönderildi",
+    "updated": "Destek talebi başarıyla güncellendi",
+    "reply_success": "Yanıt başarıyla kaydedildi",
+    "closed": "Destek talebi kapatıldı",
+    "deleted": "Destek talebi ve yanıtlar silindi"
+  },
+  "application": {
+    "not_found": "Bu kullanıcı için başvuru bulunamadı",
+    "reviewed": "Başvuru incelendi",
+    "finalized": "Başvuru nihai incelemesi tamamlandı"
+  },
+  "supplier": {
+    "assigned_success": "Tedarikçi ataması güncellendi",
+    "cleared_success": "Tüm tedarikçiler kaldırıldı",
+    "assignment_failed": "Tedarikçi ataması başarısız oldu"
+  },
+  "report": {
+    "export_failed": "Raporlar dışa aktarılamadı",
+    "qc_not_found": "Kalite kontrol raporu bulunamadı"
+  },
+  "import": {
+    "success": "✅ Excel içe aktarma başarıyla tamamlandı — alıcı/müşteri bazında gruplandırıldı",
+    "failed": "Excel verileri içe aktarılamadı"
+  },
+  "qc": {
+    "hold_resolved": "Kalite kontrol durdurması başarıyla çözüldü",
+    "arrived": "Konteyner ulaştı",
+    "inspection_started": "Kalite kontrol denetimi başlatıldı",
+    "cleared": "Konteyner onaylandı ve serbest bırakıldı",
+    "held": "Konteyner durduruldu",
+    "report_submitted": "Harici kalite kontrol raporu gönderildi"
+  },
+  "dashboard": {
+    "load_failed": "Panel yüklenemedi",
+    "specs_failed": "Sunucu özellikleri yüklenemedi"
+  },
+  "errors": {
+    "fetch_profile": "Profil alınamadı",
+    "upload_picture": "Profil fotoğrafı yüklenemedi",
+    "fetch_picture": "Profil fotoğrafı alınamadı",
+    "delete_profile": "Profil silinemedi",
+    "load_dashboard": "Panel yüklenemedi",
+    "fetch_requests": "İstekler alınamadı",
+    "load_request": "İstek yüklenemedi",
+    "fetch_users": "Kullanıcılar alınamadı",
+    "fetch_buyers": "Alıcı listesi alınamadı",
+    "fetch_user_role": "'Kullanıcı' rolüne sahip kullanıcılar alınamadı",
+    "update_request": "İstek güncellenemedi",
+    "load_containers": "Konteynerler yüklenemedi",
+    "assign_suppliers": "Tedarikçiler atanamadı",
+    "complete_request": "İstek tamamlanamadı",
+    "toggle_status": "Durum değiştirilemedi",
+    "import_excel": "Excel verileri içe aktarılamadı",
+    "resolve_qc_hold": "Kalite kontrol durdurması çözülemadı",
+    "fetch_qc_containers": "Kalite kontrol konteynerleri yüklenemedi",
+    "fetch_container": "Konteyner alınamadı",
+    "fetch_tracking": "Takip geçmişi alınamadı",
+    "fetch_external_qc": "Harici kalite kontrol raporu alınamadı"
+  }
+}
