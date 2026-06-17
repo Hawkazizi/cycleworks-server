@@ -1,7 +1,8 @@
 import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
-import db from "./db/knex.js";
+// 👇 Import the Proxy (db) AND the raw connections (dbIR, dbTR) + AsyncLocalStorage (als)
+import db, { dbIR, dbTR, als } from "./db/knex.js";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -16,7 +17,7 @@ import notificationRoutes from "./routes/notification.routes.js";
 import ticketRoutes from "./routes/ticket.routes.js";
 import qcRoutes from "./routes/QC/qc.routes.js";
 
-// ✅ NEW: i18n middleware
+// ✅ i18n middleware
 import i18nMiddleware from "./middleware/i18n.js";
 
 dotenv.config();
@@ -49,6 +50,15 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 // ✅ i18n middleware (MUST be before routes)
 app.use(i18nMiddleware);
 
+// ✅ NEW: Multi-tenancy middleware (MUST be before routes)
+app.use((req, res, next) => {
+  // Read the header sent by the frontend (defaults to IR if missing)
+  const country = req.headers["x-country"]?.toUpperCase() || "IR";
+
+  // Run the rest of the request lifecycle inside the AsyncLocalStorage context
+  als.run(country, next);
+});
+
 // Healthcheck
 app.get("/", (req, res) => {
   res.send("CycleWorks API is running 🚀");
@@ -65,17 +75,21 @@ app.use("/api/qc", qcRoutes);
 app.use("/api/external-qc", externalQcRouter);
 app.use("/api/tickets", ticketRoutes);
 
-// Test DB connection on startup
-db.raw("SELECT 1+1 AS result")
-  .then(() => {
-    console.log("✅ Database connected");
-  })
-  .catch((err) => {
-    console.error("❌ Database connection failed:", err);
-  });
+// Test BOTH DB connections on startup
+Promise.all([
+  dbIR
+    .raw("SELECT 1+1 AS result")
+    .then(() => console.log("✅ Iran DB connected")),
+  dbTR
+    .raw("SELECT 1+1 AS result")
+    .then(() => console.log("✅ Turkey DB connected")),
+]).catch((err) => {
+  console.error("❌ Database connection failed:", err);
+});
 
 // Start server
 app.listen(PORT, () => {
   console.log(`🚀 Server listening on port ${PORT}`);
   console.log(`🌐 Supported languages: fa, en, tr`);
+  console.log(`🗄️ Multi-tenancy enabled: IR (Iran), TR (Turkey)`);
 });
