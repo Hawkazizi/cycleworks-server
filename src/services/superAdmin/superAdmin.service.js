@@ -686,32 +686,40 @@ export const createUserWithRole = async ({
 };
 
 export const getAllUsers = async () => {
-  return db("users as u")
-    .join("user_roles as ur", "u.id", "ur.user_id")
-    .join("roles as r", "ur.role_id", "r.id")
-    .leftJoin("farmer_plan_containers as c", "c.supplier_id", "u.id")
-    .where("r.name", "user")
-    .groupBy(
-      "u.id",
-      "u.name",
-      "u.email",
-      "u.mobile",
-      "u.status",
-      "u.created_at",
-      "r.name",
-    )
-    .select(
-      "u.id",
-      "u.name",
-      db.raw("COALESCE(u.email, '') as email"), // ✅ force safe return
-      "u.mobile",
-      "u.status",
-      "u.created_at",
-      "r.name as role_name",
-      db.raw("COUNT(DISTINCT c.id) AS containers_count"),
-    )
-    .orderBy("u.id", "asc");
+  return (
+    db("users as u")
+      // ✅ FIX 1: Changed .join to .leftJoin so users without a role mapping still show up
+      .leftJoin("user_roles as ur", "u.id", "ur.user_id")
+      .leftJoin("roles as r", "ur.role_id", "r.id")
+      .leftJoin("farmer_plan_containers as c", "c.supplier_id", "u.id")
+
+      // ✅ FIX 2: Removed .where("r.name", "user")
+      // Previously, if the role name wasn't exactly "user", the user was hidden!
+
+      .groupBy(
+        "u.id",
+        "u.name",
+        "u.email",
+        "u.mobile",
+        "u.status",
+        "u.created_at",
+        "r.name",
+      )
+      .select(
+        "u.id",
+        "u.name",
+        db.raw("COALESCE(u.email, '') as email"),
+        "u.mobile",
+        "u.status",
+        "u.created_at",
+        // ✅ FIX 3: Default to 'user' (supplier) if no role is assigned in the DB
+        db.raw("COALESCE(r.name, 'user') as role_name"),
+        db.raw("COUNT(DISTINCT c.id) AS containers_count"),
+      )
+      .orderBy("u.id", "asc")
+  );
 };
+
 export const toggleUserStatus = async (targetUserId, action, superAdminId) => {
   if (targetUserId === superAdminId) {
     throw new Error("Admins cannot ban themselves");
