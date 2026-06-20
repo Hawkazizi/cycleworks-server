@@ -789,6 +789,7 @@ export async function createLicenseKey({
   country_code,
   assigned_to,
   user,
+  currentCountry = "IR", // ✅ Add this parameter
 }) {
   let userId = assigned_to || null;
 
@@ -801,7 +802,7 @@ export async function createLicenseKey({
       throw new Error("QC licenses must have country_code: OM, QA, BA, or KW");
     }
   } else {
-    finalCountry = "IR";
+    finalCountry = currentCountry; // ✅ Use the current country context
   }
 
   // Auto-create user if provided
@@ -847,6 +848,7 @@ export async function updateLicenseKey({
   role_id,
   country_code,
   assigned_to,
+  currentCountry = "IR", // ✅ Add this parameter
 }) {
   const existing = await db("admin_license_keys").where({ id }).first();
   if (!existing) throw new Error("License key not found");
@@ -860,7 +862,7 @@ export async function updateLicenseKey({
       throw new Error("QC licenses must have country_code: OM, QA, BA, or KW");
     }
   } else {
-    finalCountry = "IR";
+    finalCountry = currentCountry; // ✅ Use the current country context
   }
 
   const updatedRows = await db("admin_license_keys").where({ id }).update(

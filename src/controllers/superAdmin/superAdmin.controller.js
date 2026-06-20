@@ -293,12 +293,14 @@ export const getLicenseKeys = async (req, res) => {
 export const createLicenseKey = async (req, res) => {
   try {
     const { key, role_id, country_code, assigned_to, user } = req.body;
+    const currentCountry = req.headers["x-country"] || "IR"; // ✅ Get current country from header
     const created = await superAdminService.createLicenseKey({
       key,
       role_id,
       country_code,
       assigned_to,
       user,
+      currentCountry, // ✅ Pass current country to service
     });
     res.status(201).json({ key: created });
   } catch (err) {
@@ -310,12 +312,14 @@ export const updateLicenseKey = async (req, res) => {
   try {
     const { id } = req.params;
     const { key, role_id, country_code, assigned_to } = req.body;
+    const currentCountry = req.headers["x-country"] || "IR"; // ✅ Get current country from header
     const updated = await superAdminService.updateLicenseKey({
       id,
       key,
       role_id,
       country_code,
       assigned_to,
+      currentCountry, // ✅ Pass current country to service
     });
     res.json({ key: updated });
   } catch (err) {
