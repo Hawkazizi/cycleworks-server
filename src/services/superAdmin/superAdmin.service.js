@@ -802,7 +802,7 @@ export async function createLicenseKey({
       throw new Error("QC licenses must have country_code: OM, QA, BA, or KW");
     }
   } else {
-    finalCountry = currentCountry; // ✅ Use the current country context
+    finalCountry = currentCountry; // ✅ Use currentCountry instead of "IR"
   }
 
   // Auto-create user if provided

@@ -293,14 +293,14 @@ export const getLicenseKeys = async (req, res) => {
 export const createLicenseKey = async (req, res) => {
   try {
     const { key, role_id, country_code, assigned_to, user } = req.body;
-    const currentCountry = req.headers["x-country"] || "IR"; // ✅ Get current country from header
+    const currentCountry = req.headers["x-country"] || "IR"; // ✅ Get from header
     const created = await superAdminService.createLicenseKey({
       key,
       role_id,
       country_code,
       assigned_to,
       user,
-      currentCountry, // ✅ Pass current country to service
+      currentCountry, // ✅ Pass it to the service
     });
     res.status(201).json({ key: created });
   } catch (err) {
