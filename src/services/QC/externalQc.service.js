@@ -18,6 +18,7 @@ const getExternalQcScope = async (userId) => {
     QA: "Qatar",
     OM: "Oman",
     BA: "Bahrain",
+    KW: "Kuwait",
   };
 
   const importCountry = COUNTRY_MAP[license.country_code];

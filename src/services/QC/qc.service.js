@@ -116,6 +116,7 @@ export const getQcContainers = async ({
     QA: "Qatar",
     OM: "Oman",
     BA: "Bahrain",
+    KW: "Kuwait",
   };
 
   const importCountry = COUNTRY_MAP[license.country_code];
@@ -277,6 +278,7 @@ export const getQcContainerById = async ({ userId, containerId }) => {
     QA: "Qatar",
     OM: "Oman",
     BA: "Bahrain",
+    KW: "Kuwait",
   };
 
   const importCountry = COUNTRY_MAP[license.country_code];
@@ -347,6 +349,7 @@ const getQcScope = async (userId) => {
     QA: "Qatar",
     OM: "Oman",
     BA: "Bahrain",
+    KW: "Kuwait",
   };
 
   const importCountry = COUNTRY_MAP[license.country_code];

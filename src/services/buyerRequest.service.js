@@ -1,5 +1,5 @@
 // services/buyerRequest.service.js
-import knex from "../db/knex.js";
+import knex, { als } from "../db/knex.js";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
@@ -131,6 +131,8 @@ export async function createRequestWithBuyerAndLicense({
           role_id: buyerRole.id,
           assigned_to: buyerId,
           is_active: true,
+          // ✅ ADD THIS LINE: Grabs 'IR' or 'TR' from the multi-tenancy middleware
+          country_code: als.getStore() || "IR",
         })
         .returning("*");
 
