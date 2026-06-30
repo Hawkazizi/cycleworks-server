@@ -1,24 +1,25 @@
 import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
-// 👇 Import the Proxy (db) AND the raw connections (dbIR, dbTR) + AsyncLocalStorage (als)
-import db, { dbIR, dbTR, als } from "./db/knex.js";
 import path from "path";
 import { fileURLToPath } from "url";
 
-// Routes
-import userRouter from "./routes/user.routes.js";
-import superAdminRoutes from "./routes/superAdmin/superadmin.routes.js";
-import adminRouter from "./routes/admin.routes.js";
-import buyerRouter from "./routes/buyer.routes.js";
-import containerRouter from "./routes/container.routes.js";
-import externalQcRouter from "./routes/QC/externalQc.routes.js";
-import notificationRoutes from "./routes/notification.routes.js";
-import ticketRoutes from "./routes/ticket.routes.js";
-import qcRoutes from "./routes/QC/qc.routes.js";
+// 👇 Updated: Pointing to the new common/db location
+import db, { dbIR, dbTR, als } from "./common/db/knex.js";
 
-// ✅ i18n middleware
-import i18nMiddleware from "./middleware/i18n.js";
+// 👇 Updated: Pointing to the new modules locations
+import userRouter from "./modules/user/user.routes.js";
+import superAdminRoutes from "./modules/superAdmin/superadmin.routes.js";
+import adminRouter from "./modules/admin/admin.routes.js";
+import buyerRouter from "./modules/buyer/buyer.routes.js";
+import containerRouter from "./modules/container/container.routes.js";
+import externalQcRouter from "./modules/qc/externalQc.routes.js";
+import notificationRoutes from "./modules/notification/notification.routes.js";
+import ticketRoutes from "./modules/ticket/ticket.routes.js";
+import qcRoutes from "./modules/qc/qc.routes.js";
+
+// 👇 Updated: Pointing to the new common/middleware location
+import i18nMiddleware from "./common/middleware/i18n.js";
 
 dotenv.config();
 
@@ -45,8 +46,7 @@ app.use(
 );
 
 // ✅ Serve uploads folder statically
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
-
+app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 // ✅ i18n middleware (MUST be before routes)
 app.use(i18nMiddleware);
 

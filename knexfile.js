@@ -13,11 +13,12 @@ const baseConfig = {
     min: 2,
     max: 10,
   },
+  // 👇 Updated: Pointing to the new common/knex location
   migrations: {
-    directory: "./src/knex/migrations",
+    directory: "./src/common/knex/migrations",
   },
   seeds: {
-    directory: "./src/knex/seeds",
+    directory: "./src/common/knex/seeds",
   },
 };
 
