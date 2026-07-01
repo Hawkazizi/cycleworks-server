@@ -10,7 +10,6 @@ const router = Router();
    🔐 AUTHENTICATION
 ======================================================================= */
 
-// 🧾 Register new farmer (with required application files)
 router.post(
   "/register",
   upload.fields([
@@ -24,14 +23,26 @@ router.post(
   userController.register,
 );
 
-// 🔑 Login
+// ✅ NEW: Public route to verify registration code
+router.post("/verify-registration", userController.verifyRegistration);
+
 router.post("/login", userController.login);
+
+router.post("/refresh-token", userController.refreshToken);
+
+router.post("/logout", userController.logout);
+
+router.post(
+  "/forgot-password/send-code",
+  userController.sendForgotPasswordCodeController,
+);
+
+router.post("/forgot-password/reset", userController.resetPasswordController);
 
 /* =======================================================================
    👤 PROFILE MANAGEMENT
 ======================================================================= */
 
-// 📄 Get profile
 router.get(
   "/profile",
   authenticate,
@@ -39,7 +50,6 @@ router.get(
   userController.getProfile,
 );
 
-// ✏️ Update profile
 router.patch(
   "/profile",
   authenticate,
@@ -47,7 +57,6 @@ router.patch(
   userController.updateProfile,
 );
 
-// 🖼️ Profile picture upload & fetch
 router.post(
   "/profile/picture",
   authenticate,
@@ -62,7 +71,6 @@ router.get(
   userController.getProfilePicture,
 );
 
-// 🧹 Delete profile
 router.delete(
   "/profile",
   authenticate,
@@ -74,17 +82,14 @@ router.delete(
    📧 EMAIL & PASSWORD MANAGEMENT
 ======================================================================= */
 
-// Request email verification code
 router.post(
   "/profile/email/request",
   authenticate,
   userController.requestEmailVerification,
 );
 
-// Verify email
 router.post("/profile/email/verify", authenticate, userController.verifyEmail);
 
-// Change password
 router.post(
   "/profile/change-password",
   authenticate,
@@ -95,14 +100,13 @@ router.post(
    📦 CONTAINERS (SUPPLIER FOCUS)
 ======================================================================= */
 
-// 📦 Get single container details (for farmer)
 router.get(
   "/containers/:id",
   authenticate,
   authorize("user"),
   userController.getContainerDetails,
 );
-// ✅ New route — Get selected plan date
+
 router.get(
   "/containers/:id/plan-date",
   authenticate,
@@ -115,7 +119,7 @@ router.patch(
   authorize("user", "manager", "admin"),
   userController.updatePlanDate,
 );
-// List assigned containers for supplier
+
 router.get(
   "/assigned-containers",
   authenticate,
@@ -123,7 +127,6 @@ router.get(
   userController.listAssignedContainers,
 );
 
-// Upload & list container files
 router
   .route("/containers/:containerId/files")
   .post(
@@ -134,7 +137,6 @@ router
   )
   .get(authenticate, authorize("user"), userController.listFiles);
 
-// Update container status
 router.patch(
   "/containers/:id/status",
   authenticate,
@@ -142,7 +144,6 @@ router.patch(
   userController.updateContainerStatusController,
 );
 
-// Container metadata (GET + PATCH)
 router
   .route("/containers/:id/metadata")
   .get(
@@ -160,7 +161,6 @@ router
    🚚 CONTAINER TRACKING
 ======================================================================= */
 
-// Add or list container tracking records
 router
   .route("/containers/:id/tracking")
   .get(authenticate, authorize("user"), userController.listContainerTracking)

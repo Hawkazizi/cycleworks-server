@@ -1108,9 +1108,10 @@ function baseApplicationQuery() {
     )
     .select(
       "user_applications.*",
-      "users.name",
-      "users.email",
-      "users.mobile",
+      // ✅ FIXED: Added aliases so the frontend can read user_name, user_email, user_mobile
+      "users.name as user_name",
+      "users.email as user_email",
+      "users.mobile as user_mobile",
       "users.status as user_status",
       db.raw("reviewer.name as reviewed_by_name"),
       db.raw("final_reviewer.name as final_reviewed_by_name"),

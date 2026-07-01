@@ -9,30 +9,33 @@ import * as farmerPlansService from "../farmerPlan/farmerPlans.service.js";
    🔐 AUTHENTICATION
 ======================================================================= */
 
-/** 📝 Register new farmer (user) + upload application files */
 export const register = async (req, res) => {
   try {
-    const { name, mobile, password, reason, supplier_name, role } = req.body;
+    const { name, mobile, email, password, reason, supplier_name, role } =
+      req.body;
 
-    if (!mobile || !password) {
-      return res
-        .status(400)
-        .json({ error: req.t("validation.mobile_password_required") });
+    if (!password) {
+      return res.status(400).json({
+        error: req.t("validation.password_required") || "Password is required",
+      });
+    }
+
+    if (!mobile && !email) {
+      return res.status(400).json({ error: "Mobile or email is required" });
     }
 
     const chosenRole = role || "user";
 
-    // Create user and application record
     const { user, application } = await userService.registerUser({
       name,
       mobile,
+      email,
       password,
       reason,
       supplier_name,
       role: chosenRole,
     });
 
-    // Prepare user folder
     const userDir = path.join(
       "uploads",
       "users",
@@ -41,7 +44,6 @@ export const register = async (req, res) => {
     );
     fs.mkdirSync(userDir, { recursive: true });
 
-    // Helper: move files
     const saveFile = (file) => {
       if (!file) return null;
       const newPath = path.join(userDir, file.originalname);
@@ -53,7 +55,6 @@ export const register = async (req, res) => {
       };
     };
 
-    // Collect uploaded files
     const fileInfos = {
       biosecurity: saveFile(req.files?.biosecurity?.[0]),
       vaccination: saveFile(req.files?.vaccination?.[0]),
@@ -63,7 +64,6 @@ export const register = async (req, res) => {
       farm_biosecurity: saveFile(req.files?.farmBiosecurity?.[0]),
     };
 
-    // Update application with file info
     await db("user_applications")
       .where({ id: application.id })
       .update(fileInfos);
@@ -79,17 +79,104 @@ export const register = async (req, res) => {
   }
 };
 
-/** 🔑 Farmer login */
+/** ✅ NEW: Verify Registration Code (Public) */
+export const verifyRegistration = async (req, res) => {
+  try {
+    const { identifier, code } = req.body;
+    if (!identifier || !code) {
+      return res.status(400).json({ error: "شناسه و کد الزامی است" });
+    }
+    const result = await userService.verifyRegistrationCode(identifier, code);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
 export const login = async (req, res) => {
   try {
-    const { mobile, password } = req.body;
-    if (!mobile || !password)
+    const { mobile, email, password, identifier } = req.body;
+    const loginIdentifier = identifier || mobile || email;
+
+    if (!loginIdentifier || !password) {
+      return res.status(400).json({
+        error:
+          req.t("validation.mobile_password_required") ||
+          "Mobile/Email and password are required",
+      });
+    }
+
+    const result = await userService.loginUser({
+      identifier: loginIdentifier,
+      password,
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
+export const refreshToken = async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+    if (!refreshToken) {
+      return res.status(400).json({ error: "Refresh token is required" });
+    }
+
+    const result = await userService.refreshAccessToken(refreshToken);
+    res.json(result);
+  } catch (err) {
+    res.status(401).json({ error: err.message, code: "REFRESH_TOKEN_INVALID" });
+  }
+};
+
+export const logout = async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+    await userService.logoutUser(refreshToken);
+    res.json({
+      message: req.t("user.logged_out") || "Logged out successfully",
+    });
+  } catch (err) {
+    res.status(500).json({ error: req.t("common.server_error") });
+  }
+};
+
+/* =======================================================================
+   🔄 FORGOT PASSWORD CONTROLLERS
+======================================================================= */
+
+export const sendForgotPasswordCodeController = async (req, res) => {
+  try {
+    const { identifier } = req.body;
+    if (!identifier) {
       return res
         .status(400)
-        .json({ error: req.t("validation.mobile_password_required") });
+        .json({ error: "شناسه (موبایل یا ایمیل) الزامی است" });
+    }
 
-    const result = await userService.loginUser({ mobile, password });
-    res.json(result);
+    await userService.sendForgotPasswordCode(identifier);
+    res.json({
+      message: req.t("user.forgot_password.code_sent") || "کد بازیابی ارسال شد",
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
+export const resetPasswordController = async (req, res) => {
+  try {
+    const { identifier, code, newPassword } = req.body;
+    if (!identifier || !code || !newPassword) {
+      return res.status(400).json({ error: "تمام فیلدها الزامی هستند" });
+    }
+
+    await userService.resetPasswordWithCode(identifier, code, newPassword);
+    res.json({
+      message:
+        req.t("user.forgot_password.password_reset") ||
+        "رمز عبور با موفقیت تغییر کرد",
+    });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -99,7 +186,6 @@ export const login = async (req, res) => {
    👤 PROFILE MANAGEMENT
 ======================================================================= */
 
-/** 👀 Get farmer profile */
 export const getProfile = async (req, res) => {
   try {
     const profile = await userService.getUserProfile(req.user.id);
@@ -109,7 +195,6 @@ export const getProfile = async (req, res) => {
   }
 };
 
-/** ✏️ Update farmer profile */
 export async function updateProfile(req, res) {
   try {
     const updated = await userService.updateProfileById(req.user.id, req.body);
@@ -119,7 +204,6 @@ export async function updateProfile(req, res) {
   }
 }
 
-/** 🖼️ Upload profile picture */
 export const uploadProfilePicture = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -132,7 +216,6 @@ export const uploadProfilePicture = async (req, res) => {
     const newFilePath = `/uploads/profiles/${req.file.filename}`;
     fs.renameSync(req.file.path, path.join(dir, req.file.filename));
 
-    // Delete old image if exists
     const user = await db("users").where({ id: userId }).first();
     if (user?.profile_picture) {
       const oldPath = path.join(
@@ -165,7 +248,6 @@ export const uploadProfilePicture = async (req, res) => {
   }
 };
 
-/** 📸 Get profile picture */
 export const getProfilePicture = async (req, res) => {
   try {
     const user = await db("users")
@@ -173,7 +255,6 @@ export const getProfilePicture = async (req, res) => {
       .where({ id: req.user.id })
       .first();
 
-    // ✅ No picture set -> 204 No Content (clean + not an "error")
     if (!user?.profile_picture) {
       return res.status(204).send();
     }
@@ -185,7 +266,6 @@ export const getProfilePicture = async (req, res) => {
         : user.profile_picture,
     );
 
-    // ✅ Picture path exists in DB but file missing -> also 204
     if (!fs.existsSync(filePath)) {
       return res.status(204).send();
     }
@@ -206,7 +286,6 @@ export const getProfilePicture = async (req, res) => {
   }
 };
 
-/** ❌ Delete farmer profile */
 export async function deleteProfile(req, res) {
   try {
     await userService.deleteProfileById(req.user.id);
@@ -220,7 +299,6 @@ export async function deleteProfile(req, res) {
    📧 EMAIL VERIFICATION & PASSWORD
 ======================================================================= */
 
-/** 📮 Request verification code */
 export async function requestEmailVerification(req, res) {
   try {
     const { email } = req.body;
@@ -235,7 +313,7 @@ export async function requestEmailVerification(req, res) {
     );
     await sendMail({
       to: email,
-      subject: "کد تایید ایمیل", // Keep subject in Persian for now, or i18n later
+      subject: "کد تایید ایمیل",
       html: `<h2>کد تایید شما</h2><p style="font-size:20px;font-weight:bold">${code}</p>`,
     });
 
@@ -245,7 +323,6 @@ export async function requestEmailVerification(req, res) {
   }
 }
 
-/** ✅ Verify email */
 export async function verifyEmail(req, res) {
   try {
     const { code } = req.body;
@@ -259,7 +336,6 @@ export async function verifyEmail(req, res) {
   }
 }
 
-/** 🔐 Change password */
 export async function changePassword(req, res) {
   try {
     const { currentPassword, newPassword } = req.body;
@@ -278,7 +354,7 @@ export async function changePassword(req, res) {
 /* =======================================================================
    📦 CONTAINERS & FILES
 ======================================================================= */
-/* -------------------- Get Container Details -------------------- */
+
 export const getContainerDetails = async (req, res) => {
   try {
     const { id } = req.params;
@@ -324,7 +400,6 @@ export async function getPlanDate(req, res) {
   }
 }
 
-/** 📤 Upload container file */
 export async function uploadFile(req, res) {
   try {
     const { containerId } = req.params;
@@ -352,7 +427,6 @@ export async function uploadFile(req, res) {
   }
 }
 
-/** 📂 List files of a container */
 export async function listFiles(req, res) {
   try {
     const { containerId } = req.params;
@@ -363,12 +437,10 @@ export async function listFiles(req, res) {
   }
 }
 
-/** 🔍 Get container metadata */
 export const getContainerMetadata = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // roles might be ["admin"] OR [{name:"admin"}] depending on middleware
     const roles = (req.user.roles || []).map((r) =>
       typeof r === "string" ? r : r?.name,
     );
@@ -381,7 +453,6 @@ export const getContainerMetadata = async (req, res) => {
       .select("c.*")
       .first();
 
-    // ✅ suppliers can only read their own container metadata
     if (!isAdmin) {
       q = db("farmer_plan_containers as c")
         .leftJoin("farmer_plans as p", "c.plan_id", "p.id")
@@ -422,7 +493,6 @@ export const getContainerMetadata = async (req, res) => {
   }
 };
 
-/** ✏️ Update container metadata */
 export async function updateContainerMetadataController(req, res) {
   try {
     const result = await farmerPlansService.updateContainerMetadata(
@@ -438,7 +508,6 @@ export async function updateContainerMetadataController(req, res) {
   }
 }
 
-/** 📋 List containers assigned to supplier (accepted requests only) with pagination + search */
 export async function listAssignedContainers(req, res) {
   try {
     const supplierId = req.user?.id;
@@ -461,10 +530,8 @@ export async function listAssignedContainers(req, res) {
 
     return res.json(result);
   } catch (err) {
-    // Log full error server-side, return safe message to client
     console.error("listAssignedContainers error:", err);
 
-    // If you throw custom errors with statusCode in your services, support them:
     const status =
       err?.statusCode && Number.isInteger(err.statusCode)
         ? err.statusCode
@@ -476,7 +543,6 @@ export async function listAssignedContainers(req, res) {
   }
 }
 
-/** 🔄 Update container status */
 export async function updateContainerStatusController(req, res) {
   try {
     const result = await farmerPlansService.updateContainerStatus(
@@ -497,7 +563,6 @@ export async function updateContainerStatusController(req, res) {
    🧭 CONTAINER TRACKING
 ======================================================================= */
 
-/** 📜 List container tracking history */
 export async function listContainerTracking(req, res) {
   try {
     const history = await farmerPlansService.getContainerTracking(
@@ -510,7 +575,6 @@ export async function listContainerTracking(req, res) {
   }
 }
 
-/** ➕ Add new tracking status */
 export async function addContainerTracking(req, res) {
   try {
     const { id } = req.params;
@@ -537,7 +601,6 @@ export async function addContainerTracking(req, res) {
    🧰 UTILITIES
 ======================================================================= */
 
-/** 👥 Minimal user list */
 export async function getMinimalUsers(req, res) {
   try {
     const users = await userService.getMinimalUsers(req.query.role || null);
