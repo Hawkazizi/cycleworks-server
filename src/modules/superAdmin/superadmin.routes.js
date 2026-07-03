@@ -82,6 +82,7 @@ router.patch(
     { name: "food_safety", maxCount: 1 },
     { name: "description", maxCount: 1 },
     { name: "farm_biosecurity", maxCount: 1 },
+    { name: "all_documents", maxCount: 1 },
   ]),
   superAdminController.updateApplication,
 );

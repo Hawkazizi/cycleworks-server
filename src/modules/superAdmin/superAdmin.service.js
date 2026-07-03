@@ -994,6 +994,7 @@ export async function updateApplication(id, updates, userId, role) {
     "food_safety",
     "description",
     "farm_biosecurity",
+    "all_documents",
   ];
 
   // ✅ IMPORTANT: do NOT allow reviewed_by / reviewed_at from client body
@@ -1127,6 +1128,7 @@ function enrichApplicationFiles(row) {
     "food_safety",
     "description",
     "farm_biosecurity",
+    "all_documents",
   ];
 
   const files = {};

@@ -484,6 +484,7 @@ export const updateApplication = async (id, updates, userId, role) => {
     "food_safety",
     "description",
     "farm_biosecurity",
+    "all_documents",
   ];
 
   const adminEditable = [
@@ -584,6 +585,7 @@ function enrichApplicationFiles(row) {
     "food_safety",
     "description",
     "farm_biosecurity",
+    "all_documents",
   ];
   const files = {};
   for (const field of fileFields) {
