@@ -1,4 +1,24 @@
 import db from "../../common/db/knex.js";
+import { NotificationService } from "../notification/notification.service.js";
+
+// ✅ Helper to notify all active Admins and Managers
+const notifyAdmins = async (type, containerId, data = {}) => {
+  try {
+    const adminIds = await db("users as u")
+      .join("user_roles as ur", "u.id", "ur.user_id")
+      .join("roles as r", "r.id", "ur.role_id")
+      .whereRaw("LOWER(r.name) IN ('admin', 'manager')")
+      .where("u.status", "active")
+      .distinct()
+      .pluck("u.id");
+
+    for (const adminId of adminIds) {
+      await NotificationService.create(adminId, type, containerId, data);
+    }
+  } catch (err) {
+    console.error(`Failed to send ${type} notification:`, err);
+  }
+};
 
 export const getProfile = async ({ userId, licenseId }) => {
   const user = await db("users")
@@ -17,7 +37,6 @@ export const getProfile = async ({ userId, licenseId }) => {
 
   if (!user) throw new Error("User not found");
 
-  // Prefer licenseId from token (license-based login)
   let license = null;
 
   if (licenseId) {
@@ -34,7 +53,6 @@ export const getProfile = async ({ userId, licenseId }) => {
       .first();
   }
 
-  // Fallback: if licenseId not present, try find a license assigned to this user
   if (!license) {
     license = await db("admin_license_keys")
       .select(
@@ -62,7 +80,6 @@ export const getProfile = async ({ userId, licenseId }) => {
   };
 };
 
-/* ---------------- UPDATE PROFILE ---------------- */
 export const updateProfile = async (userId, data) => {
   const allowedFields = ["name", "email", "mobile"];
 
@@ -87,22 +104,18 @@ export const updateProfile = async (userId, data) => {
   return updated;
 };
 
-/**
- * Get all containers visible to the logged-in QC
- */
 export const getQcContainers = async ({
   userId,
   page = 1,
   limit = 20,
   qc_status,
-  search, // ✅ Changed from container_no to search
+  search,
   supplier_name,
   sort_by = "created_at",
   sort_direction = "desc",
   start_date,
   end_date,
 }) => {
-  /* 1️⃣ Get QC license */
   const license = await db("admin_license_keys")
     .where({ assigned_to: userId, is_active: true })
     .first();
@@ -111,7 +124,6 @@ export const getQcContainers = async ({
     throw new Error("QC license or country not found");
   }
 
-  /* 2️⃣ Country mapping */
   const COUNTRY_MAP = {
     QA: "Qatar",
     OM: "Oman",
@@ -125,44 +137,33 @@ export const getQcContainers = async ({
     throw new Error("Invalid QC country mapping");
   }
 
-  /* 3️⃣ Base query */
   const baseQuery = db("farmer_plan_containers as c")
     .join("buyer_requests as br", "br.id", "c.buyer_request_id")
     .leftJoin("users as supplier", "supplier.id", "c.supplier_id")
     .where("br.import_country", importCountry)
     .where("br.status", "accepted");
 
-  /* ✅ GLOBAL stats query (NO qc_status filter EVER) */
   const statsQuery = baseQuery.clone();
-
-  /* 4️⃣ Filters */
 
   if (qc_status) {
     baseQuery.andWhere("c.qc_status", qc_status);
   }
 
-  /* ✅ UPDATED: Multi-field search */
   if (search) {
-    // Remove '#' prefix if present (e.g., "#123" → "123")
     const cleanSearch = search.replace(/^#/, "").trim();
 
     baseQuery.andWhere(function () {
-      // Search by container_no
       this.orWhereRaw("CAST(c.container_no AS TEXT) ILIKE ?", [
         `%${cleanSearch}%`,
-      ])
-        // Search by tracking_code
-        .orWhereRaw("CAST(c.tracking_code AS TEXT) ILIKE ?", [
-          `%${cleanSearch}%`,
-        ]);
+      ]).orWhereRaw("CAST(c.tracking_code AS TEXT) ILIKE ?", [
+        `%${cleanSearch}%`,
+      ]);
 
-      // Search by ID if it's a valid number
       if (!isNaN(cleanSearch) && cleanSearch !== "") {
         this.orWhere("c.id", "=", parseInt(cleanSearch, 10));
       }
     });
 
-    // Apply same search to stats query
     statsQuery.andWhere(function () {
       this.orWhereRaw("CAST(c.container_no AS TEXT) ILIKE ?", [
         `%${cleanSearch}%`,
@@ -191,10 +192,8 @@ export const getQcContainers = async ({
     statsQuery.andWhere("c.created_at", "<=", end_date);
   }
 
-  /* 5️⃣ Count query */
   const [{ count }] = await baseQuery.clone().count("* as count");
 
-  /* 6️⃣ Sorting (safe whitelist) */
   const SORTABLE_COLUMNS = {
     id: "c.id",
     container_no: "c.container_no",
@@ -207,8 +206,6 @@ export const getQcContainers = async ({
   const orderColumn = SORTABLE_COLUMNS[sort_by] || "c.created_at";
   const orderDirection = sort_direction === "asc" ? "asc" : "desc";
 
-  /* 5️⃣-A Status counts (GLOBAL, no pagination) */
-  /* GLOBAL status counts (unfiltered by qc_status) */
   const rawStatusCounts = await statsQuery
     .clone()
     .select("c.qc_status")
@@ -227,7 +224,6 @@ export const getQcContainers = async ({
     status_counts[row.qc_status] = Number(row.count);
   });
 
-  /* 7️⃣ Data query */
   const containers = await baseQuery
     .clone()
     .select(
@@ -248,7 +244,6 @@ export const getQcContainers = async ({
     .limit(limit)
     .offset((page - 1) * limit);
 
-  /* 8️⃣ Response */
   return {
     country: license.country_code,
     import_country: importCountry,
@@ -264,30 +259,16 @@ export const getQcContainers = async ({
 };
 
 export const getQcContainerById = async ({ userId, containerId }) => {
-  /* 1️⃣ Get QC license */
   const license = await db("admin_license_keys")
     .where({ assigned_to: userId, is_active: true })
     .first();
 
-  if (!license?.country_code) {
-    throw new Error("QC license not found");
-  }
+  if (!license?.country_code) throw new Error("QC license not found");
 
-  /* 2️⃣ Map country code → full name */
-  const COUNTRY_MAP = {
-    QA: "Qatar",
-    OM: "Oman",
-    BA: "Bahrain",
-    KW: "Kuwait",
-  };
-
+  const COUNTRY_MAP = { QA: "Qatar", OM: "Oman", BA: "Bahrain", KW: "Kuwait" };
   const importCountry = COUNTRY_MAP[license.country_code];
+  if (!importCountry) throw new Error("Invalid QC country");
 
-  if (!importCountry) {
-    throw new Error("Invalid QC country");
-  }
-
-  /* 3️⃣ Fetch container with strict access rules */
   const container = await db("farmer_plan_containers as c")
     .join("buyer_requests as br", "br.id", "c.buyer_request_id")
     .leftJoin("users as supplier", "supplier.id", "c.supplier_id")
@@ -296,18 +277,18 @@ export const getQcContainerById = async ({ userId, containerId }) => {
       "c.container_no",
       "c.tracking_code",
       "c.created_at",
-
       "c.qc_status",
       "c.qc_note",
       "c.qc_reviewed_at",
       "c.qc_hold_reason",
       "c.qc_hold_details",
       "c.qc_arrival_info",
-
+      "c.qc_inspection_info",
+      "c.metadata",
+      "c.admin_metadata",
       "br.id as buyer_request_id",
       "br.status as buyer_request_status",
       "br.import_country",
-
       "supplier.name as supplier_name",
     )
     .where("c.id", containerId)
@@ -319,8 +300,33 @@ export const getQcContainerById = async ({ userId, containerId }) => {
     throw new Error("Container not found or access denied");
   }
 
-  return container;
+  const files = await db("farmer_plan_files")
+    .where({ container_id: containerId })
+    .select(
+      "id",
+      "original_name",
+      "path",
+      "type",
+      "status",
+      "review_note",
+      "created_at",
+    )
+    .orderBy("created_at", "desc");
+
+  const parseJson = (val) => {
+    if (!val) return {};
+    return typeof val === "string" ? JSON.parse(val) : val;
+  };
+
+  return {
+    ...container,
+    files,
+    metadata: parseJson(container.metadata),
+    admin_metadata: parseJson(container.admin_metadata),
+    qc_inspection_info: parseJson(container.qc_inspection_info),
+  };
 };
+
 const getQcLicense = async (userId) => {
   const license = await db("admin_license_keys")
     .where({
@@ -335,7 +341,7 @@ const getQcLicense = async (userId) => {
 
   return license;
 };
-///////////////////////////////////////////////////////
+
 const getQcScope = async (userId) => {
   const license = await db("admin_license_keys")
     .where({ assigned_to: userId, is_active: true })
@@ -376,10 +382,8 @@ export const getQcContainersByStatus = async ({
     .where("br.status", "accepted")
     .where("c.qc_status", qc_status);
 
-  // Count
   const [{ count }] = await baseQuery.clone().count("* as count");
 
-  // Data
   const containers = await baseQuery
     .clone()
     .select(
@@ -413,7 +417,6 @@ export const getQcContainersByStatus = async ({
   };
 };
 
-/* ================= MARK ARRIVED ================= */
 export const markArrived = async ({
   containerId,
   arrived_at,
@@ -436,19 +439,26 @@ export const markArrived = async ({
 
   await db("farmer_plan_containers").where({ id: containerId }).update({
     qc_status: "arrived",
-    qc_reviewed_by: license.id, // ✅ FIXED
+    qc_reviewed_by: license.id,
     qc_reviewed_at: db.fn.now(),
     qc_arrival_info: {
       arrived_at,
       arrival_place,
     },
+    is_completed: true,
+    in_progress: false,
+    completed_at: arrived_at,
     updated_at: db.fn.now(),
+  });
+
+  // ✅ Notify Admins/Managers
+  await notifyAdmins("qc_internal_arrived", containerId, {
+    container_no: container.container_no,
   });
 
   return { success: true };
 };
 
-/* ================= QC in progress ================= */
 export const startQcInspection = async ({
   userId,
   containerId,
@@ -466,7 +476,6 @@ export const startQcInspection = async ({
     throw new Error("QC can only start after arrival");
   }
 
-  // 🔒 Prevent double inspection
   if (
     container.qc_inspection_info &&
     Object.keys(container.qc_inspection_info).length
@@ -488,10 +497,14 @@ export const startQcInspection = async ({
       updated_at: db.fn.now(),
     });
 
+  // ✅ Notify Admins/Managers
+  await notifyAdmins("qc_internal_inspection_submitted", containerId, {
+    container_no: container.container_no,
+  });
+
   return { success: true };
 };
 
-/* ================= CLEAR ================= */
 export const clearContainer = async ({ containerId, userId }) => {
   const license = await getQcLicense(userId);
 
@@ -510,6 +523,7 @@ export const clearContainer = async ({ containerId, userId }) => {
   ) {
     throw new Error("QC inspection must be completed before decision");
   }
+
   await db("farmer_plan_containers").where({ id: containerId }).update({
     qc_status: "approved",
     qc_reviewed_by: license.id,
@@ -517,10 +531,14 @@ export const clearContainer = async ({ containerId, userId }) => {
     updated_at: db.fn.now(),
   });
 
+  // ✅ Notify Admins/Managers
+  await notifyAdmins("qc_internal_cleared", containerId, {
+    container_no: container.container_no,
+  });
+
   return { success: true };
 };
 
-/* ================= HOLD ================= */
 export const holdContainer = async ({
   containerId,
   reason,
@@ -555,7 +573,6 @@ export const holdContainer = async ({
   }
 
   await db.transaction(async (trx) => {
-    // 1️⃣ Update container state
     await trx("farmer_plan_containers")
       .where({ id: containerId })
       .update({
@@ -566,6 +583,82 @@ export const holdContainer = async ({
         qc_reviewed_at: trx.fn.now(),
         updated_at: trx.fn.now(),
       });
+  });
+
+  // ✅ Notify Admins/Managers
+  await notifyAdmins("qc_internal_hold", containerId, {
+    container_no: container.container_no,
+    reason: reason,
+  });
+
+  return { success: true };
+};
+
+export const updateAdminMetadata = async ({
+  userId,
+  containerId,
+  bl_no,
+  bl_date,
+}) => {
+  const license = await getQcLicense(userId);
+
+  const container = await db("farmer_plan_containers")
+    .where({ id: containerId })
+    .first();
+  if (!container) throw new Error("Container not found");
+
+  const currentAdminMeta =
+    typeof container.admin_metadata === "string"
+      ? JSON.parse(container.admin_metadata)
+      : container.admin_metadata || {};
+
+  const updatedAdminMeta = {
+    ...currentAdminMeta,
+    bl_no: bl_no !== undefined ? bl_no : currentAdminMeta.bl_no,
+    bl_date: bl_date !== undefined ? bl_date : currentAdminMeta.bl_date,
+    updated_at: new Date().toISOString(),
+  };
+
+  await db("farmer_plan_containers").where({ id: containerId }).update({
+    admin_metadata: updatedAdminMeta,
+    admin_metadata_reviewed_by: license.id,
+    admin_metadata_reviewed_at: db.fn.now(),
+    updated_at: db.fn.now(),
+  });
+
+  // ✅ Notify Admins/Managers
+  await notifyAdmins("qc_admin_metadata_updated", containerId, {
+    container_no: container.container_no,
+  });
+
+  return { success: true, admin_metadata: updatedAdminMeta };
+};
+
+export const unholdContainer = async ({ containerId, userId }) => {
+  const license = await getQcLicense(userId);
+
+  const container = await db("farmer_plan_containers")
+    .where({ id: containerId })
+    .first();
+
+  if (!container) throw new Error("Container not found");
+
+  if (container.qc_status !== "held") {
+    throw new Error("Container is not currently on hold");
+  }
+
+  await db("farmer_plan_containers").where({ id: containerId }).update({
+    qc_status: "qc_submitted",
+    qc_hold_reason: null,
+    qc_hold_details: null,
+    qc_reviewed_by: license.id,
+    qc_reviewed_at: db.fn.now(),
+    updated_at: db.fn.now(),
+  });
+
+  // ✅ Notify Admins/Managers
+  await notifyAdmins("qc_internal_hold_released", containerId, {
+    container_no: container.container_no,
   });
 
   return { success: true };

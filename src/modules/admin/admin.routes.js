@@ -294,7 +294,7 @@ router.get(
 router.post(
   "/containers/assign",
   authenticate,
-  authorize("admin"),
+  authorize("admin", "manager"),
   adminController.assignContainersToSuppliers,
 );
 
@@ -433,13 +433,6 @@ router.get(
   adminController.getContainerQcHold,
 );
 
-// Resolve QC hold for a specific container
-router.post(
-  "/containers/:id/qc-hold/resolve",
-  authenticate,
-  authorize("admin", "manager"),
-  adminController.resolveContainerQcHold,
-);
 router.get(
   "/containers/:id/qc-hold/history",
   authenticate,

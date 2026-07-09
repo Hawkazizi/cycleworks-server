@@ -9,6 +9,7 @@ const router = express.Router();
    🌍 External QC
 ========================================================= */
 
+// ✅ 1. SPECIFIC STRING ROUTES MUST COME FIRST!
 router.get(
   "/containers/approved",
   authenticate,
@@ -16,20 +17,26 @@ router.get(
   externalQcController.getApprovedContainers,
 );
 
-router.post(
-  "/containers/:id/report",
-  authenticate,
-  authorize("qc_external"),
-  externalQcController.submitReport,
-);
-
-/* ================= REPORTED CONTAINERS ================= */
-
 router.get(
   "/containers/reported",
   authenticate,
   authorize("qc_external"),
   externalQcController.getReportedContainers,
+);
+
+// ✅ 2. PARAMETERIZED ROUTES COME AFTER
+router.get(
+  "/containers/:id",
+  authenticate,
+  authorize("qc_external"),
+  externalQcController.getContainerDetails,
+);
+
+router.post(
+  "/containers/:id/report",
+  authenticate,
+  authorize("qc_external"),
+  externalQcController.submitReport,
 );
 
 export default router;

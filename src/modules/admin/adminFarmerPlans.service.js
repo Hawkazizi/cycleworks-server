@@ -1,6 +1,24 @@
 import db from "../../common/db/knex.js";
 import { NotificationService } from "../notification/notification.service.js";
+// ✅ Helper to notify all active QC Internal and External users
+const notifyQcRoles = async (type, relatedId, data = {}, trx = null) => {
+  try {
+    const dbConn = trx || db;
+    const qcUsers = await dbConn("users as u")
+      .join("user_roles as ur", "u.id", "ur.user_id")
+      .join("roles as r", "r.id", "ur.role_id")
+      .whereRaw("LOWER(r.name) IN ('qc_internal', 'qc_external')")
+      .where("u.status", "active")
+      .distinct()
+      .pluck("u.id");
 
+    for (const qcId of qcUsers) {
+      await NotificationService.create(qcId, type, relatedId, data, trx);
+    }
+  } catch (err) {
+    console.error(`Failed to notify QC roles for ${type}:`, err);
+  }
+};
 /* =======================================================================
    🗂️ FARMER FILE REVIEW (Admin / Manager)
 ======================================================================= */
@@ -90,6 +108,7 @@ export const addFileToContainerAsAdmin = async (containerId, fileMeta) => {
   }
 
   await Promise.allSettled(promises);
+  await notifyQcRoles("admin_file_uploaded", containerId, data);
   return file;
 };
 
@@ -136,6 +155,7 @@ export const notifyFileDeletion = async (fileRecord, deletedByUserId) => {
   }
 
   await Promise.allSettled(promises);
+  await notifyQcRoles("admin_file_deleted", containerId, data);
 };
 
 /**
@@ -185,7 +205,10 @@ export async function reviewFile(fileId, status, note, reviewerId) {
   } catch (err) {
     console.warn("⚠️ reviewFile notification failed:", err.message);
   }
-
+  await notifyQcRoles("admin_file_reviewed", updated.container_id, {
+    file_id: updated.id,
+    status,
+  });
   return { message: `File ${status}`, file: updated };
 }
 
@@ -256,7 +279,10 @@ export async function reviewContainerMetadata(
       err.message,
     );
   }
-
+  await notifyQcRoles("admin_metadata_reviewed", containerId, {
+    container_id: containerId,
+    metadata_status: status,
+  });
   return { message: `Metadata ${status}`, container: updated };
 }
 
@@ -342,7 +368,10 @@ export async function updateContainerAdminMetadata(
       err.message,
     );
   }
-
+  await notifyQcRoles("admin_metadata_updated_by_admin", containerId, {
+    container_id: containerId,
+    admin_metadata: filtered,
+  });
   return { message: "Admin metadata submitted", container: updated };
 }
 
@@ -369,7 +398,15 @@ export async function toggleRejectStatus(containerId) {
       in_progress: newInProgressStatus,
       updated_at: trx.fn.now(),
     });
-
+    const type = newRejectedStatus
+      ? "container_rejected_by_admin"
+      : "container_unrejected_by_admin";
+    await notifyQcRoles(
+      type,
+      containerId,
+      { container_no: current.container_no },
+      trx,
+    );
     // Re-fetch updated record to return
     const updated = await trx("farmer_plan_containers")
       .where("id", containerId)

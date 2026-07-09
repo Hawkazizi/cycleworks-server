@@ -1,6 +1,24 @@
 import db from "../../common/db/knex.js";
 import { NotificationService } from "../notification/notification.service.js";
+// ✅ Helper to notify all active QC Internal and External users
+const notifyQcRoles = async (type, relatedId, data = {}, trx = null) => {
+  try {
+    const dbConn = trx || db;
+    const qcUsers = await dbConn("users as u")
+      .join("user_roles as ur", "u.id", "ur.user_id")
+      .join("roles as r", "r.id", "ur.role_id")
+      .whereRaw("LOWER(r.name) IN ('qc_internal', 'qc_external')")
+      .where("u.status", "active")
+      .distinct()
+      .pluck("u.id");
 
+    for (const qcId of qcUsers) {
+      await NotificationService.create(qcId, type, relatedId, data, trx);
+    }
+  } catch (err) {
+    console.error(`Failed to notify QC roles for ${type}:`, err);
+  }
+};
 const BASE_URL = process.env.BASE_URL || "http://localhost:5000";
 
 /* =======================================================================
@@ -343,7 +361,12 @@ export async function assignContainersToSuppliers(
         trx,
       );
     }
-
+    await notifyQcRoles(
+      "container_assigned_to_supplier",
+      requestId,
+      { message: `کانتینرهای جدیدی به تامین‌کنندگان تخصیص یافت.` },
+      trx,
+    );
     return {
       success: true,
       message: "تخصیص کانتینرها با موفقیت انجام شد (بدون مقادیر NULL).",

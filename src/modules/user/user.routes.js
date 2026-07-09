@@ -10,20 +10,12 @@ const router = Router();
    🔐 AUTHENTICATION
 ======================================================================= */
 
-router.post(
-  "/register",
-  upload.fields([
-    { name: "biosecurity", maxCount: 1 },
-    { name: "vaccination", maxCount: 1 },
-    { name: "emergency", maxCount: 1 },
-    { name: "foodSafety", maxCount: 1 },
-    { name: "description", maxCount: 1 },
-    { name: "farmBiosecurity", maxCount: 1 },
-  ]),
-  userController.register,
-);
+// ✅ NEW: Endpoint for uploading a single file during signup
+router.post("/upload", upload.single("file"), userController.uploadSingleFile);
 
-// ✅ NEW: Public route to verify registration code
+// ✅ UPDATED: Removed multer middleware since files are already uploaded individually as JSON
+router.post("/register", userController.register);
+
 router.post("/verify-registration", userController.verifyRegistration);
 
 router.post("/login", userController.login);

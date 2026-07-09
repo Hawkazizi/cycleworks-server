@@ -1972,35 +1972,6 @@ export const getContainerQcHold = async (req, res) => {
   }
 };
 
-export const resolveContainerQcHold = async (req, res) => {
-  try {
-    const { id: containerId } = req.params;
-    const adminLicenseId = req.user.licenseId;
-    const { resolution_action, resolution_note } = req.body;
-
-    if (!resolution_action) {
-      return res
-        .status(400)
-        .json({ error: req.t("validation.resolution_action_required") });
-    }
-
-    const container = await adminService.resolveInternalQcHold({
-      containerId,
-      resolutionAction: resolution_action,
-      resolutionNote: resolution_note,
-      resolvedBy: adminLicenseId,
-    });
-
-    res.json({
-      message: req.t("qc.hold_resolved"),
-      container,
-    });
-  } catch (err) {
-    console.error("Resolve container QC hold error:", err);
-    res.status(400).json({ error: err.message });
-  }
-};
-
 export const getContainerQcHoldHistory = async (req, res) => {
   try {
     const { id: containerId } = req.params;

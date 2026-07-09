@@ -2,6 +2,7 @@ import express from "express";
 import { authenticate } from "../../common/middleware/authenticate.js";
 import { authorize } from "../../common/middleware/authorize.js";
 import * as qcController from "./qc.controller.js";
+import upload from "../../common/middleware/upload.js";
 
 const router = express.Router();
 
@@ -58,6 +59,13 @@ router.get(
 );
 
 /* ================= ACTION ROUTES ================= */
+router.post(
+  "/containers/:id/start-qc",
+  authenticate,
+  authorize("qc_internal", "qc_external"),
+  upload.single("seal_photo"),
+  qcController.startQcInspection,
+);
 
 router.post(
   "/containers/:id/arrive",
@@ -86,7 +94,18 @@ router.post(
   authorize("qc_internal", "qc_external"),
   qcController.holdContainer,
 );
-
+router.post(
+  "/containers/:id/unhold",
+  authenticate,
+  authorize("qc_internal"),
+  qcController.unholdContainer,
+);
+router.patch(
+  "/containers/:id/admin-metadata",
+  authenticate,
+  authorize("qc_internal"),
+  qcController.updateAdminMetadata,
+);
 /* ================= SINGLE CONTAINER (LAST) ================= */
 
 router.get(

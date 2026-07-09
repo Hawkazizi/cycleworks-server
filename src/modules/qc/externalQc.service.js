@@ -1,6 +1,24 @@
 import db from "../../common/db/knex.js";
+import { NotificationService } from "../notification/notification.service.js";
 
-/* ================= HELPERS ================= */
+// ✅ Helper to notify all active Admins and Managers
+const notifyAdmins = async (type, containerId, data = {}) => {
+  try {
+    const adminIds = await db("users as u")
+      .join("user_roles as ur", "u.id", "ur.user_id")
+      .join("roles as r", "r.id", "ur.role_id")
+      .whereRaw("LOWER(r.name) IN ('admin', 'manager')")
+      .where("u.status", "active")
+      .distinct()
+      .pluck("u.id");
+
+    for (const adminId of adminIds) {
+      await NotificationService.create(adminId, type, containerId, data);
+    }
+  } catch (err) {
+    console.error(`Failed to send ${type} notification:`, err);
+  }
+};
 
 const getExternalQcScope = async (userId) => {
   const license = await db("admin_license_keys")
@@ -30,8 +48,6 @@ const getExternalQcScope = async (userId) => {
   return { license, importCountry };
 };
 
-/* ================= GET APPROVED CONTAINERS ================= */
-
 export const getApprovedContainersForExternalQc = async ({
   userId,
   page = 1,
@@ -46,7 +62,7 @@ export const getApprovedContainersForExternalQc = async ({
     .where("c.qc_status", "approved")
     .where("br.import_country", importCountry)
     .where("br.status", "accepted")
-    .whereNull("r.id"); // 🚫 hide already reported containers
+    .whereNull("r.id");
 
   const [{ count }] = await baseQuery.clone().count("* as count");
 
@@ -79,8 +95,6 @@ export const getApprovedContainersForExternalQc = async ({
   };
 };
 
-/* ================= SUBMIT EXTERNAL QC REPORT ================= */
-
 export const submitExternalQcReport = async ({
   userId,
   containerId,
@@ -93,7 +107,7 @@ export const submitExternalQcReport = async ({
 
   const container = await db("farmer_plan_containers as c")
     .join("buyer_requests as br", "br.id", "c.buyer_request_id")
-    .select("c.id", "c.qc_status", "br.import_country")
+    .select("c.id", "c.container_no", "c.qc_status", "br.import_country")
     .where("c.id", containerId)
     .first();
 
@@ -129,10 +143,13 @@ export const submitExternalQcReport = async ({
     updated_at: db.fn.now(),
   });
 
+  // ✅ Notify Admins/Managers
+  await notifyAdmins("qc_external_report_submitted", containerId, {
+    container_no: container.container_no,
+  });
+
   return { success: true };
 };
-
-/* ================= REPORTED CONTAINERS HISTORY ================= */
 
 export const getExternalQcReportedContainers = async ({
   userId,
@@ -181,5 +198,68 @@ export const getExternalQcReportedContainers = async ({
       total: Number(count),
       totalPages: Math.ceil(count / limit),
     },
+  };
+};
+
+export const getExternalQcContainerById = async ({ userId, containerId }) => {
+  const { license, importCountry } = await getExternalQcScope(userId);
+
+  const container = await db("farmer_plan_containers as c")
+    .join("buyer_requests as br", "br.id", "c.buyer_request_id")
+    .leftJoin("users as supplier", "supplier.id", "c.supplier_id")
+    .select(
+      "c.id",
+      "c.container_no",
+      "c.tracking_code",
+      "c.created_at",
+      "c.qc_status",
+      "c.qc_reviewed_at",
+      "c.qc_inspection_info",
+      "c.admin_metadata",
+
+      "br.id as buyer_request_id",
+      "br.status as buyer_request_status",
+      "br.import_country",
+
+      "supplier.name as supplier_name",
+    )
+    .where("c.id", containerId)
+    .where("c.qc_status", "approved")
+    .where("br.import_country", importCountry)
+    .where("br.status", "accepted")
+    .first();
+
+  if (!container) {
+    throw new Error("Container not found or access denied");
+  }
+
+  const files = await db("farmer_plan_files")
+    .where({ container_id: containerId })
+    .select(
+      "id",
+      "original_name",
+      "path",
+      "type",
+      "status",
+      "review_note",
+      "created_at",
+    )
+    .orderBy("created_at", "desc");
+
+  const parseJson = (val) => {
+    if (!val) return {};
+    return typeof val === "string" ? JSON.parse(val) : val;
+  };
+
+  const externalReport = await db("external_qc_reports")
+    .where({ container_id: containerId })
+    .first();
+
+  return {
+    ...container,
+    files,
+    admin_metadata: parseJson(container.admin_metadata),
+    qc_inspection_info: parseJson(container.qc_inspection_info),
+    external_qc_report: externalReport || null,
   };
 };

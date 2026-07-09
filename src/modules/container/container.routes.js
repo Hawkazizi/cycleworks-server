@@ -56,7 +56,7 @@ router.patch(
 router.get(
   "/:id/workflow",
   authenticate,
-  authorize("user", "admin", "manager"),
+  authorize("user", "admin", "manager", "qc_internal", "qc_external"),
   trackingCtrl.getContainerWorkflow,
 );
 export default router;

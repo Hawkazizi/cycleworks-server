@@ -5,27 +5,72 @@ import { sendMail } from "../../common/config/mailer.js";
 import * as userService from "./user.service.js";
 import * as farmerPlansService from "../farmerPlan/farmerPlans.service.js";
 
+// ✅ Define project root once for consistent path resolution across OS (Windows/Linux)
+const PROJECT_ROOT = process.cwd();
+const TEMP_DIR_ABS = path.resolve(PROJECT_ROOT, "uploads", "temp");
+
 /* =======================================================================
-   🔐 AUTHENTICATION
+   📤 SINGLE FILE UPLOAD (NEW)
+======================================================================= */
+
+export const uploadSingleFile = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+
+    // ✅ Convert Multer's absolute path to a URL-friendly relative path
+    // .replace(/\\/g, "/") ensures Windows backslashes become forward slashes for URLs
+    const relativePath = path
+      .relative(PROJECT_ROOT, req.file.path)
+      .replace(/\\/g, "/");
+
+    res.json({
+      path: "/" + relativePath, // e.g., "/uploads/temp/161234567890-file.pdf"
+      originalName: req.file.originalname,
+      type: req.body.type,
+    });
+  } catch (err) {
+    console.error("UPLOAD SINGLE FILE ERROR:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/* =======================================================================
+   🔐 USER REGISTRATION (UPDATED)
 ======================================================================= */
 
 export const register = async (req, res) => {
   try {
-    const { name, mobile, email, password, reason, supplier_name, role } =
-      req.body;
+    const {
+      name,
+      mobile,
+      email,
+      password,
+      reason,
+      supplier_name,
+      role,
+      biosecurity,
+      vaccination,
+      emergency,
+      foodSafety,
+      description,
+      farmBiosecurity,
+    } = req.body;
 
     if (!password) {
-      return res.status(400).json({
-        error: req.t("validation.password_required") || "Password is required",
-      });
+      return res
+        .status(400)
+        .json({
+          error:
+            req.t("validation.password_required") || "Password is required",
+        });
     }
-
     if (!mobile && !email) {
       return res.status(400).json({ error: "Mobile or email is required" });
     }
 
     const chosenRole = role || "user";
-
     const { user, application } = await userService.registerUser({
       name,
       mobile,
@@ -36,32 +81,79 @@ export const register = async (req, res) => {
       role: chosenRole,
     });
 
-    const userDir = path.join(
+    // ✅ Define absolute path for the user's final directory
+    const userDirAbs = path.resolve(
+      PROJECT_ROOT,
       "uploads",
       "users",
       String(user.id),
       "registration",
     );
-    fs.mkdirSync(userDir, { recursive: true });
+    fs.mkdirSync(userDirAbs, { recursive: true });
 
-    const saveFile = (file) => {
-      if (!file) return null;
-      const newPath = path.join(userDir, file.originalname);
-      fs.renameSync(file.path, newPath);
+    // ✅ Helper to securely move file from temp to user directory
+    const moveFile = (fileData) => {
+      if (!fileData || !fileData.path) return null;
+
+      const tempPath = fileData.path; // e.g., "/uploads/temp/123-file.pdf"
+      const originalName = fileData.originalname || path.basename(tempPath);
+
+      // 1. Clean the path (remove leading slashes)
+      let cleanPath = tempPath.replace(/^\/+/, "");
+
+      // 2. Resolve to absolute path based on PROJECT_ROOT
+      const absoluteTempPath = path.resolve(PROJECT_ROOT, cleanPath);
+
+      // 3. Security check: ensure it's strictly within the temp directory
+      // We add path.sep to prevent matching a directory named "temp_extra"
+      if (
+        !absoluteTempPath.startsWith(TEMP_DIR_ABS + path.sep) &&
+        absoluteTempPath !== TEMP_DIR_ABS
+      ) {
+        console.warn("Attempted to access file outside temp dir:", tempPath);
+        return null;
+      }
+
+      // 4. Check if file exists
+      if (!fs.existsSync(absoluteTempPath)) {
+        console.warn("Temp file not found:", absoluteTempPath);
+        return null;
+      }
+
+      // 5. Determine final absolute path, handling collisions
+      let finalPathAbs = path.join(userDirAbs, originalName);
+      let counter = 1;
+      while (fs.existsSync(finalPathAbs)) {
+        const ext = path.extname(originalName);
+        const nameWithoutExt = path.basename(originalName, ext);
+        finalPathAbs = path.join(
+          userDirAbs,
+          `${nameWithoutExt}-${counter}${ext}`,
+        );
+        counter++;
+      }
+
+      // 6. Move the file using absolute paths (prevents any CWD issues on VPS)
+      fs.renameSync(absoluteTempPath, finalPathAbs);
+
+      // 7. Return the relative URL path for the database (always use forward slashes for URLs)
+      const relativeUrlPath =
+        "/" + path.relative(PROJECT_ROOT, finalPathAbs).replace(/\\/g, "/");
+
       return {
-        filename: file.originalname,
-        path: "/" + newPath.replace(/\\/g, "/"),
-        mimetype: file.mimetype,
+        filename: path.basename(finalPathAbs),
+        path: relativeUrlPath,
+        originalname: originalName, // ✅ Super Admin UI expects this exact key
       };
     };
 
     const fileInfos = {
-      biosecurity: saveFile(req.files?.biosecurity?.[0]),
-      vaccination: saveFile(req.files?.vaccination?.[0]),
-      emergency: saveFile(req.files?.emergency?.[0]),
-      food_safety: saveFile(req.files?.foodSafety?.[0]),
-      description: saveFile(req.files?.description?.[0]),
-      farm_biosecurity: saveFile(req.files?.farmBiosecurity?.[0]),
+      biosecurity: moveFile(biosecurity),
+      vaccination: moveFile(vaccination),
+      emergency: moveFile(emergency),
+      food_safety: moveFile(foodSafety),
+      description: moveFile(description),
+      farm_biosecurity: moveFile(farmBiosecurity),
     };
 
     await db("user_applications")

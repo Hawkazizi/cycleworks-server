@@ -4,7 +4,25 @@ import bcrypt from "bcrypt";
 import crypto from "crypto";
 import { JWT_SECRET, JWT_EXPIRES_IN } from "../../common/config/jwt.js";
 import { NotificationService } from "../notification/notification.service.js";
+// ✅ Helper to notify all active QC Internal and External users
+const notifyQcRoles = async (type, relatedId, data = {}, trx = null) => {
+  try {
+    const dbConn = trx || db;
+    const qcUsers = await dbConn("users as u")
+      .join("user_roles as ur", "u.id", "ur.user_id")
+      .join("roles as r", "r.id", "ur.role_id")
+      .whereRaw("LOWER(r.name) IN ('qc_internal', 'qc_external')")
+      .where("u.status", "active")
+      .distinct()
+      .pluck("u.id");
 
+    for (const qcId of qcUsers) {
+      await NotificationService.create(qcId, type, relatedId, data, trx);
+    }
+  } catch (err) {
+    console.error(`Failed to notify QC roles for ${type}:`, err);
+  }
+};
 const BASE_URL = process.env.BASE_URL || "http://localhost:5000";
 
 /* =======================================================================
@@ -903,6 +921,12 @@ export async function markContainerCompleted(containerId, adminId) {
         trx, // pass the KNEX trx ✅
       );
     }
+    await notifyQcRoles(
+      "container_completed_by_admin",
+      containerId,
+      { container_no: container.container_no },
+      trx,
+    );
   });
 
   return {
@@ -974,94 +998,6 @@ export const getContainerQcHold = async (containerId) => {
   if (container.qc_status !== "held") return null;
 
   return container;
-};
-
-export const resolveInternalQcHold = async ({
-  containerId,
-  resolutionAction,
-  resolutionNote,
-  resolvedBy,
-}) => {
-  const allowedActions = [
-    "release_hold",
-    "request_reinspection",
-    "reject_container",
-    "cancel_container",
-  ];
-
-  if (!allowedActions.includes(resolutionAction)) {
-    throw new Error("Invalid resolution_action");
-  }
-
-  return db.transaction(async (trx) => {
-    // Lock container
-    const container = await trx("farmer_plan_containers")
-      .where({ id: containerId })
-      .forUpdate()
-      .first();
-
-    if (!container) throw new Error("Container not found");
-    if (container.qc_status !== "held")
-      throw new Error("Container is not in held status");
-    if (container.is_completed) throw new Error("Container already completed");
-
-    // Insert resolution record
-    await trx("internal_qc_hold_resolutions").insert({
-      container_id: container.id,
-      previous_qc_status: container.qc_status,
-      resolution_action: resolutionAction,
-      resolution_note: resolutionNote || null,
-      resolved_by: resolvedBy,
-      send_back_to_qc: ["release_hold", "request_reinspection"].includes(
-        resolutionAction,
-      ),
-    });
-
-    // Update container status
-    if (["release_hold", "request_reinspection"].includes(resolutionAction)) {
-      await trx("farmer_plan_containers").where({ id: container.id }).update({
-        qc_status: "pending",
-        qc_hold_reason: null,
-        qc_hold_details: null,
-        qc_reviewed_by: null,
-        qc_reviewed_at: null,
-        qc_inspection_info: {},
-        updated_at: trx.fn.now(),
-      });
-    }
-
-    if (resolutionAction === "reject_container") {
-      await trx("farmer_plan_containers").where({ id: container.id }).update({
-        is_rejected: true,
-        is_completed: true,
-        updated_at: trx.fn.now(),
-      });
-    }
-
-    if (resolutionAction === "cancel_container") {
-      await trx("farmer_plan_containers").where({ id: container.id }).update({
-        is_completed: true,
-        updated_at: trx.fn.now(),
-      });
-    }
-
-    // Return updated container
-    const updated = await trx("farmer_plan_containers as c")
-      .leftJoin("admin_license_keys as alk", "c.qc_reviewed_by", "alk.id")
-      .leftJoin("users as u", "alk.assigned_to", "u.id")
-      .select(
-        "c.id",
-        "c.qc_status",
-        "c.qc_hold_reason as reason",
-        "c.qc_hold_details as notes",
-        "c.qc_reviewed_at as held_at",
-        db.raw("jsonb_build_object('id', u.id, 'name', u.name) as held_by"),
-      )
-      .where("c.id", container.id)
-      .first();
-
-    return updated;
-  });
 };
 
 export const getContainerQcHoldHistory = async (containerId) => {

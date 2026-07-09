@@ -70,3 +70,26 @@ export const getReportedContainers = async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 };
+
+/* ================= GET SINGLE CONTAINER DETAILS (NEW) ================= */
+export const getContainerDetails = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const containerId = Number(req.params.id);
+
+    if (!containerId) {
+      return res.status(400).json({ error: req.t("validation.invalid_id") });
+    }
+
+    const container = await externalQcService.getExternalQcContainerById({
+      userId,
+      containerId,
+    });
+
+    res.json(container);
+  } catch (err) {
+    res.status(404).json({
+      error: err.message || req.t("container.not_found"),
+    });
+  }
+};

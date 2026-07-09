@@ -24,7 +24,6 @@ function safeParseJSON(value, fallback) {
   }
 }
 
-/** Normalize a buyer request row (hydrate doc URLs, etc.) */
 function normalizeRequest(row) {
   return {
     ...row,
@@ -33,17 +32,16 @@ function normalizeRequest(row) {
     farmer_docs: safeParseJSON(row.farmer_docs, []).map((doc) => ({
       ...doc,
       filename: doc.filename || doc.original_name || "-",
-      path: doc.path?.startsWith("http") ? doc.path : `${BASE_URL}${doc.path}`,
+      path: doc.path, // ✅ Just return the raw path, let frontend getFileUrl() handle the domain
     })),
     admin_docs: safeParseJSON(row.admin_docs, []).map((doc) => ({
       ...doc,
       filename: doc.filename || doc.original_name || "-",
-      path: doc.path?.startsWith("http") ? doc.path : `${BASE_URL}${doc.path}`,
+      path: doc.path, // ✅ Just return the raw path
     })),
     farmer_plan: safeParseJSON(row.farmer_plan, {}),
   };
 }
-
 /** Hydrate all farmer plans and containers for a buyer request. */
 async function hydratePlans(requestId) {
   const plans = await knex("farmer_plans as fp")
@@ -65,7 +63,7 @@ async function hydratePlans(requestId) {
       container.files = files.map((f) => ({
         ...f,
         filename: f.original_name || f.file_key || "-",
-        path: f.path?.startsWith("http") ? f.path : `${BASE_URL}${f.path}`,
+        path: f.path, // ✅ Just return the raw path
       }));
     }
   }
