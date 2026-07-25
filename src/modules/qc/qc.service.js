@@ -593,13 +593,13 @@ export const holdContainer = async ({
 
   return { success: true };
 };
-
 export const updateAdminMetadata = async ({
   userId,
   containerId,
   bl_no,
   bl_date,
 }) => {
+  // Keep this to ensure the user has a valid active QC license
   const license = await getQcLicense(userId);
 
   const container = await db("farmer_plan_containers")
@@ -621,12 +621,11 @@ export const updateAdminMetadata = async ({
 
   await db("farmer_plan_containers").where({ id: containerId }).update({
     admin_metadata: updatedAdminMeta,
-    admin_metadata_reviewed_by: license.id,
+    admin_metadata_reviewed_by: userId, // ✅ FIXED: Use userId, NOT license.id
     admin_metadata_reviewed_at: db.fn.now(),
     updated_at: db.fn.now(),
   });
 
-  // ✅ Notify Admins/Managers
   await notifyAdmins("qc_admin_metadata_updated", containerId, {
     container_no: container.container_no,
   });

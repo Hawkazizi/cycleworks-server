@@ -59,12 +59,9 @@ export const register = async (req, res) => {
     } = req.body;
 
     if (!password) {
-      return res
-        .status(400)
-        .json({
-          error:
-            req.t("validation.password_required") || "Password is required",
-        });
+      return res.status(400).json({
+        error: req.t("validation.password_required") || "Password is required",
+      });
     }
     if (!mobile && !email) {
       return res.status(400).json({ error: "Mobile or email is required" });
