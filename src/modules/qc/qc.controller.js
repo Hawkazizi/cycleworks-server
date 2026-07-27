@@ -335,3 +335,27 @@ export const unholdContainer = async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 };
+export const updateArrivalInfo = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { arrived_at, arrival_place } = req.body;
+    const userId = req.user.id;
+
+    if (!arrived_at || !arrival_place) {
+      return res
+        .status(400)
+        .json({ error: "Arrival date and place are required" });
+    }
+
+    const result = await qcService.updateArrivalInfo({
+      containerId: id,
+      arrived_at,
+      arrival_place,
+      userId,
+    });
+
+    res.json({ message: "Arrival info updated successfully", ...result });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};

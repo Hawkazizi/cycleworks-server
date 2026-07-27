@@ -662,3 +662,34 @@ export const unholdContainer = async ({ containerId, userId }) => {
 
   return { success: true };
 };
+export const updateArrivalInfo = async ({
+  containerId,
+  arrived_at,
+  arrival_place,
+  userId,
+}) => {
+  const license = await getQcLicense(userId);
+  const container = await db("farmer_plan_containers")
+    .where({ id: containerId })
+    .first();
+
+  if (!container) throw new Error("Container not found");
+  if (container.qc_status === "pending") {
+    throw new Error(
+      "Container has not arrived yet. Use the arrival endpoint instead.",
+    );
+  }
+
+  await db("farmer_plan_containers").where({ id: containerId }).update({
+    qc_arrival_info: { arrived_at, arrival_place },
+    qc_reviewed_by: license.id,
+    qc_reviewed_at: db.fn.now(),
+    updated_at: db.fn.now(),
+  });
+
+  await notifyAdmins("qc_internal_arrival_updated", containerId, {
+    container_no: container.container_no,
+  });
+
+  return { success: true };
+};

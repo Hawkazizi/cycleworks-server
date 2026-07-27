@@ -114,5 +114,10 @@ router.get(
   authorize("qc_internal", "qc_external"),
   qcController.getQcContainerById,
 );
-
+router.patch(
+  "/containers/:id/arrival-info",
+  authenticate,
+  authorize("qc_internal"),
+  qcController.updateArrivalInfo,
+);
 export default router;
