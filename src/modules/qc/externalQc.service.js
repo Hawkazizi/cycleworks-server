@@ -102,6 +102,7 @@ export const submitExternalQcReport = async ({
   quality_condition,
   packaging_condition,
   discrepancies,
+  attachments = [], // ✅ Added parameter
 }) => {
   const { license, importCountry } = await getExternalQcScope(userId);
 
@@ -138,12 +139,12 @@ export const submitExternalQcReport = async ({
     quality_condition: quality_condition || null,
     packaging_condition: packaging_condition || null,
     discrepancies: discrepancies || null,
+    attachments: JSON.stringify(attachments), // ✅ Save array as JSONB
     confirmed_at: db.fn.now(),
     created_at: db.fn.now(),
     updated_at: db.fn.now(),
   });
 
-  // ✅ Notify Admins/Managers
   await notifyAdmins("qc_external_report_submitted", containerId, {
     container_no: container.container_no,
   });
