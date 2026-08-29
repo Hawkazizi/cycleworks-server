@@ -393,11 +393,15 @@ export async function updateContainerMetadata(
 
   if (!container) throw new Error("Container not found");
 
-  // 2️⃣ Authorization check
-  const isAdmin = roles.includes("admin") || roles.includes("manager");
+  // 2️⃣ Authorization check (Allow supplier, admin, manager, OR qc_internal)
+  const hasElevatedRole =
+    roles.includes("admin") ||
+    roles.includes("manager") ||
+    roles.includes("qc_internal"); // ✅ Added qc_internal here
+
   const isSupplier = container.supplier_id === userId;
 
-  if (!isSupplier && !isAdmin) {
+  if (!isSupplier && !hasElevatedRole) {
     throw new Error("Not authorized to modify this container");
   }
 

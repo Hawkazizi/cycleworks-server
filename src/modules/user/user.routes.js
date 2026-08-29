@@ -140,12 +140,12 @@ router
   .route("/containers/:id/metadata")
   .get(
     authenticate,
-    authorize("user", "admin", "manager"),
+    authorize("user", "admin", "manager", "qc_internal"),
     userController.getContainerMetadata,
   )
   .patch(
     authenticate,
-    authorize("user", "manager", "admin"),
+    authorize("user", "manager", "admin", "qc_internal"),
     userController.updateContainerMetadataController,
   );
 
