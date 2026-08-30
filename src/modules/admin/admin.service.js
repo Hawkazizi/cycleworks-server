@@ -166,33 +166,33 @@ export async function getAdminDashboard() {
   const appsPending = Number(appsPendingRow?.c || 0);
 
   // ---------------------------
-  // 3) BUYER REQUESTS STATS (status + country + recent)
+  // 3) CUSTOMER REQUESTS STATS (status + country + recent)
   // ---------------------------
-  const buyerStatsByStatus = await db("buyer_requests as br")
+  const customerStatsByStatus = await db("buyer_requests as br")
     .select("br.status")
     .count("* as c")
     .groupBy("br.status");
 
-  const buyerTotalRow = await db("buyer_requests").count("* as c").first();
-  const buyerTotal = Number(buyerTotalRow?.c || 0);
+  const customerTotalRow = await db("buyer_requests").count("* as c").first();
+  const customerTotal = Number(customerTotalRow?.c || 0);
 
-  const buyerByStatusMap = buyerStatsByStatus.reduce((acc, r) => {
+  const customerByStatusMap = customerStatsByStatus.reduce((acc, r) => {
     const k = (r.status || "unknown").toLowerCase();
     acc[k] = Number(r.c || 0);
     return acc;
   }, {});
 
-  const buyerByCountryRows = await db("buyer_requests as br")
+  const customerByCountryRows = await db("buyer_requests as br")
     .select("br.import_country")
     .count("* as c")
     .groupBy("br.import_country");
 
-  const buyerByCountry = buyerByCountryRows.map((r) => ({
+  const customerByCountry = customerByCountryRows.map((r) => ({
     name: r.import_country || "Unknown",
     v: Number(r.c || 0),
   }));
 
-  // recent 6 buyer requests (minimal fields used in UI)
+  // recent 6 customer requests (minimal fields used in UI)
   const recentRequests = await db("buyer_requests as br")
     .select(
       "br.id",
@@ -222,7 +222,7 @@ export async function getAdminDashboard() {
   // inProgressX per country
   // completedX per country
   // rejectedContainers (is_rejected true)
-  // pendingFarmer (farmer_status = pending)
+  // pendingSupplier (farmer_status = pending)
   //
   const containerAggRows = await db("farmer_plan_containers as c")
     .leftJoin("farmer_plans as fp", "fp.id", "c.plan_id")
@@ -256,7 +256,7 @@ export async function getAdminDashboard() {
   let totalContainers = 0;
   let rejectedContainers = 0;
   let containersInProgress = 0;
-  let pendingFarmer = 0;
+  let pendingSupplier = 0;
 
   const containersByCountry = {};
   const inProgressByCountry = {};
@@ -269,12 +269,12 @@ export async function getAdminDashboard() {
     const totalRejected = Number(r.total_rejected || 0);
     const inProg = Number(r.in_progress_non_rejected || 0);
     const completed = Number(r.completed_non_rejected || 0);
-    const pendingFarmerCount = Number(r.pending_farmer_total || 0);
+    const pendingSupplierCount = Number(r.pending_farmer_total || 0);
 
     totalContainers += totalNonRejected;
     rejectedContainers += totalRejected;
     containersInProgress += inProg;
-    pendingFarmer += pendingFarmerCount;
+    pendingSupplier += pendingSupplierCount;
 
     containersByCountry[country] = completed; // chart wants completed
     inProgressByCountry[country] = inProg;
@@ -283,41 +283,41 @@ export async function getAdminDashboard() {
 
   // Normalize country keys you use in UI
   const getCountry = (obj, name) => obj[name] || obj[name.toLowerCase()] || 0;
-  const buyerQatar = buyerByCountryRows.find(
+  const customerQatar = customerByCountryRows.find(
     (x) => (x.import_country || "").toLowerCase() === "qatar",
   )
     ? Number(
-        buyerByCountryRows.find(
+        customerByCountryRows.find(
           (x) => (x.import_country || "").toLowerCase() === "qatar",
         )?.c || 0,
       )
     : 0;
 
-  const buyerOman = buyerByCountryRows.find(
+  const customerOman = customerByCountryRows.find(
     (x) => (x.import_country || "").toLowerCase() === "oman",
   )
     ? Number(
-        buyerByCountryRows.find(
+        customerByCountryRows.find(
           (x) => (x.import_country || "").toLowerCase() === "oman",
         )?.c || 0,
       )
     : 0;
 
-  const buyerBahrain = buyerByCountryRows.find(
+  const customerBahrain = customerByCountryRows.find(
     (x) => (x.import_country || "").toLowerCase() === "bahrain",
   )
     ? Number(
-        buyerByCountryRows.find(
+        customerByCountryRows.find(
           (x) => (x.import_country || "").toLowerCase() === "bahrain",
         )?.c || 0,
       )
     : 0;
 
-  const buyerKuwait = buyerByCountryRows.find(
+  const customerKuwait = customerByCountryRows.find(
     (x) => (x.import_country || "").toLowerCase() === "kuwait",
   )
     ? Number(
-        buyerByCountryRows.find(
+        customerByCountryRows.find(
           (x) => (x.import_country || "").toLowerCase() === "kuwait",
         )?.c || 0,
       )
@@ -335,25 +335,25 @@ export async function getAdminDashboard() {
     users: usersCount,
     applications: appsPending,
 
-    buyerTotal,
-    buyerPending: buyerByStatusMap["pending"] || 0,
-    buyerAccepted: buyerByStatusMap["accepted"] || 0,
-    buyerRejected: buyerByStatusMap["rejected"] || 0,
-    buyerCancelled: buyerByStatusMap["cancelled"] || 0,
+    customerTotal,
+    customerPending: customerByStatusMap["pending"] || 0,
+    customerAccepted: customerByStatusMap["accepted"] || 0,
+    customerRejected: customerByStatusMap["rejected"] || 0,
+    customerCancelled: customerByStatusMap["cancelled"] || 0,
 
-    // NOTE: in your current UI you later overwrite buyerCompletedRequests with container completed count.
+    // NOTE: in your current UI you later overwrite customerCompletedRequests with container completed count.
     // We'll provide it anyway as 0 or status-based if you ever need:
-    buyerCompletedRequests: buyerByStatusMap["completed"] || 0,
+    customerCompletedRequests: customerByStatusMap["completed"] || 0,
 
-    buyerOman,
-    buyerQatar,
-    buyerBahrain,
-    buyerKuwait,
+    customerOman,
+    customerQatar,
+    customerBahrain,
+    customerKuwait,
 
     totalContainers,
     containersInProgress,
     rejectedContainers,
-    pendingFarmer,
+    pendingSupplier,
 
     inProgressQatar: getCountry(inProgressByCountry, "Qatar"),
     inProgressOman: getCountry(inProgressByCountry, "Oman"),
@@ -373,7 +373,7 @@ export async function getAdminDashboard() {
 
   return {
     stats,
-    buyerByCountry,
+    customerByCountry,
     containersByCountry: containersByCountryData,
     recentRequests,
   };
@@ -907,7 +907,7 @@ export async function markContainerCompleted(containerId, adminId) {
       created_at: trx.fn.now(),
     });
 
-    // Notification to supplier (farmer) — use existing service signature
+    // Notification to supplier (supplier) — use existing service signature
     if (container.supplier_id) {
       await NotificationService.create(
         container.supplier_id, // userId (NUMBER) ✅

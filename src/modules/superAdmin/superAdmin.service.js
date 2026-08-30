@@ -87,7 +87,7 @@ export async function getAdminDashboard() {
     supplier: usersByRole["user"] || 0, // supplier = "user"
     qc_internal: usersByRole["qc_internal"] || 0,
     qc_external: usersByRole["qc_external"] || 0,
-    buyer: usersByRole["buyer"] || 0,
+    customer: usersByRole["buyer"] || 0,
     no_role: usersByRole["no_role"] || 0,
   };
 
@@ -118,76 +118,76 @@ export async function getAdminDashboard() {
   const appsTotal = Number(appsTotalRow?.c || 0);
 
   /* =========================================================
-     3) BUYER REQUESTS (status + allocation + country + types + deadlines)
+     3) CUSTOMER REQUESTS (status + allocation + country + types + deadlines)
   ========================================================= */
-  const buyerTotalRow = await db("buyer_requests").count("* as c").first();
-  const buyerTotal = Number(buyerTotalRow?.c || 0);
+  const customerTotalRow = await db("buyer_requests").count("* as c").first();
+  const customerTotal = Number(customerTotalRow?.c || 0);
 
-  const buyerByStatusRows = await db("buyer_requests as br")
+  const customerByStatusRows = await db("buyer_requests as br")
     .select(db.raw("COALESCE(br.status,'unknown') as status"))
     .count("* as c")
     .groupBy("status");
 
-  const buyerByStatus = mapCountRows(buyerByStatusRows, "status", "c", (x) =>
+  const customerByStatus = mapCountRows(customerByStatusRows, "status", "c", (x) =>
     String(x || "unknown").toLowerCase(),
   );
 
-  const buyerByAllocationRows = await db("buyer_requests as br")
+  const customerByAllocationRows = await db("buyer_requests as br")
     .select(
       db.raw("COALESCE(br.allocation_status,'unknown') as allocation_status"),
     )
     .count("* as c")
     .groupBy("allocation_status");
 
-  const buyerByAllocationStatus = mapCountRows(
-    buyerByAllocationRows,
+  const customerByAllocationStatus = mapCountRows(
+    customerByAllocationRows,
     "allocation_status",
     "c",
     (x) => String(x || "unknown").toLowerCase(),
   );
 
-  const buyerByCountryRows = await db("buyer_requests as br")
+  const customerByCountryRows = await db("buyer_requests as br")
     .select(db.raw("COALESCE(br.import_country,'Unknown') as country"))
     .count("* as c")
     .groupBy("country")
     .orderBy("c", "desc");
 
-  const buyerByCountryMap = mapCountRows(
-    buyerByCountryRows,
+  const customerByCountryMap = mapCountRows(
+    customerByCountryRows,
     "country",
     "c",
     normalizeCountryKey,
   );
 
-  const buyerByCountry = Object.entries(buyerByCountryMap).map(([name, v]) => ({
+  const customerByCountry = Object.entries(customerByCountryMap).map(([name, v]) => ({
     name,
     v,
   }));
 
-  const buyerByProductTypeRows = await db("buyer_requests as br")
+  const customerByProductTypeRows = await db("buyer_requests as br")
     .select(db.raw("COALESCE(br.product_type,'Unknown') as product_type"))
     .count("* as c")
     .groupBy("product_type")
     .orderBy("c", "desc");
 
-  const buyerByProductType = Object.entries(
+  const customerByProductType = Object.entries(
     mapCountRows(
-      buyerByProductTypeRows,
+      customerByProductTypeRows,
       "product_type",
       "c",
       (x) => String(x || "Unknown").trim() || "Unknown",
     ),
   ).map(([name, v]) => ({ name, v }));
 
-  const buyerByEggTypeRows = await db("buyer_requests as br")
+  const customerByEggTypeRows = await db("buyer_requests as br")
     .select(db.raw("COALESCE(br.egg_type,'Unknown') as egg_type"))
     .count("* as c")
     .groupBy("egg_type")
     .orderBy("c", "desc");
 
-  const buyerByEggType = Object.entries(
+  const customerByEggType = Object.entries(
     mapCountRows(
-      buyerByEggTypeRows,
+      customerByEggTypeRows,
       "egg_type",
       "c",
       (x) => String(x || "Unknown").trim() || "Unknown",
@@ -204,9 +204,9 @@ export async function getAdminDashboard() {
 
   const upcomingDeadlines30d = Number(upcomingDeadlinesRow?.c || 0);
 
-  // Recent buyer requests (with buyer + preferred supplier details)
+  // Recent customer requests (with customer + preferred supplier details)
   const recentRequests = await db("buyer_requests as br")
-    .leftJoin("users as buyer", "buyer.id", "br.buyer_id")
+    .leftJoin("users as customer", "customer.id", "br.buyer_id")
     .leftJoin("users as pref", "pref.id", "br.preferred_supplier_id")
     .select(
       "br.id",
@@ -223,9 +223,9 @@ export async function getAdminDashboard() {
       "br.deadline_start",
       "br.deadline_end",
       "br.created_at",
-      "buyer.id as buyer_id",
-      "buyer.name as buyer_name",
-      "buyer.mobile as buyer_mobile",
+      "customer.id as buyer_id",
+      "customer.name as buyer_name",
+      "customer.mobile as buyer_mobile",
       "pref.id as preferred_supplier_id",
       "pref.name as preferred_supplier_name",
       "pref.mobile as preferred_supplier_mobile",
@@ -275,7 +275,7 @@ export async function getAdminDashboard() {
   const totalContainers = Number(containersTotals?.total_non_rejected || 0);
   const containersInProgress = Number(containersTotals?.total_in_progress || 0);
   const containersCompleted = Number(containersTotals?.total_completed || 0);
-  const pendingFarmer = Number(containersTotals?.total_pending_farmer || 0);
+  const pendingSupplier = Number(containersTotals?.total_pending_farmer || 0);
 
   // By country (completed + in_progress + rejected + total)
   const containersByCountryRows = await db("farmer_plan_containers as c")
@@ -357,14 +357,14 @@ export async function getAdminDashboard() {
     containers: Number(r.c || 0),
   }));
 
-  // Recent containers (with request + country + buyer + supplier)
+  // Recent containers (with request + country + customer + supplier)
   const recentContainers = await db("farmer_plan_containers as c")
     .leftJoin("farmer_plans as fp", "fp.id", "c.plan_id")
     .leftJoin("buyer_requests as br_fp", "br_fp.id", "fp.request_id")
     .leftJoin("buyer_requests as br_c", "br_c.id", "c.buyer_request_id")
     .leftJoin(
-      "users as buyer",
-      "buyer.id",
+      "users as customer",
+      "customer.id",
       db.raw("COALESCE(br_c.buyer_id, br_fp.buyer_id)"),
     )
     .leftJoin("users as sup", "sup.id", "c.supplier_id")
@@ -387,9 +387,9 @@ export async function getAdminDashboard() {
       db.raw(
         "COALESCE(br_c.import_country, br_fp.import_country, 'Unknown') as import_country",
       ),
-      "buyer.id as buyer_id",
-      "buyer.name as buyer_name",
-      "buyer.mobile as buyer_mobile",
+      "customer.id as buyer_id",
+      "customer.name as buyer_name",
+      "customer.mobile as buyer_mobile",
       "sup.id as supplier_id",
       "sup.name as supplier_name",
       "sup.mobile as supplier_mobile",
@@ -402,11 +402,11 @@ export async function getAdminDashboard() {
      - but now they are derived from correct breakdowns
   ========================================================= */
 
-  // buyer country convenience
-  const buyerQatar = pickCountryCount(buyerByCountryMap, "Qatar");
-  const buyerOman = pickCountryCount(buyerByCountryMap, "Oman");
-  const buyerBahrain = pickCountryCount(buyerByCountryMap, "Bahrain");
-  const buyerKuwait = pickCountryCount(buyerByCountryMap, "Kuwait");
+  // customer country convenience
+  const customerQatar = pickCountryCount(customerByCountryMap, "Qatar");
+  const customerOman = pickCountryCount(customerByCountryMap, "Oman");
+  const customerBahrain = pickCountryCount(customerByCountryMap, "Bahrain");
+  const customerKuwait = pickCountryCount(customerByCountryMap, "Kuwait");
 
   // containers convenience per country
   const countryToCompleted = {};
@@ -421,24 +421,24 @@ export async function getAdminDashboard() {
     users: usersTotal,
     applications: appsPending,
 
-    // buyer requests (legacy)
-    buyerTotal,
-    buyerPending: buyerByStatus["pending"] || 0,
-    buyerAccepted: buyerByStatus["accepted"] || 0,
-    buyerRejected: buyerByStatus["rejected"] || 0,
-    buyerCancelled: buyerByStatus["cancelled"] || 0,
-    buyerCompletedRequests: buyerByStatus["completed"] || 0,
+    // customer requests (legacy)
+    customerTotal,
+    customerPending: customerByStatus["pending"] || 0,
+    customerAccepted: customerByStatus["accepted"] || 0,
+    customerRejected: customerByStatus["rejected"] || 0,
+    customerCancelled: customerByStatus["cancelled"] || 0,
+    customerCompletedRequests: customerByStatus["completed"] || 0,
 
-    buyerOman,
-    buyerQatar,
-    buyerBahrain,
-    buyerKuwait,
+    customerOman,
+    customerQatar,
+    customerBahrain,
+    customerKuwait,
 
     // containers (legacy)
     totalContainers, // non-rejected
     containersInProgress,
     rejectedContainers,
-    pendingFarmer,
+    pendingSupplier,
 
     inProgressQatar: pickCountryCount(countryToInProgress, "Qatar"),
     inProgressOman: pickCountryCount(countryToInProgress, "Oman"),
@@ -478,13 +478,13 @@ export async function getAdminDashboard() {
       byStatus: applicationsByStatus,
     },
 
-    buyerRequests: {
-      total: buyerTotal,
-      byStatus: buyerByStatus,
-      byAllocationStatus: buyerByAllocationStatus,
-      byCountry: buyerByCountryMap,
-      byProductType: buyerByProductType,
-      byEggType: buyerByEggType,
+    customerRequests: {
+      total: customerTotal,
+      byStatus: customerByStatus,
+      byAllocationStatus: customerByAllocationStatus,
+      byCountry: customerByCountryMap,
+      byProductType: customerByProductType,
+      byEggType: customerByEggType,
       upcomingDeadlines30d,
     },
 
@@ -494,14 +494,14 @@ export async function getAdminDashboard() {
       totalRejected: rejectedContainers,
       totalInProgress: containersInProgress,
       totalCompleted: containersCompleted,
-      pendingFarmer,
+      pendingSupplier,
       byCountryDetailed: containersByCountryDetailed,
       byQcStatus: containersByQcStatus,
       topSuppliers,
     },
 
     // Keep these for your existing UI charts
-    buyerByCountry,
+    customerByCountry,
     containersByCountry,
 
     // Lists
@@ -1162,7 +1162,7 @@ function buildFileUrl(p) {
 }
 
 /* =======================================================================
-   👥 Containers + Buyer Requests (Super Admin CRUD)
+   👥 Containers + Customer Requests (Super Admin CRUD)
    - No schema changes
    - Keeps *_by / *_at columns
    - Enriches admin_license_keys "by" fields via admin_license_keys.assigned_to -> users
@@ -1193,7 +1193,7 @@ async function ensureUserExists(userId) {
   return u;
 }
 
-async function ensureBuyerRequestExists(requestId) {
+async function ensureCustomerRequestExists(requestId) {
   const id = assertId(requestId, "requestId");
   const r = await db("buyer_requests").where({ id }).first();
   if (!r) throw new Error("Buyer request not found");
@@ -1277,7 +1277,7 @@ async function nextContainerNo(trx, planId) {
 }
 
 /* =======================================================================
-   BUYER REQUESTS (List / Get / Create / Update / Delete)
+   CUSTOMER REQUESTS (List / Get / Create / Update / Delete)
 ======================================================================= */
 
 const SAFE_BR_SORT = new Set([
@@ -1292,7 +1292,7 @@ const SAFE_BR_SORT = new Set([
   "deadline_end",
 ]);
 
-export async function listBuyerRequests({
+export async function listCustomerRequests({
   page = 1,
   pageSize = 20,
   search = "",
@@ -1308,7 +1308,7 @@ export async function listBuyerRequests({
   dir = String(dir).toLowerCase() === "asc" ? "asc" : "desc";
 
   const base = db("buyer_requests as br")
-    .leftJoin("users as buyer", "buyer.id", "br.buyer_id")
+    .leftJoin("users as customer", "customer.id", "br.buyer_id")
     .leftJoin("users as creator", "creator.id", "br.creator_id")
     .leftJoin(
       "users as pref_supplier",
@@ -1318,9 +1318,9 @@ export async function listBuyerRequests({
     .leftJoin("admin_license_keys as br_rev", "br_rev.id", "br.reviewed_by")
     .select(
       "br.*",
-      db.raw(`COALESCE(buyer.name, '') as buyer_name`),
-      db.raw(`COALESCE(buyer.mobile, '') as buyer_mobile`),
-      db.raw(`COALESCE(buyer.email, '') as buyer_email`),
+      db.raw(`COALESCE(customer.name, '') as buyer_name`),
+      db.raw(`COALESCE(customer.mobile, '') as buyer_mobile`),
+      db.raw(`COALESCE(customer.email, '') as buyer_email`),
       db.raw(`COALESCE(creator.name, '') as creator_name`),
       db.raw(`COALESCE(creator.mobile, '') as creator_mobile`),
       db.raw(
@@ -1341,8 +1341,8 @@ export async function listBuyerRequests({
   if (search) {
     const s = `%${String(search).toLowerCase()}%`;
     base.andWhere((q) => {
-      q.whereRaw("LOWER(COALESCE(buyer.name,'')) LIKE ?", [s])
-        .orWhereRaw("LOWER(COALESCE(buyer.mobile,'')) LIKE ?", [s])
+      q.whereRaw("LOWER(COALESCE(customer.name,'')) LIKE ?", [s])
+        .orWhereRaw("LOWER(COALESCE(customer.mobile,'')) LIKE ?", [s])
         .orWhereRaw("LOWER(COALESCE(br.order_number,'')) LIKE ?", [s])
         .orWhereRaw("LOWER(COALESCE(br.import_country,'')) LIKE ?", [s])
         .orWhereRaw("CAST(br.id AS TEXT) LIKE ?", [`%${String(search)}%`]);
@@ -1365,7 +1365,7 @@ export async function listBuyerRequests({
   return { page, pageSize, total, rows };
 }
 
-export async function createBuyerRequest(payload = {}) {
+export async function createCustomerRequest(payload = {}) {
   const allowed = [
     "buyer_id",
     "status",
@@ -1417,9 +1417,9 @@ export async function createBuyerRequest(payload = {}) {
   return created;
 }
 
-export async function updateBuyerRequest(requestId, payload = {}) {
+export async function updateCustomerRequest(requestId, payload = {}) {
   const id = assertId(requestId, "requestId");
-  await ensureBuyerRequestExists(id);
+  await ensureCustomerRequestExists(id);
 
   const allowed = [
     "buyer_id",
@@ -1467,14 +1467,14 @@ export async function updateBuyerRequest(requestId, payload = {}) {
   return updated;
 }
 
-export async function getBuyerRequest(
+export async function getCustomerRequest(
   requestId,
   { includeContainers = true } = {},
 ) {
   const id = assertId(requestId, "requestId");
 
   const br = await db("buyer_requests as br")
-    .leftJoin("users as buyer", "buyer.id", "br.buyer_id")
+    .leftJoin("users as customer", "customer.id", "br.buyer_id")
     .leftJoin("users as creator", "creator.id", "br.creator_id")
     .leftJoin(
       "users as pref_supplier",
@@ -1484,9 +1484,9 @@ export async function getBuyerRequest(
     .leftJoin("admin_license_keys as br_rev", "br_rev.id", "br.reviewed_by")
     .select(
       "br.*",
-      db.raw(`COALESCE(buyer.name, '') as buyer_name`),
-      db.raw(`COALESCE(buyer.mobile, '') as buyer_mobile`),
-      db.raw(`COALESCE(buyer.email, '') as buyer_email`),
+      db.raw(`COALESCE(customer.name, '') as buyer_name`),
+      db.raw(`COALESCE(customer.mobile, '') as buyer_mobile`),
+      db.raw(`COALESCE(customer.email, '') as buyer_email`),
       db.raw(`COALESCE(creator.name, '') as creator_name`),
       db.raw(`COALESCE(creator.mobile, '') as creator_mobile`),
       db.raw(`COALESCE(creator.email, '') as creator_email`),
@@ -1513,21 +1513,21 @@ export async function getBuyerRequest(
     .first();
 
   const containers = includeContainers
-    ? await listBuyerRequestContainers(id)
+    ? await listCustomerRequestContainers(id)
     : [];
 
-  return { buyerRequest: br, plan: plan || null, containers };
+  return { customerRequest: br, plan: plan || null, containers };
 }
 
 /**
- * Hard delete buyer request + related plan + containers + related records.
+ * Hard delete customer request + related plan + containers + related records.
  * Because FKs aren’t ON DELETE CASCADE.
  *
  * IMPORTANT: We delete containers that are either:
  * - directly linked by buyer_request_id = requestId
  * - OR linked through the plan_id for this request (if plan exists)
  */
-export async function deleteBuyerRequest(requestId) {
+export async function deleteCustomerRequest(requestId) {
   const id = assertId(requestId, "requestId");
 
   return db.transaction(async (trx) => {
@@ -1577,9 +1577,9 @@ export async function deleteBuyerRequest(requestId) {
    CONTAINERS (List under request / Global list / Create / Get / Update / Delete)
 ======================================================================= */
 
-export async function listBuyerRequestContainers(requestId) {
+export async function listCustomerRequestContainers(requestId) {
   const id = assertId(requestId, "requestId");
-  await ensureBuyerRequestExists(id);
+  await ensureCustomerRequestExists(id);
 
   const rows = await db("farmer_plan_containers as c")
     .leftJoin("users as supplier", "supplier.id", "c.supplier_id")
@@ -1631,7 +1631,7 @@ export async function listContainers({
   const base = db("farmer_plan_containers as c")
     .leftJoin("users as supplier", "supplier.id", "c.supplier_id")
     .leftJoin("buyer_requests as br", "br.id", "c.buyer_request_id")
-    .leftJoin("users as buyer", "buyer.id", "br.buyer_id")
+    .leftJoin("users as customer", "customer.id", "br.buyer_id")
     .leftJoin("farmer_plans as fp", "fp.id", "c.plan_id")
 
     // license joins for *_by enrichment on list too (so super admin sees them)
@@ -1643,8 +1643,8 @@ export async function listContainers({
       db.raw(`COALESCE(supplier.name,'') as supplier_name`),
       db.raw(`COALESCE(supplier.mobile,'') as supplier_mobile`),
 
-      db.raw(`COALESCE(buyer.name,'') as buyer_name`),
-      db.raw(`COALESCE(buyer.mobile,'') as buyer_mobile`),
+      db.raw(`COALESCE(customer.name,'') as buyer_name`),
+      db.raw(`COALESCE(customer.mobile,'') as buyer_mobile`),
 
       db.raw(`br.import_country as buyer_request_import_country`),
       db.raw(`br.order_number as buyer_request_order_number`),
@@ -1670,8 +1670,8 @@ export async function listContainers({
   if (search) {
     const s = `%${String(search).toLowerCase()}%`;
     base.andWhere((q) => {
-      q.whereRaw("LOWER(COALESCE(buyer.name,'')) LIKE ?", [s])
-        .orWhereRaw("LOWER(COALESCE(buyer.mobile,'')) LIKE ?", [s])
+      q.whereRaw("LOWER(COALESCE(customer.name,'')) LIKE ?", [s])
+        .orWhereRaw("LOWER(COALESCE(customer.mobile,'')) LIKE ?", [s])
         .orWhereRaw("LOWER(COALESCE(supplier.name,'')) LIKE ?", [s])
         .orWhereRaw("LOWER(COALESCE(supplier.mobile,'')) LIKE ?", [s])
         .orWhereRaw("LOWER(COALESCE(br.order_number,'')) LIKE ?", [s])
@@ -1702,7 +1702,7 @@ export async function listContainers({
 
 export async function createContainerForRequest(requestId, payload = {}) {
   const rid = assertId(requestId, "requestId");
-  await ensureBuyerRequestExists(rid);
+  await ensureCustomerRequestExists(rid);
 
   const allowed = [
     "container_no",
@@ -1788,7 +1788,7 @@ export async function getContainer(containerId) {
   const c = await db("farmer_plan_containers as c")
     .leftJoin("users as supplier", "supplier.id", "c.supplier_id")
     .leftJoin("buyer_requests as br", "br.id", "c.buyer_request_id")
-    .leftJoin("users as buyer", "buyer.id", "br.buyer_id")
+    .leftJoin("users as customer", "customer.id", "br.buyer_id")
     .leftJoin("farmer_plans as fp", "fp.id", "c.plan_id")
 
     // reviewers (license ids)
@@ -1818,8 +1818,8 @@ export async function getContainer(containerId) {
       db.raw(`br.reviewed_by as buyer_request_reviewed_by_id`),
       db.raw(`br.reviewed_at as buyer_request_reviewed_at`),
 
-      db.raw(`COALESCE(buyer.name,'') as buyer_name`),
-      db.raw(`COALESCE(buyer.mobile,'') as buyer_mobile`),
+      db.raw(`COALESCE(customer.name,'') as buyer_name`),
+      db.raw(`COALESCE(customer.mobile,'') as buyer_mobile`),
 
       db.raw(`fp.id as plan_id`),
       db.raw(`fp.status as plan_status`),
@@ -1936,7 +1936,7 @@ export async function updateContainer(containerId, payload = {}) {
   if (patch.supplier_id) await ensureUserExists(patch.supplier_id);
 
   if (patch.buyer_request_id) {
-    await ensureBuyerRequestExists(patch.buyer_request_id);
+    await ensureCustomerRequestExists(patch.buyer_request_id);
     // NOTE: We do NOT auto-change plan_id here. For full move use transferContainer().
   }
 
@@ -1988,16 +1988,16 @@ export async function deleteContainer(containerId) {
 
 export async function transferContainer(
   containerId,
-  { toBuyerRequestId, containerNo = null } = {},
+  { toCustomerRequestId, containerNo = null } = {},
 ) {
   const cid = assertId(containerId, "containerId");
-  const toRid = assertId(toBuyerRequestId, "toBuyerRequestId");
+  const toRid = assertId(toCustomerRequestId, "toCustomerRequestId");
 
   return db.transaction(async (trx) => {
     const c = await trx("farmer_plan_containers").where({ id: cid }).first();
     if (!c) throw new Error("Container not found");
 
-    await ensureBuyerRequestExists(toRid);
+    await ensureCustomerRequestExists(toRid);
 
     const destPlan = await getOrCreatePlanForRequest(trx, toRid);
 
@@ -2024,8 +2024,8 @@ export async function transferContainer(
       ok: true,
       moved: {
         containerId: cid,
-        fromBuyerRequestId: c.buyer_request_id,
-        toBuyerRequestId: toRid,
+        fromCustomerRequestId: c.buyer_request_id,
+        toCustomerRequestId: toRid,
         fromPlanId: c.plan_id,
         toPlanId: destPlan.id,
         newContainerNo: newNo,

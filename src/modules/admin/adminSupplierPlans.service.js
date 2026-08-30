@@ -20,12 +20,12 @@ const notifyQcRoles = async (type, relatedId, data = {}, trx = null) => {
   }
 };
 /* =======================================================================
-   🗂️ FARMER FILE REVIEW (Admin / Manager)
+   🗂️ SUPPLIER FILE REVIEW (Admin / Manager)
 ======================================================================= */
 
 /**
  * Admin/manager uploads a file to a container.
- * Reuses similar logic to farmerPlansService.addFileToContainer,
+ * Reuses similar logic to supplierPlansService.addFileToContainer,
  * but may skip supplier logic or adjust notifications.
  */
 export const addFileToContainerAsAdmin = async (containerId, fileMeta) => {
@@ -83,7 +83,7 @@ export const addFileToContainerAsAdmin = async (containerId, fileMeta) => {
     );
   }
 
-  // 📎 Notify buyer
+  // 📎 Notify customer
   if (info?.buyer_id) {
     promises.push(
       NotificationService.create(
@@ -132,7 +132,7 @@ export const notifyFileDeletion = async (fileRecord, deletedByUserId) => {
 
   const promises = [];
 
-  // Notify buyer & supplier
+  // Notify customer & supplier
   if (info?.buyer_id) {
     promises.push(
       NotificationService.create(
@@ -159,7 +159,7 @@ export const notifyFileDeletion = async (fileRecord, deletedByUserId) => {
 };
 
 /**
- * Review a single farmer-uploaded plan file.
+ * Review a single supplier-uploaded plan file.
  * @param {number} fileId - File ID in `farmer_plan_files`.
  * @param {"approved"|"rejected"} status - Review decision.
  * @param {string|null} note - Optional review note.
@@ -181,7 +181,7 @@ export async function reviewFile(fileId, status, note, reviewerId) {
 
   if (!updated) throw new Error("File not found");
 
-  // Optional: Notify farmer about file review
+  // Optional: Notify supplier about file review
   try {
     // ✅ Fetch plan through container → plan relation
     const container = await db("farmer_plan_containers")
@@ -249,7 +249,7 @@ export async function reviewContainerMetadata(
     })
     .returning("*");
 
-  // 🔔 Notify farmer
+  // 🔔 Notify supplier
   try {
     const containerRecord = await db("farmer_plan_containers")
       .where({ id: containerId })
@@ -339,7 +339,7 @@ export async function updateContainerAdminMetadata(
     })
     .returning("*");
 
-  // 🔔 Notify linked farmer (if exists)
+  // 🔔 Notify linked supplier (if exists)
   try {
     const containerRecord = await db("farmer_plan_containers")
       .where({ id: containerId })

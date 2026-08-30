@@ -209,57 +209,57 @@ router.patch(
 );
 
 /* =======================================================================
-   💼 BUYER REQUESTS
+   💼 CUSTOMER REQUESTS
 ======================================================================= */
 
 router.get(
-  "/buyer-requests",
+  "/customer-requests",
   authenticate,
   authorize("admin", "manager"),
-  adminController.getBuyerRequests,
+  adminController.getCustomerRequests,
 );
 router.get(
-  "/buyer-requests/:id",
+  "/customer-requests/:id",
   authenticate,
   authorize("admin", "manager"),
-  adminController.getBuyerRequestById,
+  adminController.getCustomerRequestById,
 );
 router.patch(
-  "/buyer-requests/:id",
+  "/customer-requests/:id",
   authenticate,
   authorize("admin", "manager"),
-  adminController.updateBuyerRequest,
+  adminController.updateCustomerRequest,
 );
 router.post(
-  "/buyer-requests/:id/review",
+  "/customer-requests/:id/review",
   authenticate,
   authorize("admin", "manager"),
-  adminController.reviewBuyerRequest,
+  adminController.reviewCustomerRequest,
 );
 router.post(
-  "/buyer-requests/:id/admin-docs",
+  "/customer-requests/:id/admin-docs",
   authenticate,
   authorize("admin", "manager"),
   upload.array("files"),
   adminController.addAdminDocs,
 );
 router.post(
-  "/buyer-requests/:id/final-status",
+  "/customer-requests/:id/final-status",
   authenticate,
   authorize("admin", "manager"),
   adminController.toggleFinalStatus,
 );
 router.post(
-  "/buyer-requests/:id/assign-suppliers",
+  "/customer-requests/:id/assign-suppliers",
   authenticate,
   authorize("admin", "manager"),
   adminController.assignSuppliers,
 );
 router.patch(
-  "/buyer-requests/:id/update-deadline",
+  "/customer-requests/:id/update-deadline",
   authenticate,
   authorize("admin", "manager"),
-  adminController.updateBuyerRequestDeadline,
+  adminController.updateCustomerRequestDeadline,
 );
 
 /* =======================================================================
@@ -282,7 +282,7 @@ router.get(
   adminController.getContainerById,
 );
 
-// 🔸 List containers by Buyer Request
+// 🔸 List containers by Customer Request
 router.get(
   "/containers",
   authenticate,
@@ -375,12 +375,12 @@ router.delete(
   adminController.deleteContainerFile,
 );
 
-// Review farmer file
+// Review supplier file
 router.post(
-  "/farmer-files/:fileId/review",
+  "/supplier-files/:fileId/review",
   authenticate,
   authorize("admin"),
-  adminController.reviewFarmerFile,
+  adminController.reviewSupplierFile,
 );
 
 /* =======================================================================
@@ -403,12 +403,12 @@ router.patch(
   adminController.toggleRejectStatus,
 );
 
-// Mark buyer request complete
+// Mark customer request complete
 router.put(
-  "/buyer-requests/:id/complete",
+  "/customer-requests/:id/complete",
   authenticate,
   authorize("admin", "manager"),
-  adminController.completeBuyerRequest,
+  adminController.completeCustomerRequest,
 );
 
 /* =======================================================================

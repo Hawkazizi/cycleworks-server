@@ -1,7 +1,7 @@
 import * as adminService from "./admin.service.js";
-import * as adminBuyerService from "./adminBuyer.service.js";
+import * as adminCustomerService from "./adminCustomer.service.js";
 import * as adminReportService from "./adminReport.service.js";
-import * as adminFarmerPlansService from "./adminFarmerPlans.service.js";
+import * as adminSupplierPlansService from "./adminSupplierPlans.service.js";
 import db from "../../common/db/knex.js";
 import path from "path";
 import fs from "fs";
@@ -276,8 +276,8 @@ export async function getUserById(req, res) {
     if (!user)
       return res.status(404).json({ error: req.t("common.not_found") });
 
-    // ✅ Buyer requests where this supplier is involved
-    const buyerRequests = await db("buyer_requests as br")
+    // ✅ Customer requests where this supplier is involved
+    const customerRequests = await db("buyer_requests as br")
       .leftJoin("users as b", "br.buyer_id", "b.id")
       .select(
         "br.id",
@@ -309,14 +309,14 @@ export async function getUserById(req, res) {
       )
       .whereIn(
         "p.request_id",
-        buyerRequests.map((r) => r.id),
+        customerRequests.map((r) => r.id),
       );
 
     // ✅ Simple stats
     const stats = {
-      total_requests: buyerRequests.length,
+      total_requests: customerRequests.length,
       total_containers: containers.length,
-      active_requests: buyerRequests.filter(
+      active_requests: customerRequests.filter(
         (r) => r.status === "accepted" || r.status === "pending",
       ).length,
     };
@@ -324,7 +324,7 @@ export async function getUserById(req, res) {
     res.json({
       user,
       stats,
-      buyerRequests,
+      customerRequests,
       containers,
     });
   } catch (err) {
@@ -599,17 +599,17 @@ export const getRoles = async (req, res) => {
   }
 };
 
-/* -------------------- Buyer Requests (new flow) -------------------- */
-export async function getBuyerRequests(req, res) {
+/* -------------------- Customer Requests (new flow) -------------------- */
+export async function getCustomerRequests(req, res) {
   try {
-    const requests = await adminBuyerService.getBuyerRequests();
+    const requests = await adminCustomerService.getCustomerRequests();
     res.json(requests);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 }
 
-export const getBuyerRequestById = async (req, res) => {
+export const getCustomerRequestById = async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -735,9 +735,9 @@ export const getBuyerRequestById = async (req, res) => {
   }
 };
 
-export async function reviewBuyerRequest(req, res) {
+export async function reviewCustomerRequest(req, res) {
   try {
-    const updated = await adminBuyerService.reviewBuyerRequest(req.params.id, {
+    const updated = await adminCustomerService.reviewCustomerRequest(req.params.id, {
       status: req.body.status,
       reviewerId: req.user.licenseId,
     });
@@ -799,7 +799,7 @@ export async function addAdminDocs(req, res) {
   }
 }
 
-export async function updateBuyerRequest(req, res) {
+export async function updateCustomerRequest(req, res) {
   const { id } = req.params;
   const { preferred_supplier_id } = req.body;
 
@@ -884,12 +884,12 @@ export async function toggleFinalStatus(req, res) {
   }
 }
 
-export async function reviewFarmerFile(req, res) {
+export async function reviewSupplierFile(req, res) {
   try {
     const { fileId } = req.params;
     const { status, note } = req.body;
     const reviewerId = req.user.licenseId;
-    const result = await adminFarmerPlansService.reviewFile(
+    const result = await adminSupplierPlansService.reviewFile(
       fileId,
       status,
       note,
@@ -913,7 +913,7 @@ export const uploadContainerFile = async (req, res) => {
     const newPath = path.join(destDir, file.originalname);
     fs.renameSync(file.path, newPath);
 
-    const saved = await adminFarmerPlansService.addFileToContainerAsAdmin(
+    const saved = await adminSupplierPlansService.addFileToContainerAsAdmin(
       containerId,
       {
         key: file.filename,
@@ -954,7 +954,7 @@ export const deleteContainerFile = async (req, res) => {
 
     await db("farmer_plan_files").where({ id: fileId }).del();
 
-    await adminFarmerPlansService.notifyFileDeletion(fileRecord, req.user.id);
+    await adminSupplierPlansService.notifyFileDeletion(fileRecord, req.user.id);
 
     res.status(200).json({ message: req.t("common.success") });
   } catch (err) {
@@ -1000,18 +1000,18 @@ export const listContainersByRequestId = async (req, res) => {
         .status(400)
         .json({ error: req.t("validation.missing_request_id") });
 
-    const buyerReq = await db("buyer_requests")
+    const customerReq = await db("buyer_requests")
       .select("id", "container_amount")
       .where("id", requestId)
       .first();
 
-    if (!buyerReq)
+    if (!customerReq)
       return res.status(404).json({ error: req.t("buyer.request_not_found") });
 
     const containers = await db.transaction(async (trx) => {
       await trx("farmer_plans")
         .insert({
-          request_id: buyerReq.id,
+          request_id: customerReq.id,
           status: "submitted",
           plan_date: new Date(),
         })
@@ -1019,7 +1019,7 @@ export const listContainersByRequestId = async (req, res) => {
         .ignore();
 
       const plan = await trx("farmer_plans")
-        .where({ request_id: buyerReq.id })
+        .where({ request_id: customerReq.id })
         .first();
 
       const existingCount = await trx("farmer_plan_containers")
@@ -1027,14 +1027,14 @@ export const listContainersByRequestId = async (req, res) => {
         .count("* as count")
         .first();
 
-      if (Number(existingCount.count) === 0 && buyerReq.container_amount > 0) {
+      if (Number(existingCount.count) === 0 && customerReq.container_amount > 0) {
         const inserts = Array.from(
-          { length: buyerReq.container_amount },
+          { length: customerReq.container_amount },
           (_, i) => ({
             plan_id: plan.id,
             container_no: i + 1,
             status: "submitted",
-            buyer_request_id: buyerReq.id,
+            buyer_request_id: customerReq.id,
           }),
         );
 
@@ -1246,7 +1246,7 @@ export const assignContainersToSuppliers = async (req, res) => {
   }
 };
 
-export const updateBuyerRequestDeadline = async (req, res) => {
+export const updateCustomerRequestDeadline = async (req, res) => {
   try {
     const { id } = req.params;
     const { new_deadline_start, new_deadline_end, new_deadline_date } =
@@ -1258,7 +1258,7 @@ export const updateBuyerRequestDeadline = async (req, res) => {
         .json({ error: req.t("validation.profile_field_required") });
     }
 
-    const updated = await adminBuyerService.updateBuyerRequestDeadline(
+    const updated = await adminCustomerService.updateCustomerRequestDeadline(
       id,
       { new_deadline_start, new_deadline_end, new_deadline_date },
       req.user?.id || null,
@@ -1281,7 +1281,7 @@ export async function reviewContainerMetadataController(req, res) {
     const { status, note } = req.body;
     const reviewerId = req.user.licenseId;
 
-    const result = await adminFarmerPlansService.reviewContainerMetadata(
+    const result = await adminSupplierPlansService.reviewContainerMetadata(
       id,
       status,
       note,
@@ -1300,7 +1300,7 @@ export async function updateContainerAdminMetadataController(req, res) {
     const reviewerId = req.user.licenseId;
     const { metadata } = req.body;
 
-    const result = await adminFarmerPlansService.updateContainerAdminMetadata(
+    const result = await adminSupplierPlansService.updateContainerAdminMetadata(
       id,
       metadata,
       reviewerId,
@@ -1316,7 +1316,7 @@ export async function updateContainerAdminMetadataController(req, res) {
   }
 }
 
-export const completeBuyerRequest = async (req, res) => {
+export const completeCustomerRequest = async (req, res) => {
   try {
     const { id } = req.params;
     const { completed_at } = req.body;
@@ -1361,7 +1361,7 @@ export const completeBuyerRequest = async (req, res) => {
       });
     });
   } catch (err) {
-    console.error("completeBuyerRequest error:", err);
+    console.error("completeCustomerRequest error:", err);
     res.status(400).json({ error: err.message });
   }
 };
@@ -1474,7 +1474,7 @@ export const getContainerById = async (req, res) => {
       return res.status(404).json({ error: req.t("container.not_found") });
     }
 
-    const buyerSuppliers = await db("buyer_request_suppliers as brs")
+    const customerSuppliers = await db("buyer_request_suppliers as brs")
       .leftJoin("users as s", "brs.supplier_id", "s.id")
       .select(
         "brs.id",
@@ -1519,7 +1519,7 @@ export const getContainerById = async (req, res) => {
 
     res.json({
       ...container,
-      buyer_request_suppliers: buyerSuppliers,
+      buyer_request_suppliers: customerSuppliers,
       files,
       tracking,
       sibling_containers: siblingContainers,
@@ -1540,7 +1540,7 @@ export const toggleRejectStatus = async (req, res) => {
     }
 
     const updatedContainer =
-      await adminFarmerPlansService.toggleRejectStatus(containerId);
+      await adminSupplierPlansService.toggleRejectStatus(containerId);
 
     if (!updatedContainer) {
       return res.status(404).json({ error: req.t("container.not_found") });
@@ -1658,14 +1658,14 @@ export const importExcelData = async (req, res) => {
 
     await db.transaction(async (trx) => {
       const mainName = "Al Jabali Trading and Refrigeration Company";
-      let buyerUser = await trx("users").where("name", mainName).first();
+      let customerUser = await trx("users").where("name", mainName).first();
       const placeholderPassword = await bcrypt.hash("NO_PASSWORD", 10);
 
-      if (!buyerUser) {
+      if (!customerUser) {
         const fakeMobile =
           "09" + Math.floor(100000000 + Math.random() * 900000000);
 
-        [buyerUser] = await trx("users")
+        [customerUser] = await trx("users")
           .insert({
             name: mainName,
             mobile: fakeMobile,
@@ -1677,11 +1677,11 @@ export const importExcelData = async (req, res) => {
           .returning("*");
       }
 
-      const roleBuyer = await trx("roles").where("name", "buyer").first();
+      const roleCustomer = await trx("roles").where("name", "buyer").first();
       const roleUser = await trx("roles").where("name", "user").first();
 
       await trx("user_roles")
-        .insert({ user_id: buyerUser.id, role_id: roleBuyer.id })
+        .insert({ user_id: customerUser.id, role_id: roleCustomer.id })
         .onConflict(["user_id", "role_id"])
         .ignore();
 
@@ -1762,7 +1762,7 @@ export const importExcelData = async (req, res) => {
 
           await trx("admin_license_keys").insert({
             key: generateLicenseKey(),
-            role_id: roleBuyer.id,
+            role_id: roleCustomer.id,
             is_active: true,
             assigned_to: consigneeUser.id,
             created_at: trx.fn.now(),
@@ -1772,7 +1772,7 @@ export const importExcelData = async (req, res) => {
         await trx("user_roles")
           .insert({
             user_id: consigneeUser.id,
-            role_id: roleBuyer.id,
+            role_id: roleCustomer.id,
           })
           .onConflict(["user_id", "role_id"])
           .ignore();
@@ -1783,10 +1783,10 @@ export const importExcelData = async (req, res) => {
         const requestCountry =
           countries.length === 1 ? countries[0] : (countries[0] ?? null);
 
-        const [buyerRequest] = await trx("buyer_requests")
+        const [customerRequest] = await trx("buyer_requests")
           .insert({
             buyer_id: consigneeUser.id,
-            creator_id: buyerUser.id,
+            creator_id: customerUser.id,
             import_country: requestCountry,
             status: "pending",
             container_amount: 0,
@@ -1799,7 +1799,7 @@ export const importExcelData = async (req, res) => {
 
         const [plan] = await trx("farmer_plans")
           .insert({
-            request_id: buyerRequest.id,
+            request_id: customerRequest.id,
             plan_date: trx.fn.now(),
             status: "submitted",
           })
@@ -1879,7 +1879,7 @@ export const importExcelData = async (req, res) => {
             .insert({
               plan_id: plan.id,
               container_no: index++,
-              buyer_request_id: buyerRequest.id,
+              buyer_request_id: customerRequest.id,
               supplier_id: supplier.id,
               metadata: JSON.stringify(normalizedMeta),
               admin_metadata: Object.keys(adminMetadata).length
@@ -1901,13 +1901,13 @@ export const importExcelData = async (req, res) => {
             container_id: container.id,
             status: "delivered",
             note: "کانتینر به مقصد تحویل داده شد",
-            created_by: buyerUser.id,
+            created_by: customerUser.id,
             created_at: trx.fn.now(),
           });
 
           await trx("buyer_request_suppliers")
             .insert({
-              buyer_request_id: buyerRequest.id,
+              buyer_request_id: customerRequest.id,
               supplier_id: supplier.id,
               container_id: container.id,
               assigned_at: trx.fn.now(),
@@ -1918,7 +1918,7 @@ export const importExcelData = async (req, res) => {
           await NotificationService.create(
             supplier.id,
             "container_tracking_update",
-            buyerRequest.id,
+            customerRequest.id,
             {
               status: "delivered",
               containerId: container.id,
@@ -1928,14 +1928,14 @@ export const importExcelData = async (req, res) => {
           );
         }
 
-        await trx("buyer_requests").where({ id: buyerRequest.id }).update({
+        await trx("buyer_requests").where({ id: customerRequest.id }).update({
           container_amount: count,
           updated_at: trx.fn.now(),
         });
 
         results.push({
           consignee: consigneeName,
-          buyer_request_id: buyerRequest.id,
+          buyer_request_id: customerRequest.id,
           import_country: requestCountry,
           containers: count,
         });

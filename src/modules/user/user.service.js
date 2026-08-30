@@ -557,7 +557,7 @@ export const getUserProfile = async (userId) => {
   return user;
 };
 
-export async function updateFarmerRequestStatus(
+export async function updateSupplierRequestStatus(
   userId,
   requestId,
   farmer_status,

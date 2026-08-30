@@ -180,7 +180,7 @@ export async function getUserById(req, res) {
     if (!user)
       return res.status(404).json({ error: req.t("common.not_found") });
 
-    const buyerRequests = await db("buyer_requests as br")
+    const customerRequests = await db("buyer_requests as br")
       .leftJoin("users as b", "br.buyer_id", "b.id")
       .select(
         "br.id",
@@ -211,18 +211,18 @@ export async function getUserById(req, res) {
       )
       .whereIn(
         "p.request_id",
-        buyerRequests.map((r) => r.id),
+        customerRequests.map((r) => r.id),
       );
 
     const stats = {
-      total_requests: buyerRequests.length,
+      total_requests: customerRequests.length,
       total_containers: containers.length,
-      active_requests: buyerRequests.filter(
+      active_requests: customerRequests.filter(
         (r) => r.status === "accepted" || r.status === "pending",
       ).length,
     };
 
-    res.json({ user, stats, buyerRequests, containers });
+    res.json({ user, stats, customerRequests, containers });
   } catch (err) {
     console.error("superadmin getUserById error:", err);
     res.status(500).json({ error: err.message });
@@ -483,11 +483,11 @@ const toInt = (v, d = null) => {
 const toStr = (v, d = "") => (v == null ? d : String(v));
 
 /* =======================================================================
-   📋 Buyer Requests
+   📋 Customer Requests
 ======================================================================= */
-export async function listBuyerRequests(req, res) {
+export async function listCustomerRequests(req, res) {
   try {
-    const out = await superAdminService.listBuyerRequests({
+    const out = await superAdminService.listCustomerRequests({
       page: toInt(req.query.page, 1),
       pageSize: toInt(req.query.pageSize, 20),
       search: toStr(req.query.search, ""),
@@ -503,18 +503,18 @@ export async function listBuyerRequests(req, res) {
   }
 }
 
-export async function createBuyerRequest(req, res) {
+export async function createCustomerRequest(req, res) {
   try {
-    const out = await superAdminService.createBuyerRequest(req.body);
+    const out = await superAdminService.createCustomerRequest(req.body);
     res.status(201).json(out);
   } catch (e) {
     res.status(400).json({ error: e.message });
   }
 }
 
-export async function getBuyerRequest(req, res) {
+export async function getCustomerRequest(req, res) {
   try {
-    const out = await superAdminService.getBuyerRequest(toInt(req.params.id), {
+    const out = await superAdminService.getCustomerRequest(toInt(req.params.id), {
       includeContainers: req.query.includeContainers !== "false",
     });
     res.json(out);
@@ -523,9 +523,9 @@ export async function getBuyerRequest(req, res) {
   }
 }
 
-export async function updateBuyerRequest(req, res) {
+export async function updateCustomerRequest(req, res) {
   try {
-    const out = await superAdminService.updateBuyerRequest(
+    const out = await superAdminService.updateCustomerRequest(
       toInt(req.params.id),
       req.body,
     );
@@ -535,9 +535,9 @@ export async function updateBuyerRequest(req, res) {
   }
 }
 
-export async function deleteBuyerRequest(req, res) {
+export async function deleteCustomerRequest(req, res) {
   try {
-    const out = await superAdminService.deleteBuyerRequest(
+    const out = await superAdminService.deleteCustomerRequest(
       toInt(req.params.id),
     );
     res.json(out);
@@ -546,10 +546,10 @@ export async function deleteBuyerRequest(req, res) {
   }
 }
 
-/* Buyer Request -> Containers */
-export async function listBuyerRequestContainers(req, res) {
+/* Customer Request -> Containers */
+export async function listCustomerRequestContainers(req, res) {
   try {
-    const out = await superAdminService.listBuyerRequestContainers(
+    const out = await superAdminService.listCustomerRequestContainers(
       toInt(req.params.id),
     );
     res.json(out);
@@ -631,7 +631,7 @@ export async function transferContainer(req, res) {
     const out = await superAdminService.transferContainer(
       toInt(req.params.id),
       {
-        toBuyerRequestId: toInt(req.body.toBuyerRequestId),
+        toCustomerRequestId: toInt(req.body.toCustomerRequestId),
         containerNo: req.body.containerNo ? toInt(req.body.containerNo) : null,
       },
     );

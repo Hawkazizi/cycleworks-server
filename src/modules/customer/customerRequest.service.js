@@ -1,4 +1,4 @@
-// services/buyerRequest.service.js
+// services/customerRequest.service.js
 import knex, { als } from "../../common/db/knex.js";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
@@ -42,7 +42,7 @@ function normalizeRequest(row) {
     farmer_plan: safeParseJSON(row.farmer_plan, {}),
   };
 }
-/** Hydrate all farmer plans and containers for a buyer request. */
+/** Hydrate all supplier plans and containers for a customer request. */
 async function hydratePlans(requestId) {
   const plans = await knex("farmer_plans as fp")
     .select("fp.*")
@@ -72,37 +72,37 @@ async function hydratePlans(requestId) {
 }
 
 /* =======================================================================
-   🧾 MASTER BUYER FLOW: Create Request (with optional new Buyer)
+   🧾 MASTER CUSTOMER FLOW: Create Request (with optional new Customer)
 ======================================================================= */
 
 /**
- * Create a buyer request — supports both existing and newly created buyers.
+ * Create a customer request — supports both existing and newly created buyers.
  * Automatically assigns roles, generates a license key, and issues notifications.
  */
-export async function createRequestWithBuyerAndLicense({
+export async function createRequestWithCustomerAndLicense({
   creatorId,
-  existingBuyerId,
-  newBuyer,
+  existingCustomerId,
+  newCustomer,
   requestData,
 }) {
-  // If neither existingBuyerId nor newBuyer provided, fallback to normal buyer flow
-  if (!existingBuyerId && !newBuyer)
+  // If neither existingCustomerId nor newCustomer provided, fallback to normal customer flow
+  if (!existingCustomerId && !newCustomer)
     return await createRequest(creatorId, requestData);
 
   return knex.transaction(async (trx) => {
-    let buyerId = existingBuyerId;
+    let customerId = existingCustomerId;
 
-    /* ---------- 1️⃣ Create new buyer if necessary ---------- */
-    if (!buyerId && newBuyer?.name) {
+    /* ---------- 1️⃣ Create new customer if necessary ---------- */
+    if (!customerId && newCustomer?.name) {
       const random = crypto.randomBytes(4).toString("hex");
-      const randomEmail = `buyer_${random}@auto.local`;
+      const randomEmail = `customer_${random}@auto.local`;
       const randomMobile = `09${Math.floor(100000000 + Math.random() * 900000000)}`;
       const randomPassword = crypto.randomBytes(8).toString("hex");
       const passwordHash = await bcrypt.hash(randomPassword, 10);
 
-      const [buyer] = await trx("users")
+      const [customer] = await trx("users")
         .insert({
-          name: newBuyer.name,
+          name: newCustomer.name,
           email: randomEmail,
           mobile: randomMobile,
           password_hash: passwordHash,
@@ -110,15 +110,15 @@ export async function createRequestWithBuyerAndLicense({
         })
         .returning("*");
 
-      buyerId = buyer.id;
+      customerId = customer.id;
 
-      // Assign buyer role
-      const buyerRole = await trx("roles").where({ name: "buyer" }).first("id");
-      if (!buyerRole) throw new Error("Buyer role not found");
+      // Assign customer role
+      const customerRole = await trx("roles").where({ name: "buyer" }).first("id");
+      if (!customerRole) throw new Error("Buyer role not found");
 
       await trx("user_roles").insert({
-        user_id: buyerId,
-        role_id: buyerRole.id,
+        user_id: customerId,
+        role_id: customerRole.id,
       });
 
       // Generate license key
@@ -126,8 +126,8 @@ export async function createRequestWithBuyerAndLicense({
       const [license] = await trx("admin_license_keys")
         .insert({
           key: licenseKey,
-          role_id: buyerRole.id,
-          assigned_to: buyerId,
+          role_id: customerRole.id,
+          assigned_to: customerId,
           is_active: true,
           // ✅ ADD THIS LINE: Grabs 'IR' or 'TR' from the multi-tenancy middleware
           country_code: als.getStore() || "IR",
@@ -136,8 +136,8 @@ export async function createRequestWithBuyerAndLicense({
 
       // Optional: create a JWT for immediate access
       const tokenPayload = {
-        id: buyerId,
-        email: buyer.email,
+        id: customerId,
+        email: customer.email,
         licenseId: license.id,
         roles: ["buyer"],
       };
@@ -145,17 +145,17 @@ export async function createRequestWithBuyerAndLicense({
         expiresIn: JWT_EXPIRES_IN,
       });
 
-      newBuyer.generatedLicense = licenseKey;
-      newBuyer.generatedToken = token;
+      newCustomer.generatedLicense = licenseKey;
+      newCustomer.generatedToken = token;
     }
 
-    if (!buyerId) throw new Error("You must choose or create a buyer.");
+    if (!customerId) throw new Error("You must choose or create a customer.");
 
-    /* ---------- 2️⃣ Create the buyer request ---------- */
+    /* ---------- 2️⃣ Create the customer request ---------- */
     const [req] = await trx("buyer_requests")
       .insert({
-        buyer_id: buyerId, // Assigned customer
-        creator_id: creatorId || buyerId, // Creator is the operator (fallback if direct buyer created)
+        buyer_id: customerId, // Assigned customer
+        creator_id: creatorId || customerId, // Creator is the operator (fallback if direct customer created)
         product_type: requestData.product_type || "eggs",
         packaging: requestData.packaging || null,
         egg_type: requestData.egg_type || null,
@@ -206,7 +206,7 @@ export async function createRequestWithBuyerAndLicense({
         u.id,
         "new_request",
         req.id,
-        { buyerName: newBuyer?.name || "Existing Buyer" },
+        { customerName: newCustomer?.name || "Existing Buyer" },
         trx,
       );
     }
@@ -214,12 +214,12 @@ export async function createRequestWithBuyerAndLicense({
     /* ---------- 4️⃣ Return enriched response ---------- */
     return {
       request: normalizeRequest(req),
-      newBuyer: newBuyer?.name
+      newCustomer: newCustomer?.name
         ? {
-            id: buyerId,
-            name: newBuyer.name,
-            licenseKey: newBuyer.generatedLicense,
-            token: newBuyer.generatedToken,
+            id: customerId,
+            name: newCustomer.name,
+            licenseKey: newCustomer.generatedLicense,
+            token: newCustomer.generatedToken,
           }
         : null,
     };
@@ -227,10 +227,10 @@ export async function createRequestWithBuyerAndLicense({
 }
 
 /* =======================================================================
-   📦 INDIVIDUAL BUYER CRUD FLOW
+   📦 INDIVIDUAL CUSTOMER CRUD FLOW
 ======================================================================= */
 
-/** Create a new request (single buyer mode). */
+/** Create a new request (single customer mode). */
 export async function createRequest(userId, data) {
   const [req] = await knex("buyer_requests")
     .insert({
@@ -272,7 +272,7 @@ export async function createRequest(userId, data) {
 
   for (const u of adminManagers) {
     await NotificationService.create(u.id, "new_request", req.id, {
-      buyerName: "Buyer",
+      customerName: "Customer",
     });
   }
 
@@ -280,10 +280,10 @@ export async function createRequest(userId, data) {
 }
 
 /* =======================================================================
-   📜 BUYER REQUEST HISTORY & RETRIEVAL
+   📜 CUSTOMER REQUEST HISTORY & RETRIEVAL
 ======================================================================= */
 
-/** List all requests created or owned by a buyer (with optional search). */
+/** List all requests created or owned by a customer (with optional search). */
 export async function getMyRequests(userId, search = "", roles = []) {
   const query = knex("buyer_requests as br")
     .join("users as u", "br.buyer_id", "u.id")
@@ -321,21 +321,21 @@ export async function getMyRequests(userId, search = "", roles = []) {
   );
 }
 
-/** Get one specific buyer request (authorized to user). */
-/** Get one specific buyer request (authorized to user). */
+/** Get one specific customer request (authorized to user). */
+/** Get one specific customer request (authorized to user). */
 export async function getRequestById(userId, id) {
   const row = await knex("buyer_requests as br")
-    // ✅ JOIN users table to get buyer and creator details
-    .leftJoin("users as buyer", "br.buyer_id", "buyer.id")
+    // ✅ JOIN users table to get customer and creator details
+    .leftJoin("users as customer", "br.buyer_id", "customer.id")
     .leftJoin("users as creator", "br.creator_id", "creator.id")
     // ✅ JOIN license keys and users to get the reviewer's name
     .leftJoin("admin_license_keys as alk", "br.reviewed_by", "alk.id")
     .leftJoin("users as reviewer", "alk.assigned_to", "reviewer.id")
     .select(
       "br.*",
-      "buyer.name as buyer_name",
-      "buyer.email as buyer_email",
-      "buyer.mobile as buyer_mobile",
+      "customer.name as buyer_name",
+      "customer.email as buyer_email",
+      "customer.mobile as buyer_mobile",
       "creator.name as creator_name",
       "creator.email as creator_email",
       "creator.mobile as creator_mobile",
@@ -356,7 +356,7 @@ export async function getRequestById(userId, id) {
 
   // ✅ Attach clean user objects for the frontend
   if (row.buyer_id) {
-    normalized.buyer = {
+    normalized.customer = {
       id: row.buyer_id,
       name: row.buyer_name || "—",
       email: row.buyer_email || "—",
@@ -382,7 +382,7 @@ export async function getRequestById(userId, id) {
   return normalized;
 }
 /* =======================================================================
-   ✏️ BUYER REQUEST UPDATE / CANCEL
+   ✏️ CUSTOMER REQUEST UPDATE / CANCEL
 ======================================================================= */
 
 export async function updateRequest(userId, requestId, data) {
@@ -447,7 +447,7 @@ export async function cancelRequest(userId, requestId) {
 ======================================================================= */
 
 /**
- * Update or review a buyer request (admin or manager).
+ * Update or review a customer request (admin or manager).
  * Handles approval, rejection, and supplier notifications.
  */
 export async function adminUpdateRequest(requestId, updateData, reviewerId) {
@@ -476,13 +476,13 @@ export async function adminUpdateRequest(requestId, updateData, reviewerId) {
         "request_accepted",
         requestId,
         {
-          buyerName: "Buyer",
+          customerName: "Customer",
         },
       );
     }
   }
 
-  // Notify buyer if status changed
+  // Notify customer if status changed
   if (updateData.status && updateData.status !== oldRequest.status) {
     await NotificationService.create(
       updatedRequest.buyer_id,
