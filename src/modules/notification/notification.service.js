@@ -1,4 +1,5 @@
 import db from "../../common/db/knex.js";
+import { ROLES, ADMIN_MANAGER_ROLES, QC_ROLES } from "../../common/constants/roles.js";
 
 export const NotificationService = {
   async create(userId, type, relatedId, data = {}, trx = null) {
@@ -10,12 +11,12 @@ export const NotificationService = {
       .pluck("r.name")
       .then((names) => names.map((n) => n.toLowerCase()));
 
-    const isCustomer = roleNames.includes("buyer");
-    const isSupplier = roleNames.includes("user") || roleNames.includes("farmer");
-    const isAdminOrManager =
-      roleNames.includes("admin") || roleNames.includes("manager");
-    const isQc =
-      roleNames.includes("qc_internal") || roleNames.includes("qc_external");
+    const isCustomer = roleNames.includes(ROLES.CUSTOMER);
+    const isSupplier = roleNames.includes(ROLES.SUPPLIER);
+    const isAdminOrManager = ADMIN_MANAGER_ROLES.some((r) =>
+      roleNames.includes(r),
+    );
+    const isQc = QC_ROLES.some((r) => roleNames.includes(r));
 
     let message;
 

@@ -5,6 +5,7 @@ import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import { NotificationService } from "../notification/notification.service.js";
 import { JWT_SECRET, JWT_EXPIRES_IN } from "../../common/config/jwt.js";
+import { ROLES } from "../../common/constants/roles.js";
 
 const BASE_URL = process.env.BASE_URL || "http://localhost:5000";
 
@@ -113,8 +114,10 @@ export async function createRequestWithCustomerAndLicense({
       customerId = customer.id;
 
       // Assign customer role
-      const customerRole = await trx("roles").where({ name: "buyer" }).first("id");
-      if (!customerRole) throw new Error("Buyer role not found");
+      const customerRole = await trx("roles")
+        .where({ name: ROLES.CUSTOMER })
+        .first("id");
+      if (!customerRole) throw new Error("Customer role not found");
 
       await trx("user_roles").insert({
         user_id: customerId,
@@ -139,7 +142,7 @@ export async function createRequestWithCustomerAndLicense({
         id: customerId,
         email: customer.email,
         licenseId: license.id,
-        roles: ["buyer"],
+        roles: [ROLES.CUSTOMER],
       };
       const token = jwt.sign(tokenPayload, JWT_SECRET, {
         expiresIn: JWT_EXPIRES_IN,
@@ -206,7 +209,7 @@ export async function createRequestWithCustomerAndLicense({
         u.id,
         "new_request",
         req.id,
-        { customerName: newCustomer?.name || "Existing Buyer" },
+        { customerName: newCustomer?.name || "Existing Customer" },
         trx,
       );
     }

@@ -6,6 +6,7 @@ import { sendVerificationCode } from "../sms/smsService.js";
 import { sendMail } from "../../common/config/mailer.js"; // ✅ ADDED FOR EMAIL VERIFICATION
 import { NotificationService } from "../notification/notification.service.js";
 import { JWT_SECRET } from "../../common/config/jwt.js";
+import { ROLES } from "../../common/constants/roles.js";
 
 const SALT_ROUNDS = 10;
 
@@ -226,8 +227,8 @@ export const loginUser = async ({ identifier, password }) => {
     .select("roles.name");
 
   const roleNames = roles.map((r) => r.name.toLowerCase());
-  if (roleNames.includes("buyer")) {
-    throw new Error("خریداران باید با لایسنس‌کی وارد شوند");
+  if (roleNames.includes(ROLES.CUSTOMER)) {
+    throw new Error("مشتریان باید با لایسنس‌کی وارد شوند");
   }
 
   // 🔐 Generate Access Token (Short-lived: 15 minutes)

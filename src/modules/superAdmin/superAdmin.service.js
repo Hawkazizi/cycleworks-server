@@ -4,6 +4,10 @@ import bcrypt from "bcryptjs";
 import os from "os";
 import v8 from "v8";
 import { execSync } from "child_process";
+import {
+  ROLES,
+  SUPER_ADMIN_POWER_ROLES,
+} from "../../common/constants/roles.js";
 
 // If your notification service export differs, adjust this import.
 // Common patterns are:
@@ -1007,9 +1011,9 @@ export async function updateApplication(id, updates, userId, role) {
 
   // Super Admin should have full admin/manager power here
   let allowed = [];
-  if (["admin", "manager", "super_admin"].includes(role)) {
+  if (SUPER_ADMIN_POWER_ROLES.includes(role)) {
     allowed = [...userEditable, ...adminEditable];
-  } else if (["user", "farmer"].includes(role)) {
+  } else if (role === ROLES.SUPPLIER) {
     allowed = [...userEditable];
   }
 

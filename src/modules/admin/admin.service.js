@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
 import { JWT_SECRET, JWT_EXPIRES_IN } from "../../common/config/jwt.js";
+import { ROLES, ADMIN_MANAGER_ROLES } from "../../common/constants/roles.js";
 import { NotificationService } from "../notification/notification.service.js";
 // ✅ Helper to notify all active QC Internal and External users
 const notifyQcRoles = async (type, relatedId, data = {}, trx = null) => {
@@ -515,9 +516,9 @@ export const updateApplication = async (id, updates, userId, role) => {
   ];
 
   let allowed = [];
-  if (["admin", "manager"].includes(role))
+  if (ADMIN_MANAGER_ROLES.includes(role))
     allowed = [...userEditable, ...adminEditable];
-  else if (["user", "farmer"].includes(role)) allowed = [...userEditable];
+  else if (role === ROLES.SUPPLIER) allowed = [...userEditable];
 
   const updateData = Object.fromEntries(
     Object.entries(updates).filter(([key]) => allowed.includes(key)),

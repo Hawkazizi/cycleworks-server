@@ -37,6 +37,7 @@ app.use(
     origin: [
       "http://localhost:5173",
       "http://localhost:5174",
+      "http://localhost:4173", // vite preview (built client)
       "https://digipoultry.com",
       "https://www.digipoultry.com",
       "http://195.177.255.233",

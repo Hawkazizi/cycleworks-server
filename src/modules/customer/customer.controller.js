@@ -6,6 +6,7 @@ import * as customerReqService from "./customerRequest.service.js";
 import * as adminService from "../admin/admin.service.js";
 import * as customerService from "./customer.service.js";
 import * as ticketService from "../ticket/ticket.service.js";
+import { ROLES } from "../../common/constants/roles.js";
 
 /* =======================================================================
    👤 CUSTOMER PROFILE MANAGEMENT
@@ -255,7 +256,7 @@ export const createCustomerTicket = async (req, res) => {
   try {
     const { subject, message } = req.body;
     const customerId = req.user.id;
-    const role = "buyer";
+    const role = ROLES.CUSTOMER;
 
     if (!message)
       return res.status(400).json({ error: req.t("ticket.message_required") });
