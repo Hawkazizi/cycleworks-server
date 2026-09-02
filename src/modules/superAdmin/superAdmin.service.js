@@ -789,7 +789,7 @@ export async function createLicenseKey({
   country_code,
   assigned_to,
   user,
-  currentCountry = "IR", // ✅ Add this parameter
+  currentCountry, // ✅ Passed from req.headers["x-country"] in the controller
 }) {
   let userId = assigned_to || null;
 
@@ -797,12 +797,15 @@ export async function createLicenseKey({
   if (!role) throw new Error("Invalid role");
 
   let finalCountry = country_code;
+
   if (QC_ROLES.includes(role.name)) {
+    // QC Roles must be assigned to export countries
     if (!QC_COUNTRIES.includes(finalCountry)) {
       throw new Error("QC licenses must have country_code: OM, QA, BA, or KW");
     }
   } else {
-    finalCountry = currentCountry; // ✅ Use currentCountry instead of "IR"
+    // ✅ Non-QC Roles are locked to the current request's country context (IR or TR)
+    finalCountry = currentCountry || "IR";
   }
 
   // Auto-create user if provided
@@ -848,7 +851,7 @@ export async function updateLicenseKey({
   role_id,
   country_code,
   assigned_to,
-  currentCountry = "IR", // ✅ Add this parameter
+  currentCountry, // ✅ Passed from req.headers["x-country"]
 }) {
   const existing = await db("admin_license_keys").where({ id }).first();
   if (!existing) throw new Error("License key not found");
@@ -857,12 +860,14 @@ export async function updateLicenseKey({
   if (!role) throw new Error("Invalid role");
 
   let finalCountry = country_code;
+
   if (QC_ROLES.includes(role.name)) {
     if (!QC_COUNTRIES.includes(finalCountry)) {
       throw new Error("QC licenses must have country_code: OM, QA, BA, or KW");
     }
   } else {
-    finalCountry = currentCountry; // ✅ Use the current country context
+    // ✅ Non-QC Roles are locked to the current request's country context
+    finalCountry = currentCountry || "IR";
   }
 
   const updatedRows = await db("admin_license_keys").where({ id }).update(
