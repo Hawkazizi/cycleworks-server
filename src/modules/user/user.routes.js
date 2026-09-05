@@ -12,7 +12,8 @@ const router = Router();
 ======================================================================= */
 
 // ✅ NEW: Endpoint for uploading a single file during signup
-router.post("/upload", upload.single("file"), userController.uploadSingleFile);
+// ✅ SECURITY: limiter added — this is the only anonymous file endpoint (abuse/cost control)
+router.post("/upload", authLimiter, upload.single("file"), userController.uploadSingleFile);
 
 // ✅ UPDATED: Removed multer middleware since files are already uploaded individually as JSON
 router.post("/register", authLimiter, userController.register);
