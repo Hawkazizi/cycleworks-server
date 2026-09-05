@@ -74,6 +74,8 @@ app.use(
       "https://digipoultry.com",
       "https://www.digipoultry.com",
       "http://195.177.255.233",
+      "https://localhost", // Capacitor Android APK (DIPO / DIPOAdmin)
+      "capacitor://localhost", // Capacitor iOS (future)
     ],
     credentials: true,
   }),
