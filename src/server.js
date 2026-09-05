@@ -19,6 +19,7 @@ import externalQcRouter from "./modules/qc/externalQc.routes.js";
 import notificationRoutes from "./modules/notification/notification.routes.js";
 import ticketRoutes from "./modules/ticket/ticket.routes.js";
 import qcRoutes from "./modules/qc/qc.routes.js";
+import aiRouter from "./modules/ai/ai.routes.js";
 
 // 👇 Updated: Pointing to the new common/middleware location
 import i18nMiddleware from "./common/middleware/i18n.js";
@@ -107,6 +108,7 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/qc", qcRoutes);
 app.use("/api/external-qc", externalQcRouter);
 app.use("/api/tickets", ticketRoutes);
+app.use("/api/ai", aiRouter);
 
 // Test BOTH DB connections on startup
 Promise.all([
