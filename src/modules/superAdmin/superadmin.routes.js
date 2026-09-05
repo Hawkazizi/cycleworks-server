@@ -3,6 +3,7 @@ import { authenticate } from "../../common/middleware/authenticate.js";
 import { authorize } from "../../common/middleware/authorize.js";
 import upload from "../../common/middleware/upload.js";
 import * as superAdminController from "./superAdmin.controller.js";
+import { authLimiter } from "../../common/middleware/rateLimit.js";
 
 // ✅ NEW: tickets controller
 import * as superAdminTicketsController from "./superadminTickets.controller.js";
@@ -12,7 +13,7 @@ const router = Router();
 /* ===========================
    AUTH (public)
 =========================== */
-router.post("/login", superAdminController.login);
+router.post("/login", authLimiter, superAdminController.login);
 
 /* ===========================
    PROTECTED (super_admin only)

@@ -1,8 +1,10 @@
 import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
+import helmet from "helmet";
 import path from "path";
 import { fileURLToPath } from "url";
+import rateLimit from "express-rate-limit";
 
 // 👇 Updated: Pointing to the new common/db location
 import db, { dbIR, dbTR, als } from "./common/db/knex.js";
@@ -27,6 +29,36 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// ✅ SECURITY: trust the reverse proxy (nginx) so req.ip is the real client IP
+app.set("trust proxy", 1);
+
+// ✅ SECURITY: standard security headers
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" }, // allow serving uploads to the frontends
+  }),
+);
+
+// ✅ SECURITY: rate limiting
+// Global limiter — generous ceiling for normal API usage
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 1000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests, please try again later" },
+});
+// Strict limiter for credential endpoints (brute-force protection)
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many attempts, please try again later" },
+});
+
+app.use(globalLimiter);
 
 // Middleware
 app.use(express.json());

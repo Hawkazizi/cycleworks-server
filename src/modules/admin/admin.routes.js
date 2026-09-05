@@ -5,6 +5,7 @@ import * as getContainerReport from "./admin.Reports.controller.js";
 import { authenticate } from "../../common/middleware/authenticate.js";
 import { authorize } from "../../common/middleware/authorize.js";
 import upload from "../../common/middleware/upload.js";
+import { authLimiter } from "../../common/middleware/rateLimit.js";
 
 const router = Router();
 
@@ -13,7 +14,7 @@ const router = Router();
 ======================================================================= */
 
 // Login
-router.post("/login", adminController.loginWithLicense);
+router.post("/login", authLimiter, adminController.loginWithLicense);
 
 // Profile
 router.get(

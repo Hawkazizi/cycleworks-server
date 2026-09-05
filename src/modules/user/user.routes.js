@@ -3,6 +3,7 @@ import * as userController from "./user.controller.js";
 import { authenticate } from "../../common/middleware/authenticate.js";
 import { authorize } from "../../common/middleware/authorize.js";
 import upload from "../../common/middleware/upload.js";
+import { authLimiter, refreshLimiter } from "../../common/middleware/rateLimit.js";
 
 const router = Router();
 
@@ -14,22 +15,23 @@ const router = Router();
 router.post("/upload", upload.single("file"), userController.uploadSingleFile);
 
 // ✅ UPDATED: Removed multer middleware since files are already uploaded individually as JSON
-router.post("/register", userController.register);
+router.post("/register", authLimiter, userController.register);
 
-router.post("/verify-registration", userController.verifyRegistration);
+router.post("/verify-registration", authLimiter, userController.verifyRegistration);
 
-router.post("/login", userController.login);
+router.post("/login", authLimiter, userController.login);
 
-router.post("/refresh-token", userController.refreshToken);
+router.post("/refresh-token", refreshLimiter, userController.refreshToken);
 
 router.post("/logout", userController.logout);
 
 router.post(
   "/forgot-password/send-code",
+  authLimiter,
   userController.sendForgotPasswordCodeController,
 );
 
-router.post("/forgot-password/reset", userController.resetPasswordController);
+router.post("/forgot-password/reset", authLimiter, userController.resetPasswordController);
 
 /* =======================================================================
    👤 PROFILE MANAGEMENT

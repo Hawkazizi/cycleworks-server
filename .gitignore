@@ -54,3 +54,9 @@ Thumbs.db
 # out/
 
 /uploads
+# 🔐 Secrets / environment — never commit real credentials
+.env
+.env.production
+.env.systemd
+.env.*
+!.env.example
