@@ -1,5 +1,6 @@
 import db from "../../common/db/knex.js";
 import { ROLES, ADMIN_MANAGER_ROLES, QC_ROLES } from "../../common/constants/roles.js";
+import { publishToUser } from "./sseHub.js";
 
 export const NotificationService = {
   async create(userId, type, relatedId, data = {}, trx = null) {
@@ -239,6 +240,9 @@ export const NotificationService = {
       })
       .returning("*");
 
+    // ✅ REAL-TIME: push the new notification to the user's open SSE streams
+    publishToUser(userId, "notification", notification);
+
     return notification;
   },
 
@@ -269,6 +273,13 @@ export const NotificationService = {
       .update({ status: "read", updated_at: db.fn.now() })
       .returning("*");
     return notification;
+  },
+
+  async getUnreadCount(userId) {
+    const [{ unreadCount }] = await db("notifications")
+      .where({ user_id: userId, status: "unread" })
+      .count("* as unreadCount");
+    return parseInt(unreadCount || 0);
   },
 
   async markAllAsRead(userId) {

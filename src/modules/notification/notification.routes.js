@@ -1,8 +1,73 @@
 import { Router } from "express";
+import jwt from "jsonwebtoken";
+import { JWT_SECRET } from "../../common/config/jwt.js";
+import { als } from "../../common/db/knex.js";
 import { NotificationService } from "./notification.service.js";
 import { authenticate } from "../../common/middleware/authenticate.js";
+import { addClient, removeClient } from "./sseHub.js";
 
 const router = Router();
+
+/* =======================================================================
+   📡 REAL-TIME STREAM (SSE)
+   EventSource cannot send headers, so the token and country may arrive
+   as query parameters. Auth + country are verified here before opening
+   the stream.
+======================================================================= */
+router.get("/stream", async (req, res) => {
+  // 1) Auth — header (fetch-based clients) or ?token= (EventSource)
+  let token = null;
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith("Bearer ")) {
+    token = authHeader.split(" ")[1];
+  } else if (req.query.token) {
+    token = String(req.query.token);
+  }
+
+  let userId;
+  try {
+    if (!token) throw new Error("no token");
+    const decoded = jwt.verify(token, JWT_SECRET);
+    userId = decoded.id;
+  } catch {
+    return res.status(401).json({ error: "Invalid token", code: "INVALID_TOKEN" });
+  }
+
+  // 2) Multi-tenancy — header if present, otherwise ?country= (default IR)
+  const country =
+    req.headers["x-country"]?.toUpperCase() ||
+    String(req.query.country || "IR").toUpperCase();
+
+  // 3) Open the stream inside the tenant context
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no", // nginx: don't buffer
+  });
+
+  const openStream = () => {
+    addClient(userId, res);
+    res.write(`event: connected\ndata: ${JSON.stringify({ userId })}\n\n`);
+
+    // Initial unread count so the badge is correct immediately
+    NotificationService.getUnreadCount(userId)
+      .then((unreadCount) => {
+        res.write(
+          `event: unread_count\ndata: ${JSON.stringify({ unreadCount })}\n\n`,
+        );
+      })
+      .catch(() => {});
+
+    req.on("close", () => removeClient(userId, res));
+  };
+
+  if (country === "IR") {
+    openStream();
+  } else {
+    als.run(country, openStream);
+  }
+});
 
 /* =======================================================================
    🔔 NOTIFICATIONS (ALL ROLES)
