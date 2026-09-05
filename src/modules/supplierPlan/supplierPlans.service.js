@@ -1,15 +1,15 @@
-// services/farmerPlan.service.js
+// services/supplierPlan.service.js
 import db from "../../common/db/knex.js";
 import { NotificationService } from "../notification/notification.service.js";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /* =======================================================================
-   🧾 FARMER PLANS
+   🧾 SUPPLIER PLANS
 ======================================================================= */
 
 /**
- * Create a new farmer plan with N containers.
+ * Create a new supplier plan with N containers.
  * Validates request deadlines, container quotas, and replaces existing plan for same date.
  */
 export async function createPlan({
@@ -23,20 +23,20 @@ export async function createPlan({
   if (!containerAmount || containerAmount <= 0)
     throw new Error("Container amount must be positive");
 
-  const buyerRequest = await db("buyer_requests")
+  const customerRequest = await db("buyer_requests")
     .where({ id: requestId })
     .first();
-  if (!buyerRequest) throw new Error("Buyer request not found");
+  if (!customerRequest) throw new Error("Buyer request not found");
 
   return db.transaction(async (trx) => {
     // 1️⃣ Deadline window check
     let inWindow = true;
-    if (buyerRequest.deadline_start_date && buyerRequest.deadline_end_date) {
+    if (customerRequest.deadline_start_date && customerRequest.deadline_end_date) {
       const [{ ok }] = await trx
         .raw(`SELECT (?::date BETWEEN ?::date AND ?::date) AS ok`, [
           planDate,
-          buyerRequest.deadline_start_date,
-          buyerRequest.deadline_end_date,
+          customerRequest.deadline_start_date,
+          customerRequest.deadline_end_date,
         ])
         .then((r) => r.rows);
       inWindow = ok;
@@ -51,7 +51,7 @@ export async function createPlan({
       .first();
 
     const used = Number(usedRaw || 0);
-    const total = Number(buyerRequest.container_amount || 0);
+    const total = Number(customerRequest.container_amount || 0);
     if (used + containerAmount > total) {
       throw new Error(`Exceeded container quota of ${total} (used ${used}).`);
     }
@@ -97,7 +97,7 @@ export async function createPlan({
       containers.push(c);
     }
 
-    // 6️⃣ Auto-accept buyer request (first plan trigger)
+    // 6️⃣ Auto-accept customer request (first plan trigger)
     const [{ count }] = await trx("farmer_plans")
       .where({ request_id: requestId })
       .count("* as count");
@@ -114,7 +114,7 @@ export async function createPlan({
 }
 
 /**
- * List all plans (and containers) for a specific buyer request & farmer.
+ * List all plans (and containers) for a specific customer request & supplier.
  * Returns total/used/remaining quotas and attached file metadata.
  */
 export async function listPlansWithContainers(requestId) {
@@ -132,7 +132,7 @@ export async function listPlansWithContainers(requestId) {
     .where({ request_id: requestId })
     .orderBy("plan_date", "asc");
 
-  const buyerRequest = await db("buyer_requests")
+  const customerRequest = await db("buyer_requests")
     .where({ id: requestId })
     .first();
 
@@ -143,7 +143,7 @@ export async function listPlansWithContainers(requestId) {
     .first();
 
   const used = Number(usedRaw || 0);
-  const total = Number(buyerRequest?.container_amount || 0);
+  const total = Number(customerRequest?.container_amount || 0);
   const remaining = Math.max(0, total - used);
 
   for (const plan of plans) {
@@ -184,14 +184,14 @@ export async function setContainerPlanDate(containerId, planDate, userId) {
     throw new Error("Not authorized to set this container plan date");
 
   // 🔎 Verify within allowed deadline range
-  const buyerRequest = await db("buyer_requests")
+  const customerRequest = await db("buyer_requests")
     .where({ id: container.buyer_request_id })
     .first();
 
-  if (buyerRequest?.deadline_start && buyerRequest?.deadline_end) {
+  if (customerRequest?.deadline_start && customerRequest?.deadline_end) {
     const d = new Date(planDate);
-    const start = new Date(buyerRequest.deadline_start);
-    const end = new Date(buyerRequest.deadline_end);
+    const start = new Date(customerRequest.deadline_start);
+    const end = new Date(customerRequest.deadline_end);
     if (d < start || d > end)
       throw new Error("Selected date is outside allowed deadline range");
   }
@@ -278,7 +278,7 @@ export async function getContainerById(containerId) {
 
 /**
  * Upload a file and link it to a container.
- * Automatically notifies all relevant users (admin, manager, buyer, farmer).
+ * Automatically notifies all relevant users (admin, manager, customer, supplier).
  */
 
 export async function addFileToContainer(containerId, fileMeta) {
@@ -308,7 +308,7 @@ export async function addFileToContainer(containerId, fileMeta) {
 
   const {
     request_id: requestId,
-    buyer_id: buyerId,
+    buyer_id: customerId,
     supplier_id: supplierId,
   } = info;
 
@@ -348,10 +348,10 @@ export async function addFileToContainer(containerId, fileMeta) {
     );
   }
 
-  // 📎 Notify buyer (informational)
-  if (buyerId)
+  // 📎 Notify customer (informational)
+  if (customerId)
     promises.push(
-      NotificationService.create(buyerId, "new_file_upload", containerId, data),
+      NotificationService.create(customerId, "new_file_upload", containerId, data),
     );
 
   // 📤 Notify supplier (confirmation)
@@ -370,7 +370,7 @@ export async function addFileToContainer(containerId, fileMeta) {
 }
 
 /**
- * Update container metadata (editable only by the owning farmer).
+ * Update container metadata (editable only by the owning supplier).
  */
 /**
  * Update container metadata (editable only by the owning supplier or admin/manager).
@@ -462,10 +462,10 @@ export async function listFiles(containerId) {
 ======================================================================= */
 
 /**
- * List buyer requests (accepted) and their plans+containers assigned to a supplier.
+ * List customer requests (accepted) and their plans+containers assigned to a supplier.
  * Supports pagination, search, and sorting.
  *
- * Pagination is applied at the buyer-request level (distinct br.id).
+ * Pagination is applied at the customer-request level (distinct br.id).
  */
 export async function listAssignedPlansWithContainers(
   supplierId,
@@ -501,7 +501,7 @@ export async function listAssignedPlansWithContainers(
   const base = db("farmer_plan_containers as c")
     .join("farmer_plans as fp", "fp.id", "c.plan_id")
     .join("buyer_requests as br", "br.id", "fp.request_id")
-    .leftJoin("users as buyer", "br.buyer_id", "buyer.id")
+    .leftJoin("users as customer", "br.buyer_id", "customer.id")
     .leftJoin(
       db("container_tracking_statuses as t")
         .select("container_id")
@@ -519,15 +519,15 @@ export async function listAssignedPlansWithContainers(
       );
     })
     .where("c.supplier_id", supplierId)
-    .andWhere("br.status", "accepted"); // ✅ Only accepted buyer requests
+    .andWhere("br.status", "accepted"); // ✅ Only accepted customer requests
 
   // ---- search filter ----
   // ---- search filter ----
   if (safeQ) {
     const like = `%${safeQ}%`;
     base.andWhere(function () {
-      this.whereRaw("LOWER(COALESCE(buyer.name::text, '')) LIKE ?", [like])
-        .orWhereRaw("LOWER(COALESCE(buyer.mobile::text, '')) LIKE ?", [like])
+      this.whereRaw("LOWER(COALESCE(customer.name::text, '')) LIKE ?", [like])
+        .orWhereRaw("LOWER(COALESCE(customer.mobile::text, '')) LIKE ?", [like])
         .orWhereRaw("LOWER(COALESCE(c.container_no::text, '')) LIKE ?", [like])
         .orWhereRaw("LOWER(COALESCE(br.import_country::text, '')) LIKE ?", [
           like,
@@ -626,8 +626,8 @@ export async function listAssignedPlansWithContainers(
       "ct.tracking_code",
       "ct.created_at as updated_at",
 
-      "buyer.name as buyer_name",
-      "buyer.mobile as buyer_mobile",
+      "customer.name as buyer_name",
+      "customer.mobile as buyer_mobile",
     )
     .whereIn("br.id", requestIds)
     .orderBy("br.id", "asc")

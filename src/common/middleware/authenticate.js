@@ -17,7 +17,7 @@ export const authenticate = (req, res, next) => {
     const decoded = jwt.verify(token, JWT_SECRET);
 
     // Attach user info to request
-    // ✅ Preserved licenseId for buyers/admins who login via license keys
+    // ✅ Preserved licenseId for customers/admins who login via license keys
     req.user = {
       id: decoded.id,
       email: decoded.email || null,

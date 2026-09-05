@@ -11,7 +11,7 @@ export async function listAllContainersWithTracking(req, res) {
       .leftJoin("farmer_plans as p", "c.plan_id", "p.id")
       .leftJoin("users as supplier", "c.supplier_id", "supplier.id")
       .leftJoin("buyer_requests as br", "p.request_id", "br.id")
-      .leftJoin("users as buyer", "br.buyer_id", "buyer.id")
+      .leftJoin("users as customer", "br.buyer_id", "customer.id")
       .leftJoin(
         db("container_tracking_statuses as t")
           .select("container_id")
@@ -51,7 +51,7 @@ export async function listAllContainersWithTracking(req, res) {
         "p.plan_date",
         "p.status as plan_status",
 
-        // Buyer request
+        // Customer request
         "br.id as buyer_request_id",
         "br.import_country",
         "br.entry_border",
@@ -64,13 +64,13 @@ export async function listAllContainersWithTracking(req, res) {
         "br.cartons",
         "br.status as buyer_status",
 
-        // Users (supplier / buyer)
+        // Users (supplier / customer)
         "supplier.id as supplier_id",
         "supplier.name as supplier_name",
         "supplier.email as supplier_email",
-        "buyer.id as buyer_id",
-        "buyer.name as buyer_name",
-        "buyer.email as buyer_email",
+        "customer.id as buyer_id",
+        "customer.name as buyer_name",
+        "customer.email as buyer_email",
 
         db.raw(`
           COALESCE(

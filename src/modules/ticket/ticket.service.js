@@ -1,4 +1,8 @@
 import db from "../../common/db/knex.js";
+import {
+  ROLES,
+  ADMIN_MANAGER_ROLES,
+} from "../../common/constants/roles.js";
 
 /* =========================
    Helpers
@@ -71,12 +75,14 @@ export async function createTicket({
     })
     .returning("*");
 
-  // 2️⃣ Handle auto-recipients for "user" role
-  if (role === "user") {
-    // ✅ Now this works because getUsersByRoles is defined above
-    const recipientIds = await getUsersByRoles(["buyer", "admin", "manager"], {
-      includeInactive: true,
-    });
+  // 2️⃣ Handle auto-recipients for supplier ("user") role
+  if (role === ROLES.SUPPLIER) {
+    const recipientIds = await getUsersByRoles(
+      [ROLES.CUSTOMER, ...ADMIN_MANAGER_ROLES],
+      {
+        includeInactive: true,
+      },
+    );
 
     // Exclude self from recipients
     const filtered = recipientIds.filter((id) => id !== createdBy);

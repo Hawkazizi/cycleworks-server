@@ -15,7 +15,7 @@ export async function getById(id) {
 }
 
 /**
- * Update buyer/user profile fields.
+ * Update customer/user profile fields.
  * Only name, email, and mobile are editable.
  * @param {number} userId - The ID of the user to update.
  * @param {object} data - The profile fields to update.
@@ -79,7 +79,7 @@ export async function updateProfile(userId, data) {
 
 /**
  * Retrieve all active users with the "user" role.
- * Commonly used for assigning buyer requests or supplier operations.
+ * Commonly used for assigning customer requests or supplier operations.
  * @returns {Promise<object[]>} List of active users with role = "user".
  */
 export async function getUsersWithUserRole() {

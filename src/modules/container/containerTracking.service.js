@@ -114,7 +114,7 @@ export async function addTracking(
     );
   }
 
-  // 🚚 Optionally notify buyer
+  // 🚚 Optionally notify customer
   if (container.buyer_id) {
     promises.push(
       NotificationService.create(

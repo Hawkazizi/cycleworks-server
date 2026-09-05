@@ -1,5 +1,5 @@
 import { Router } from "express";
-import * as buyerController from "./buyer.controller.js";
+import * as customerController from "./customer.controller.js";
 import { authenticate } from "../../common/middleware/authenticate.js";
 import { authorize } from "../../common/middleware/authorize.js";
 import upload from "../../common/middleware/upload.js";
@@ -15,7 +15,7 @@ router.get(
   "/profile",
   authenticate,
   authorize("buyer"),
-  buyerController.getProfile,
+  customerController.getProfile,
 );
 
 // Update profile
@@ -23,7 +23,7 @@ router.put(
   "/profile",
   authenticate,
   authorize("buyer"),
-  buyerController.updateProfile,
+  customerController.updateProfile,
 );
 
 // Profile picture upload & fetch
@@ -32,13 +32,13 @@ router.post(
   authenticate,
   authorize("buyer"),
   upload.single("picture"),
-  buyerController.uploadProfilePicture,
+  customerController.uploadProfilePicture,
 );
 router.get(
   "/profile/picture",
   authenticate,
   authorize("buyer"),
-  buyerController.getProfilePicture,
+  customerController.getProfilePicture,
 );
 
 // Delete profile
@@ -46,27 +46,27 @@ router.delete(
   "/profile",
   authenticate,
   authorize("buyer"),
-  buyerController.deleteProfile,
+  customerController.deleteProfile,
 );
 
 /* =======================================================================
-   📦 BUYER REQUESTS
+   📦 CUSTOMER REQUESTS
 ======================================================================= */
 
-// Create new buyer request
+// Create new customer request
 router.post(
   "/requests",
   authenticate,
   authorize("buyer", "admin"),
-  buyerController.createRequest,
+  customerController.createRequest,
 );
 
-// List buyer’s own requests
+// List customer’s own requests
 router.get(
   "/requests",
   authenticate,
   authorize("buyer", "admin"),
-  buyerController.getMyRequests,
+  customerController.getMyRequests,
 );
 
 // Get single request (with details)
@@ -74,43 +74,43 @@ router.get(
   "/requests/:id",
   authenticate,
   authorize("buyer", "admin"),
-  buyerController.getRequestById,
+  customerController.getRequestById,
 );
 
-// Update buyer request (only if still pending)
+// Update customer request (only if still pending)
 router.patch(
   "/requests/:id",
   authenticate,
   authorize("buyer", "admin"),
-  buyerController.updateRequest,
+  customerController.updateRequest,
 );
 
-// Cancel buyer request (soft delete → status=cancelled)
+// Cancel customer request (soft delete → status=cancelled)
 router.delete(
   "/requests/:id",
   authenticate,
   authorize("buyer", "admin"),
-  buyerController.cancelRequest,
+  customerController.cancelRequest,
 );
 
 /* =======================================================================
    👥 USER & ROLE UTILITIES
 ======================================================================= */
 
-// Minimal user list (for buyer to select farmer)
+// Minimal user list (for customer to select supplier)
 router.get(
   "/users/minimal",
   authenticate,
   authorize("buyer"),
-  buyerController.getMinimalUsers,
+  customerController.getMinimalUsers,
 );
 
-// Minimal buyer list (extra endpoint)
+// Minimal customer list (extra endpoint)
 router.get(
   "/minimal",
   authenticate,
   authorize("buyer"),
-  buyerController.getMinimalBuyers,
+  customerController.getMinimalCustomers,
 );
 
 // List users by role "user"
@@ -118,37 +118,37 @@ router.get(
   "/roles/user",
   authenticate,
   authorize("buyer"),
-  buyerController.listUserRoleUsers,
+  customerController.listUserRoleUsers,
 );
 
 /* =======================================================================
    🎟️ TICKETS
 ======================================================================= */
 
-// Create buyer ticket
+// Create customer ticket
 router.post(
   "/tickets",
   authenticate,
   authorize("buyer"),
   upload.single("attachment"),
-  buyerController.createBuyerTicket,
+  customerController.createCustomerTicket,
 );
 
-// Get all buyer’s tickets
+// Get all customer’s tickets
 router.get(
   "/tickets",
   authenticate,
   authorize("buyer"),
-  buyerController.getMyBuyerTickets,
+  customerController.getMyCustomerTickets,
 );
 
-// Update buyer ticket
+// Update customer ticket
 router.patch(
   "/tickets/:id",
   authenticate,
   authorize("buyer"),
   upload.single("attachment"),
-  buyerController.updateBuyerTicket,
+  customerController.updateCustomerTicket,
 );
 
 export default router;

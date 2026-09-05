@@ -22,13 +22,13 @@ const notifyQcRoles = async (type, relatedId, data = {}, trx = null) => {
 const BASE_URL = process.env.BASE_URL || "http://localhost:5000";
 
 /* =======================================================================
-   📦 BUYER REQUEST MANAGEMENT (ADMIN / MANAGER)
+   📦 CUSTOMER REQUEST MANAGEMENT (ADMIN / MANAGER)
 ======================================================================= */
-/** 📋 Get all buyer requests (with supplier + plans + assigned suppliers + creator) */
-export async function getBuyerRequests() {
+/** 📋 Get all customer requests (with supplier + plans + assigned suppliers + creator) */
+export async function getCustomerRequests() {
   const rows = await db("buyer_requests as br")
-    // 🔹 Join buyer (assigned customer)
-    .leftJoin("users as buyer", "br.buyer_id", "buyer.id")
+    // 🔹 Join customer (assigned customer)
+    .leftJoin("users as customer", "br.buyer_id", "customer.id")
     // 🔹 Join creator (operator)
     .leftJoin("users as creator", "br.creator_id", "creator.id")
     // 🔹 Join preferred supplier
@@ -54,11 +54,11 @@ export async function getBuyerRequests() {
       "br.description",
       "br.created_at",
 
-      // 🔹 Buyer (assigned customer)
-      "buyer.id as buyer_id",
-      "buyer.name as buyer_name",
-      "buyer.email as buyer_email",
-      "buyer.mobile as buyer_mobile",
+      // 🔹 Customer (assigned customer)
+      "customer.id as buyer_id",
+      "customer.name as buyer_name",
+      "customer.email as buyer_email",
+      "customer.mobile as buyer_mobile",
 
       // 🔹 Creator (operator)
       "creator.id as creator_id",
@@ -82,14 +82,14 @@ export async function getBuyerRequests() {
     normalized.farmer_plans = await getPlansWithContainers(row.id);
     normalized.assigned_suppliers = await getAssignedSuppliers(row.id);
 
-    // 🔹 Optional: clear distinction between creator and buyer
+    // 🔹 Optional: clear distinction between creator and customer
     normalized.creator = {
       id: row.creator_id,
       name: row.creator_name,
       email: row.creator_email,
       mobile: row.creator_mobile,
     };
-    normalized.buyer = {
+    normalized.customer = {
       id: row.buyer_id,
       name: row.buyer_name,
       email: row.buyer_email,
@@ -107,17 +107,17 @@ export async function getBuyerRequests() {
   return results;
 }
 
-/** 🔍 Get a single buyer request by ID (with all details) */
-export async function getBuyerRequestById(id) {
+/** 🔍 Get a single customer request by ID (with all details) */
+export async function getCustomerRequestById(id) {
   const row = await db("buyer_requests as br")
-    .leftJoin("users as buyer", "br.buyer_id", "buyer.id")
+    .leftJoin("users as customer", "br.buyer_id", "customer.id")
     .leftJoin("users as supplier", "br.preferred_supplier_id", "supplier.id")
     .leftJoin("users as creator", "br.creator_id", "creator.id")
     .select(
       "br.*",
-      "buyer.name as buyer_name",
-      "buyer.email as buyer_email",
-      "buyer.mobile as buyer_mobile",
+      "customer.name as buyer_name",
+      "customer.email as buyer_email",
+      "customer.mobile as buyer_mobile",
       "supplier.name as supplier_name",
       "supplier.mobile as supplier_mobile",
       "creator.id as created_by_user_id",
@@ -140,8 +140,8 @@ export async function getBuyerRequestById(id) {
 /* =======================================================================
    ✅ REVIEW / APPROVAL
 ======================================================================= */
-/** ✏️ Review a buyer request (status, final status, farmer status) */
-export async function reviewBuyerRequest(
+/** ✏️ Review a customer request (status, final status, supplier status) */
+export async function reviewCustomerRequest(
   id,
   { status, final_status, farmer_status, reviewerId },
 ) {
@@ -171,10 +171,10 @@ export async function reviewBuyerRequest(
 
   const normalized = normalizeRequest(updated);
 
-  // 3️⃣ Notify the related buyer (customer)
+  // 3️⃣ Notify the related customer (customer)
   try {
-    const buyerId = updated.buyer_id;
-    if (buyerId) {
+    const customerId = updated.buyer_id;
+    if (customerId) {
       const readableStatus = (() => {
         switch (status) {
           case "approved":
@@ -192,7 +192,7 @@ export async function reviewBuyerRequest(
       })();
 
       await NotificationService.create(
-        buyerId,
+        customerId,
         "request_status_changed", // ✅ already handled in NotificationService
         id, // related_request_id
         {
@@ -238,7 +238,7 @@ export async function reviewBuyerRequest(
    🧑‍🤝‍🧑 SUPPLIER ASSIGNMENT
 ======================================================================= */
 
-/** 🧭 Assign suppliers to a buyer request */
+/** 🧭 Assign suppliers to a customer request */
 export async function assignSuppliersToRequest(
   requestId,
   supplierIds,
@@ -281,7 +281,7 @@ export async function assignSuppliersToRequest(
     updated_at: db.fn.now(),
   });
 
-  // 🔔 Notify suppliers, buyer, and managers
+  // 🔔 Notify suppliers, customer, and managers
   await notifyAssignments(requestId, request.buyer_id, supplierIds);
 
   return inserted;
@@ -378,8 +378,8 @@ export async function assignContainersToSuppliers(
    ⏰ DEADLINE MANAGEMENT
 ======================================================================= */
 
-/** 🗓️ Update buyer request deadlines */
-export async function updateBuyerRequestDeadline(requestId, data, updatedBy) {
+/** 🗓️ Update customer request deadlines */
+export async function updateCustomerRequestDeadline(requestId, data, updatedBy) {
   const { new_deadline_start, new_deadline_end, new_deadline_date } = data;
 
   if (!new_deadline_start && !new_deadline_end && !new_deadline_date)
@@ -434,14 +434,14 @@ function safeParseJSON(value, fallback = []) {
 }
 
 function normalizeRequest(row) {
-  const farmerDocs = safeParseJSON(row.farmer_docs, []);
+  const supplierDocs = safeParseJSON(row.farmer_docs, []);
   const adminDocs = safeParseJSON(row.admin_docs, []);
-  const farmerPlan = safeParseJSON(row.farmer_plan, {});
+  const supplierPlan = safeParseJSON(row.farmer_plan, {});
 
   return {
     ...row,
-    farmer_plan: farmerPlan,
-    farmer_docs: farmerDocs.map((doc) => ({
+    farmer_plan: supplierPlan,
+    farmer_docs: supplierDocs.map((doc) => ({
       ...doc,
       path: doc.path?.startsWith("http") ? doc.path : `${BASE_URL}${doc.path}`,
     })),
@@ -465,12 +465,12 @@ async function getPlansWithContainers(requestId) {
     plan.containers = await db("farmer_plan_containers as c")
       .leftJoin("farmer_plans as p", "c.plan_id", "p.id")
       .leftJoin("buyer_requests as br", "p.request_id", "br.id")
-      .leftJoin("users as s", "c.supplier_id", "s.id") // supplier replaces farmer
+      .leftJoin("users as s", "c.supplier_id", "s.id") // supplier replaces supplier
       .select(
         "c.*",
         "s.name as supplier_name",
         "s.email as supplier_email",
-        // ✅ Access buyer request fields
+        // ✅ Access customer request fields
         "br.import_country",
         "br.egg_type",
         "br.cartons",
@@ -506,7 +506,7 @@ async function getPlansWithContainers(requestId) {
    🔔 NOTIFICATION HELPERS
 ======================================================================= */
 
-async function handleBuyerRequestNotifications(
+async function handleCustomerRequestNotifications(
   id,
   oldRequest,
   updated,
@@ -520,7 +520,7 @@ async function handleBuyerRequestNotifications(
 
     if (supplierId)
       await NotificationService.create(supplierId, "request_accepted", id, {
-        buyerName: normalized.buyer_name || "Buyer",
+        customerName: normalized.buyer_name || "Buyer",
       });
 
     if (updated.buyer_id)
@@ -565,7 +565,7 @@ async function handleBuyerRequestNotifications(
   }
 }
 
-async function notifyAssignments(requestId, buyerId, supplierIds) {
+async function notifyAssignments(requestId, customerId, supplierIds) {
   // Suppliers
   for (const sid of supplierIds) {
     await NotificationService.create(sid, "buyer_request_assigned", requestId, {
@@ -573,10 +573,10 @@ async function notifyAssignments(requestId, buyerId, supplierIds) {
     });
   }
 
-  // Buyer
-  if (buyerId) {
+  // Customer
+  if (customerId) {
     await NotificationService.create(
-      buyerId,
+      customerId,
       "buyer_request_updated",
       requestId,
       {

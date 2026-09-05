@@ -2,16 +2,17 @@ import path from "path";
 import fs from "fs";
 import db from "../../common/db/knex.js";
 
-import * as buyerReqService from "./buyerRequest.service.js";
+import * as customerReqService from "./customerRequest.service.js";
 import * as adminService from "../admin/admin.service.js";
-import * as buyerService from "./buyer.service.js";
+import * as customerService from "./customer.service.js";
 import * as ticketService from "../ticket/ticket.service.js";
+import { ROLES } from "../../common/constants/roles.js";
 
 /* =======================================================================
-   👤 BUYER PROFILE MANAGEMENT
+   👤 CUSTOMER PROFILE MANAGEMENT
 ======================================================================= */
 
-/** 🔍 Get buyer profile */
+/** 🔍 Get customer profile */
 export async function getProfile(req, res) {
   try {
     const me = await db("users").where({ id: req.user.id }).first();
@@ -19,26 +20,26 @@ export async function getProfile(req, res) {
       return res.status(404).json({ error: req.t("buyer.profile_not_found") });
     res.json(me);
   } catch (err) {
-    console.error("getProfile (buyer) error:", err);
+    console.error("getProfile (customer) error:", err);
     res.status(500).json({ error: req.t("errors.fetch_profile") });
   }
 }
 
-/** ✏️ Update buyer profile */
+/** ✏️ Update customer profile */
 export async function updateProfile(req, res) {
   try {
-    const updated = await buyerService.updateProfile(req.user.id, req.body);
+    const updated = await customerService.updateProfile(req.user.id, req.body);
     res.json(updated);
   } catch (err) {
-    console.error("updateProfile (buyer) error:", err);
+    console.error("updateProfile (customer) error:", err);
     res.status(400).json({ error: err.message });
   }
 }
 
-/** 🖼️ Upload buyer profile picture */
+/** 🖼️ Upload customer profile picture */
 export const uploadProfilePicture = async (req, res) => {
   try {
-    const buyerId = req.user.id;
+    const customerId = req.user.id;
     if (!req.file)
       return res.status(400).json({ error: req.t("errors.no_file") });
 
@@ -49,25 +50,25 @@ export const uploadProfilePicture = async (req, res) => {
     fs.renameSync(req.file.path, path.join(dir, req.file.filename));
 
     // Delete old profile picture
-    const buyer = await db("users").where({ id: buyerId }).first();
-    if (buyer?.profile_picture) {
+    const customer = await db("users").where({ id: customerId }).first();
+    if (customer?.profile_picture) {
       const oldPath = path.join(
         process.cwd(),
-        buyer.profile_picture.startsWith("/")
-          ? buyer.profile_picture.slice(1)
-          : buyer.profile_picture,
+        customer.profile_picture.startsWith("/")
+          ? customer.profile_picture.slice(1)
+          : customer.profile_picture,
       );
       if (fs.existsSync(oldPath)) {
         try {
           fs.unlinkSync(oldPath);
-          console.log(`🧹 Deleted old buyer profile picture: ${oldPath}`);
+          console.log(`🧹 Deleted old customer profile picture: ${oldPath}`);
         } catch (err) {
           console.warn("⚠ Failed to delete old picture:", err.message);
         }
       }
     }
 
-    await db("users").where({ id: buyerId }).update({
+    await db("users").where({ id: customerId }).update({
       profile_picture: newFilePath,
       updated_at: new Date(),
     });
@@ -77,31 +78,31 @@ export const uploadProfilePicture = async (req, res) => {
       profile_picture: newFilePath,
     });
   } catch (err) {
-    console.error("uploadProfilePicture (buyer) error:", err);
+    console.error("uploadProfilePicture (customer) error:", err);
     res.status(500).json({ error: req.t("errors.upload_picture") });
   }
 };
 
-/** 🖼️ Get buyer profile picture */
+/** 🖼️ Get customer profile picture */
 export const getProfilePicture = async (req, res) => {
   try {
-    const buyerId = req.user.id;
+    const customerId = req.user.id;
 
-    const buyer = await db("users")
+    const customer = await db("users")
       .select("profile_picture")
-      .where({ id: buyerId })
+      .where({ id: customerId })
       .first();
 
     // ✅ No profile pic set → return 204
-    if (!buyer?.profile_picture) {
+    if (!customer?.profile_picture) {
       return res.status(204).end();
     }
 
     const filePath = path.join(
       process.cwd(),
-      buyer.profile_picture.startsWith("/")
-        ? buyer.profile_picture.slice(1)
-        : buyer.profile_picture,
+      customer.profile_picture.startsWith("/")
+        ? customer.profile_picture.slice(1)
+        : customer.profile_picture,
     );
 
     // ✅ DB has a path but file missing → also return 204 (or 404 if you prefer)
@@ -120,41 +121,41 @@ export const getProfilePicture = async (req, res) => {
     res.setHeader("Content-Type", mimeType);
     fs.createReadStream(filePath).pipe(res);
   } catch (err) {
-    console.error("getProfilePicture (buyer) error:", err);
+    console.error("getProfilePicture (customer) error:", err);
     res.status(500).json({ error: req.t("errors.fetch_picture") });
   }
 };
 
-/** ❌ Delete buyer profile */
+/** ❌ Delete customer profile */
 export const deleteProfile = async (req, res) => {
   try {
     await db.transaction(async (trx) => {
-      // Optionally mark related buyer requests as cancelled
+      // Optionally mark related customer requests as cancelled
       await trx("buyer_requests")
         .where({ buyer_id: req.user.id })
         .update({ status: "cancelled", updated_at: trx.fn.now() });
 
-      // Delete buyer
+      // Delete customer
       await trx("users").where({ id: req.user.id }).del();
     });
     res.json({ message: req.t("buyer.profile_deleted") });
   } catch (err) {
-    console.error("deleteProfile (buyer) error:", err);
+    console.error("deleteProfile (customer) error:", err);
     res.status(500).json({ error: req.t("errors.delete_profile") });
   }
 };
 
 /* =======================================================================
-   📦 BUYER REQUEST MANAGEMENT
+   📦 CUSTOMER REQUEST MANAGEMENT
 ======================================================================= */
 
-/** 🆕 Create new buyer request */
+/** 🆕 Create new customer request */
 export const createRequest = async (req, res) => {
   try {
     const creatorId = req.user.id;
     const {
-      existingBuyerId,
-      newBuyer,
+      existingCustomerId,
+      newCustomer,
       deadline_start,
       deadline_end,
       ...requestData
@@ -169,10 +170,10 @@ export const createRequest = async (req, res) => {
       return res.status(400).json({ error: req.t("buyer.invalid_date_range") });
     }
 
-    const result = await buyerReqService.createRequestWithBuyerAndLicense({
+    const result = await customerReqService.createRequestWithCustomerAndLicense({
       creatorId,
-      existingBuyerId,
-      newBuyer,
+      existingCustomerId,
+      newCustomer,
       requestData: {
         ...requestData,
         deadline_start,
@@ -187,11 +188,11 @@ export const createRequest = async (req, res) => {
   }
 };
 
-/** 📋 List buyer's own requests */
+/** 📋 List customer's own requests */
 export async function getMyRequests(req, res) {
   try {
     const { search = "" } = req.query;
-    const list = await buyerReqService.getMyRequests(
+    const list = await customerReqService.getMyRequests(
       req.user.id,
       search,
       req.user.roles || [],
@@ -203,10 +204,10 @@ export async function getMyRequests(req, res) {
   }
 }
 
-/** 🔍 Get single buyer request by ID */
+/** 🔍 Get single customer request by ID */
 export async function getRequestById(req, res) {
   try {
-    const item = await buyerReqService.getRequestById(
+    const item = await customerReqService.getRequestById(
       req.user.id,
       req.params.id,
     );
@@ -219,10 +220,10 @@ export async function getRequestById(req, res) {
   }
 }
 
-/** ✏️ Update buyer request */
+/** ✏️ Update customer request */
 export async function updateRequest(req, res) {
   try {
-    const updated = await buyerReqService.updateRequest(
+    const updated = await customerReqService.updateRequest(
       req.user.id,
       req.params.id,
       req.body,
@@ -233,10 +234,10 @@ export async function updateRequest(req, res) {
   }
 }
 
-/** ❌ Cancel buyer request */
+/** ❌ Cancel customer request */
 export async function cancelRequest(req, res) {
   try {
-    const cancelled = await buyerReqService.cancelRequest(
+    const cancelled = await customerReqService.cancelRequest(
       req.user.id,
       req.params.id,
     );
@@ -247,15 +248,15 @@ export async function cancelRequest(req, res) {
 }
 
 /* =======================================================================
-   🎟️ BUYER TICKETS
+   🎟️ CUSTOMER TICKETS
 ======================================================================= */
 
-/** 🆕 Create buyer ticket */
-export const createBuyerTicket = async (req, res) => {
+/** 🆕 Create customer ticket */
+export const createCustomerTicket = async (req, res) => {
   try {
     const { subject, message } = req.body;
-    const buyerId = req.user.id;
-    const role = "buyer";
+    const customerId = req.user.id;
+    const role = ROLES.CUSTOMER;
 
     if (!message)
       return res.status(400).json({ error: req.t("ticket.message_required") });
@@ -263,15 +264,15 @@ export const createBuyerTicket = async (req, res) => {
     // Handle optional file upload
     let fileInfo = null;
     if (req.file) {
-      const buyerDir = path.join(
+      const customerDir = path.join(
         "uploads",
-        "buyers",
-        String(buyerId),
+        "customers",
+        String(customerId),
         "tickets",
       );
-      fs.mkdirSync(buyerDir, { recursive: true });
+      fs.mkdirSync(customerDir, { recursive: true });
 
-      const filePath = path.join(buyerDir, req.file.originalname);
+      const filePath = path.join(customerDir, req.file.originalname);
       fs.renameSync(req.file.path, filePath);
 
       fileInfo = {
@@ -282,7 +283,7 @@ export const createBuyerTicket = async (req, res) => {
     }
 
     const ticket = await ticketService.createTicket({
-      userId: buyerId,
+      userId: customerId,
       role,
       subject,
       message,
@@ -294,40 +295,40 @@ export const createBuyerTicket = async (req, res) => {
       ticket,
     });
   } catch (err) {
-    console.error("CREATE BUYER TICKET ERROR:", err);
+    console.error("CREATE CUSTOMER TICKET ERROR:", err);
     res.status(400).json({ error: err.message });
   }
 };
 
-/** 📋 List buyer tickets */
-export const getMyBuyerTickets = async (req, res) => {
+/** 📋 List customer tickets */
+export const getMyCustomerTickets = async (req, res) => {
   try {
     const tickets = await ticketService.getUserTickets(req.user.id);
     res.json(tickets);
   } catch (err) {
-    console.error("GET BUYER TICKETS ERROR:", err);
+    console.error("GET CUSTOMER TICKETS ERROR:", err);
     res.status(400).json({ error: err.message });
   }
 };
 
-/** ✏️ Update buyer ticket */
-export const updateBuyerTicket = async (req, res) => {
+/** ✏️ Update customer ticket */
+export const updateCustomerTicket = async (req, res) => {
   try {
     const ticketId = req.params.id;
-    const buyerId = req.user.id;
+    const customerId = req.user.id;
     const { subject, message } = req.body;
 
     let fileInfo = null;
     if (req.file) {
-      const buyerDir = path.join(
+      const customerDir = path.join(
         "uploads",
-        "buyers",
-        String(buyerId),
+        "customers",
+        String(customerId),
         "tickets",
       );
-      fs.mkdirSync(buyerDir, { recursive: true });
+      fs.mkdirSync(customerDir, { recursive: true });
 
-      const filePath = path.join(buyerDir, req.file.originalname);
+      const filePath = path.join(customerDir, req.file.originalname);
       fs.renameSync(req.file.path, filePath);
 
       fileInfo = {
@@ -339,7 +340,7 @@ export const updateBuyerTicket = async (req, res) => {
 
     const updated = await ticketService.updateTicket({
       ticketId,
-      userId: buyerId,
+      userId: customerId,
       subject,
       message,
       file: fileInfo,
@@ -350,7 +351,7 @@ export const updateBuyerTicket = async (req, res) => {
       ticket: updated,
     });
   } catch (err) {
-    console.error("UPDATE BUYER TICKET ERROR:", err);
+    console.error("UPDATE CUSTOMER TICKET ERROR:", err);
     res.status(400).json({ error: err.message });
   }
 };
@@ -370,10 +371,10 @@ export const getMinimalUsers = async (req, res) => {
   }
 };
 
-/** 👥 Minimal buyer list (active buyers only) */
-export const getMinimalBuyers = async (req, res) => {
+/** 👥 Minimal customer list (active customers only) */
+export const getMinimalCustomers = async (req, res) => {
   try {
-    const buyers = await db("users as u")
+    const customers = await db("users as u")
       .join("user_roles as ur", "u.id", "ur.user_id")
       .join("roles as r", "ur.role_id", "r.id")
       .whereRaw("LOWER(r.name) = 'buyer'")
@@ -381,7 +382,7 @@ export const getMinimalBuyers = async (req, res) => {
       .select("u.id", "u.name", "u.email", "u.mobile")
       .orderBy("u.name", "asc");
 
-    res.json(buyers);
+    res.json(customers);
   } catch (err) {
     console.error("❌ getMinimalBuyers error:", err);
     res.status(500).json({ error: req.t("errors.fetch_buyers") });
@@ -391,7 +392,7 @@ export const getMinimalBuyers = async (req, res) => {
 /** 👤 List users who have the 'user' role */
 export async function listUserRoleUsers(req, res) {
   try {
-    const users = await buyerService.getUsersWithUserRole();
+    const users = await customerService.getUsersWithUserRole();
     res.json(users);
   } catch (err) {
     console.error("Error fetching user-role users:", err);

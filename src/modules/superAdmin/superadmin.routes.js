@@ -132,21 +132,21 @@ router.get(
 );
 
 /* =======================================================================
-   📋 Buyer Requests
+   📋 Customer Requests
 ======================================================================= */
-router.get("/buyer-requests", superAdminController.listBuyerRequests);
-router.post("/buyer-requests", superAdminController.createBuyerRequest);
-router.get("/buyer-requests/:id", superAdminController.getBuyerRequest);
-router.patch("/buyer-requests/:id", superAdminController.updateBuyerRequest);
-router.delete("/buyer-requests/:id", superAdminController.deleteBuyerRequest);
+router.get("/customer-requests", superAdminController.listCustomerRequests);
+router.post("/customer-requests", superAdminController.createCustomerRequest);
+router.get("/customer-requests/:id", superAdminController.getCustomerRequest);
+router.patch("/customer-requests/:id", superAdminController.updateCustomerRequest);
+router.delete("/customer-requests/:id", superAdminController.deleteCustomerRequest);
 
-/* Buyer Request -> Containers */
+/* Customer Request -> Containers */
 router.get(
-  "/buyer-requests/:id/containers",
-  superAdminController.listBuyerRequestContainers,
+  "/customer-requests/:id/containers",
+  superAdminController.listCustomerRequestContainers,
 );
 router.post(
-  "/buyer-requests/:id/containers",
+  "/customer-requests/:id/containers",
   superAdminController.createContainerForRequest,
 );
 

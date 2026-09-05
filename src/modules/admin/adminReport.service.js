@@ -2,8 +2,8 @@ import db from "../../common/db/knex.js";
 import { Parser } from "json2csv";
 
 export const generateReportsCSV = async (type = "all") => {
-  // --- Buyer Requests ---
-  const buyerRequests = await db("buyer_requests as br")
+  // --- Customer Requests ---
+  const customerRequests = await db("buyer_requests as br")
     .leftJoin("users as u", "u.id", "br.buyer_id")
     .leftJoin("admin_license_keys as a", "a.id", "br.reviewed_by")
     .select(
@@ -115,7 +115,7 @@ export const generateReportsCSV = async (type = "all") => {
   }
 
   sections.push(
-    toCSV(buyerRequests, "=== Buyer Requests ==="),
+    toCSV(customerRequests, "=== Buyer Requests ==="),
     toCSV(applications, "=== User Applications ==="),
     toCSV(users, "=== Users ==="),
     toCSV(completedContainers, "=== Completed Containers ==="),

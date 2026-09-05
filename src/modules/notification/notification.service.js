@@ -1,4 +1,5 @@
 import db from "../../common/db/knex.js";
+import { ROLES, ADMIN_MANAGER_ROLES, QC_ROLES } from "../../common/constants/roles.js";
 
 export const NotificationService = {
   async create(userId, type, relatedId, data = {}, trx = null) {
@@ -10,12 +11,12 @@ export const NotificationService = {
       .pluck("r.name")
       .then((names) => names.map((n) => n.toLowerCase()));
 
-    const isBuyer = roleNames.includes("buyer");
-    const isFarmer = roleNames.includes("user") || roleNames.includes("farmer");
-    const isAdminOrManager =
-      roleNames.includes("admin") || roleNames.includes("manager");
-    const isQc =
-      roleNames.includes("qc_internal") || roleNames.includes("qc_external");
+    const isCustomer = roleNames.includes(ROLES.CUSTOMER);
+    const isSupplier = roleNames.includes(ROLES.SUPPLIER);
+    const isAdminOrManager = ADMIN_MANAGER_ROLES.some((r) =>
+      roleNames.includes(r),
+    );
+    const isQc = QC_ROLES.some((r) => roleNames.includes(r));
 
     let message;
 
@@ -23,10 +24,10 @@ export const NotificationService = {
       case "request_status_changed": {
         const status =
           data.status || data.final_status || data.farmer_status || "—";
-        const prefix = isBuyer
+        const prefix = isCustomer
           ? `Request #${relatedId}`
           : `درخواست #${relatedId}`;
-        message = isBuyer
+        message = isCustomer
           ? `${prefix} status updated → ${status}`
           : `${prefix} وضعیت به‌روزرسانی شد به ${status}`;
         break;
@@ -40,14 +41,14 @@ export const NotificationService = {
         const status = data.status || "به‌روزرسانی‌شده";
         if (isAdminOrManager || isQc) {
           message = `🔔 تأمین‌کننده ${data.supplierName ? `«${data.supplierName}»` : ""} وضعیت یک کانتینر را به‌روزرسانی کرده است. لطفاً بررسی کنید.`;
-        } else if (isBuyer) {
+        } else if (isCustomer) {
           let readableStatus = "به‌روزرسانی شد";
           if (status === "submitted") readableStatus = "ارسال شده برای بررسی";
           else if (status === "in_progress") readableStatus = "در حال انجام";
           else if (status === "completed") readableStatus = "خاتمه یافته";
           else if (status === "rejected") readableStatus = "رد شده";
           message = `🚚 وضعیت کانتینر شما ${data.tracking_code ? `با کد ${data.tracking_code}` : ""} به "${readableStatus}" تغییر کرد.`;
-        } else if (isFarmer) {
+        } else if (isSupplier) {
           message = `✅ وضعیت کانتینر شما با موفقیت به‌روزرسانی شد و برای مدیر ارسال گردید.`;
         } else {
           message = `وضعیت یک کانتینر به‌روزرسانی شد.`;
@@ -60,9 +61,9 @@ export const NotificationService = {
           : "—";
         if (isAdminOrManager || isQc) {
           message = `📅 تأمین‌کننده ${data.supplierName ? `«${data.supplierName}»` : ""} تاریخ برنامه‌ریزی برای یکی از کانتینرها را انتخاب کرده است (${date}). لطفاً بررسی فرمایید.`;
-        } else if (isBuyer) {
+        } else if (isCustomer) {
           message = `📅 تاریخ برنامه‌ریزی کانتینر شما برای ${date} تنظیم شد.`;
-        } else if (isFarmer) {
+        } else if (isSupplier) {
           message = `✅ تاریخ ${date} با موفقیت ثبت شد و برای تأیید به مدیر ارسال گردید.`;
         } else {
           message = `📅 تاریخ برنامه‌ریزی کانتینر به‌روزرسانی شد.`;
@@ -73,9 +74,9 @@ export const NotificationService = {
         const fields = data.metadata_type || "اطلاعات کانتینر";
         if (isAdminOrManager || isQc) {
           message = `🧾 تأمین‌کننده ${data.supplierName ? `«${data.supplierName}»` : ""} اطلاعات کانتینر (${fields}) را به‌روزرسانی کرده است. لطفاً بررسی فرمایید.`;
-        } else if (isFarmer) {
+        } else if (isSupplier) {
           message = `✅ اطلاعات کانتینر شما با موفقیت به‌روزرسانی شد و برای بررسی ارسال گردید.`;
-        } else if (isBuyer) {
+        } else if (isCustomer) {
           message = `ℹ️ اطلاعات جدیدی برای کانتینر ثبت شده است (${fields}).`;
         } else {
           message = `🧾 اطلاعات کانتینر به‌روزرسانی شد.`;
@@ -87,9 +88,9 @@ export const NotificationService = {
         const supplierName = data.supplierName || "تأمین‌کننده ناشناس";
         if (isAdminOrManager || isQc) {
           message = `📎 تأمین‌کننده «${supplierName}» فایلی از نوع "${fileType}" را برای یکی از کانتینرها بارگذاری کرده است. لطفاً بررسی فرمایید.`;
-        } else if (isBuyer) {
+        } else if (isCustomer) {
           message = `📎 تأمین‌کننده فایلی از نوع "${fileType}" را برای کانتینر شما بارگذاری کرده است.`;
-        } else if (isFarmer) {
+        } else if (isSupplier) {
           message = `✅ فایل "${fileType}" با موفقیت بارگذاری شد و برای بررسی به مدیر ارسال گردید.`;
         } else {
           message = `📎 فایل جدیدی بارگذاری شد.`;
@@ -101,9 +102,9 @@ export const NotificationService = {
           data.readableStatus || data.status || "به‌روزرسانی‌شده";
         if (isAdminOrManager || isQc) {
           message = `🚚 تأمین‌کننده ${data.supplierName ? `«${data.supplierName}»` : ""} وضعیت یکی از کانتینرها را به "${readable}" تغییر داده است. لطفاً بررسی فرمایید.`;
-        } else if (isBuyer) {
+        } else if (isCustomer) {
           message = `🚚 وضعیت کانتینر شما به "${readable}" تغییر کرد.`;
-        } else if (isFarmer) {
+        } else if (isSupplier) {
           message = `✅ وضعیت کانتینر با موفقیت به "${readable}" تغییر یافت.`;
         } else {
           message = `وضعیت یک کانتینر به "${readable}" تغییر کرد.`;
@@ -113,7 +114,7 @@ export const NotificationService = {
       case "new_request":
         message =
           isAdminOrManager || isQc
-            ? `درخواست جدیدی از مشتری (${data.buyerName || "مشتری ناشناس"}) نیاز به بررسی دارد.`
+            ? `درخواست جدیدی از مشتری (${data.customerName || "مشتری ناشناس"}) نیاز به بررسی دارد.`
             : `Your new request #${relatedId} is under review.`;
         break;
       case "application_submitted":
@@ -123,12 +124,12 @@ export const NotificationService = {
             : `درخواست شما برای عضویت ارسال شد و در انتظار بررسی است.`;
         break;
       case "request_accepted":
-        message = isBuyer
+        message = isCustomer
           ? `Request #${relatedId} has been accepted!`
           : `درخواست #${relatedId} توسط تأمین‌کننده پذیرفته شد.`;
         break;
       case "buyer_request_toggle_completion":
-        message = isBuyer
+        message = isCustomer
           ? data.is_completed
             ? `Your request #${relatedId} has been completed.`
             : `Your request #${relatedId} has been reactivated.`

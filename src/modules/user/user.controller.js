@@ -3,7 +3,7 @@ import path from "path";
 import db from "../../common/db/knex.js";
 import { sendMail } from "../../common/config/mailer.js";
 import * as userService from "./user.service.js";
-import * as farmerPlansService from "../farmerPlan/farmerPlans.service.js";
+import * as supplierPlansService from "../supplierPlan/supplierPlans.service.js";
 
 // ✅ Define project root once for consistent path resolution across OS (Windows/Linux)
 const PROJECT_ROOT = process.cwd();
@@ -464,7 +464,7 @@ export async function updatePlanDate(req, res) {
     const { plan_date } = req.body;
     const userId = req.user.id;
 
-    const result = await farmerPlansService.setContainerPlanDate(
+    const result = await supplierPlansService.setContainerPlanDate(
       id,
       plan_date,
       userId,
@@ -481,7 +481,7 @@ export async function getPlanDate(req, res) {
     const { id } = req.params;
     const userId = req.user.id;
 
-    const result = await farmerPlansService.getContainerPlanDate(id, userId);
+    const result = await supplierPlansService.getContainerPlanDate(id, userId);
     res.json(result);
   } catch (err) {
     console.error("getPlanDate error:", err);
@@ -501,7 +501,7 @@ export async function uploadFile(req, res) {
     const newPath = path.join(destDir, file.originalname);
     fs.renameSync(file.path, newPath);
 
-    const saved = await farmerPlansService.addFileToContainer(containerId, {
+    const saved = await supplierPlansService.addFileToContainer(containerId, {
       key: file.filename,
       originalname: file.originalname,
       mimetype: file.mimetype,
@@ -519,7 +519,7 @@ export async function uploadFile(req, res) {
 export async function listFiles(req, res) {
   try {
     const { containerId } = req.params;
-    const files = await farmerPlansService.listFiles(containerId);
+    const files = await supplierPlansService.listFiles(containerId);
     res.json(files);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -584,7 +584,7 @@ export const getContainerMetadata = async (req, res) => {
 
 export async function updateContainerMetadataController(req, res) {
   try {
-    const result = await farmerPlansService.updateContainerMetadata(
+    const result = await supplierPlansService.updateContainerMetadata(
       req.params.id,
       req.body,
       req.user.id,
@@ -612,7 +612,7 @@ export async function listAssignedContainers(req, res) {
       sortOrder = "asc",
     } = req.query;
 
-    const result = await farmerPlansService.listAssignedPlansWithContainers(
+    const result = await supplierPlansService.listAssignedPlansWithContainers(
       supplierId,
       { page, pageSize, q, sortBy, sortOrder },
     );
@@ -634,7 +634,7 @@ export async function listAssignedContainers(req, res) {
 
 export async function updateContainerStatusController(req, res) {
   try {
-    const result = await farmerPlansService.updateContainerStatus(
+    const result = await supplierPlansService.updateContainerStatus(
       req.params.id,
       req.user.id,
       req.body,
@@ -654,7 +654,7 @@ export async function updateContainerStatusController(req, res) {
 
 export async function listContainerTracking(req, res) {
   try {
-    const history = await farmerPlansService.getContainerTracking(
+    const history = await supplierPlansService.getContainerTracking(
       req.params.id,
       req.user.id,
     );
@@ -673,7 +673,7 @@ export async function addContainerTracking(req, res) {
         .status(400)
         .json({ error: req.t("validation.status_required") });
 
-    const result = await farmerPlansService.addContainerTracking({
+    const result = await supplierPlansService.addContainerTracking({
       containerId: id,
       supplierId: req.user.id,
       status,

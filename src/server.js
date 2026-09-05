@@ -11,7 +11,7 @@ import db, { dbIR, dbTR, als } from "./common/db/knex.js";
 import userRouter from "./modules/user/user.routes.js";
 import superAdminRoutes from "./modules/superAdmin/superadmin.routes.js";
 import adminRouter from "./modules/admin/admin.routes.js";
-import buyerRouter from "./modules/buyer/buyer.routes.js";
+import customerRouter from "./modules/customer/customer.routes.js";
 import containerRouter from "./modules/container/container.routes.js";
 import externalQcRouter from "./modules/qc/externalQc.routes.js";
 import notificationRoutes from "./modules/notification/notification.routes.js";
@@ -37,6 +37,7 @@ app.use(
     origin: [
       "http://localhost:5173",
       "http://localhost:5174",
+      "http://localhost:4173", // vite preview (built client)
       "https://digipoultry.com",
       "https://www.digipoultry.com",
       "http://195.177.255.233",
@@ -68,7 +69,7 @@ app.get("/", (req, res) => {
 app.use("/api/superadmin", superAdminRoutes);
 app.use("/api/users", userRouter);
 app.use("/api/admin", adminRouter);
-app.use("/api/buyers", buyerRouter);
+app.use("/api/customers", customerRouter);
 app.use("/api/containers", containerRouter);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/qc", qcRoutes);
