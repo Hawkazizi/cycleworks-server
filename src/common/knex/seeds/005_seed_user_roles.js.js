@@ -1,31 +1,30 @@
 // seeds/05_user_roles.js
+// ⚠️ DEV/TEST ONLY — never run `knex seed:run` against a production database.
 export async function seed(knex) {
   await knex("user_roles").del();
 
-  const adminRole = await knex("roles").where({ name: "admin" }).first();
-  const managerRole = await knex("roles").where({ name: "manager" }).first();
-  const userRole = await knex("roles").where({ name: "user" }).first();
-  const buyerRole = await knex("roles").where({ name: "buyer" }).first();
-
-  const admin = await knex("users")
-    .where({ email: "admin@example.com" })
-    .first();
-  const manager = await knex("users")
-    .where({ email: "manager@example.com" })
-    .first();
-  const user = await knex("users").where({ email: "user@example.com" }).first();
-  const buyer = await knex("users")
-    .where({ email: "buyer@example.com" })
-    .first();
-  const farmer = await knex("users")
-    .where({ email: "farmer@example.com" })
-    .first();
+  const roleMap = Object.fromEntries(
+    (await knex("roles").select("id", "name")).map((r) => [r.name, r.id]),
+  );
+  const users = await knex("users").select("id", "email");
+  const userMap = Object.fromEntries(users.map((u) => [u.email, u.id]));
 
   await knex("user_roles").insert([
-    { user_id: admin.id, role_id: adminRole.id },
-    { user_id: manager.id, role_id: managerRole.id },
-    { user_id: user.id, role_id: userRole.id },
-    { user_id: buyer.id, role_id: buyerRole.id },
-    { user_id: farmer.id, role_id: userRole.id }, // ✅ farmers are "user" role
+    { user_id: userMap["admin@example.com"], role_id: roleMap["admin"] },
+    { user_id: userMap["buyer@example.com"], role_id: roleMap["buyer"] },
+    { user_id: userMap["manager@example.com"], role_id: roleMap["manager"] },
+    {
+      user_id: userMap["qc.internal@example.com"],
+      role_id: roleMap["qc_internal"],
+    },
+    {
+      user_id: userMap["qc.external@example.com"],
+      role_id: roleMap["qc_external"],
+    },
+    { user_id: userMap["supplier@example.com"], role_id: roleMap["user"] },
+    {
+      user_id: userMap["supplier.pending@example.com"],
+      role_id: roleMap["user"],
+    },
   ]);
 }

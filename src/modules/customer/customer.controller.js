@@ -303,7 +303,7 @@ export const createCustomerTicket = async (req, res) => {
 /** 📋 List customer tickets */
 export const getMyCustomerTickets = async (req, res) => {
   try {
-    const tickets = await ticketService.getUserTickets(req.user.id);
+    const tickets = await ticketService.listMyTickets({ userId: req.user.id });
     res.json(tickets);
   } catch (err) {
     console.error("GET CUSTOMER TICKETS ERROR:", err);

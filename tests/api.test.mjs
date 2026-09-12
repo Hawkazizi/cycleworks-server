@@ -199,10 +199,12 @@ test("reports CSV export downloads with correct content-type (admin, IR)", async
   assert.match(res.headers.get("content-type") || "", /text\/csv/i);
   const csv = await res.text();
   assert.ok(csv.length > 0, "CSV body is empty");
-  // save sample for manual inspection next to the three main directories
+  // save sample for manual inspection (portable path — works on macOS, Linux and CI)
   const fs = await import("node:fs");
-  fs.mkdirSync("/home/hawk/Documents/Projects/EEG/images", { recursive: true });
-  fs.writeFileSync("/home/hawk/Documents/Projects/EEG/images/sample-reports-export-IR.csv", csv);
+  const path = await import("node:path");
+  const outDir = path.join(process.cwd(), "tests", "samples");
+  fs.mkdirSync(outDir, { recursive: true });
+  fs.writeFileSync(path.join(outDir, "sample-reports-export-IR.csv"), csv);
 });
 
 test("reports CSV export also works for manager", async () => {

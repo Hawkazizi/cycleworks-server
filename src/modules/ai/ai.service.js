@@ -18,6 +18,29 @@ const AI_MAX_TOKENS = parseInt(process.env.AI_MAX_TOKENS || "900", 10);
  * Forward a chat conversation to DeepSeek (OpenRouter) with the panel's system prompt.
  * Returns the assistant reply text.
  */
+/**
+ * ✅ Guarantee clean plain-text output: strip any Markdown artifacts the model
+ * may still emit (bold/italic asterisks, heading hashes, stray backticks).
+ * Ampersands are left intact when part of normal words (e.g. "R&D") but the
+ * HTML-entity form "&amp;" is converted to "&"... actually never expose
+ * entities to the UI: replace common HTML entities with plain equivalents.
+ */
+function sanitizeReply(text) {
+  return String(text)
+    .replace(/&amp;/gi, "&") // &amp; -> &
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/\*\*(.*?)\*\*/g, "$1") // **bold**
+    .replace(/\*(.*?)\*/g, "$1") // *italic*
+    .replace(/^\s*#{1,6}\s+/gm, "") // # headings
+    .replace(/`{1,3}([^`]*)`{1,3}/g, "$1") // `code`
+    .replace(/^\s*[*]\s+/gm, "- ") // normalize asterisk bullets to a dash
+    .trim();
+}
+
 export async function chatWithAssistant({ panel, messages }) {
   const apiKey = process.env.AI_OPENROUTER_KEY;
   if (!apiKey) {
@@ -28,7 +51,10 @@ export async function chatWithAssistant({ panel, messages }) {
 
   const systemPrompt = `${PANEL_SCOPE_PROMPTS[panel]}
 
-Always reply in the SAME language the user writes in (Persian, English, or Turkish). Be concise, practical, and friendly. Use short paragraphs or bullet lists.`;
+Always reply in the SAME language the user writes in (Persian, English, or Turkish).
+Structure every answer: open with a one-line direct answer, then use short bullet points or numbered steps. Keep it concise, practical, and friendly.
+IMPORTANT: plain text only — NEVER use Markdown symbols. No asterisks (*) for bold/italic, no hashes (#) for headings, no ampersands (&). Use simple dashes (-) or numbers for lists and write key terms plainly.
+If a request is outside your panel's scope, say so briefly and point the user to the right page or role instead.`;
 
   // ✅ Keep only the last N turns to bound cost/latency
   const trimmed = messages.slice(-12).map((m) => ({
@@ -67,5 +93,5 @@ Always reply in the SAME language the user writes in (Persian, English, or Turki
     err.status = 502;
     throw err;
   }
-  return reply;
+  return sanitizeReply(reply);
 }

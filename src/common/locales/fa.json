@@ -33,7 +33,8 @@
     "inspection_data_required": "داده‌های بازرسی الزامی است",
     "hold_reason_required": "دلیل توقف الزامی است",
     "quantity_required": "مقدار واقعی الزامی است",
-    "invalid_qc_status": "وضعیت کنترل کیفیت نامعتبر است"
+    "invalid_qc_status": "وضعیت کنترل کیفیت نامعتبر است",
+    "password_required": "رمز عبور الزامی است"
   },
   "common": {
     "success": "عملیات با موفقیت انجام شد",
@@ -53,7 +54,12 @@
     "password_changed": "رمز عبور تغییر یافت",
     "profile_not_found": "پروفایل یافت نشد",
     "profile_updated": "پروفایل با موفقیت بروزرسانی شد",
-    "profile_deleted": "پروفایل با موفقیت حذف شد"
+    "profile_deleted": "پروفایل با موفقیت حذف شد",
+    "forgot_password": {
+      "code_sent": "در صورت وجود حساب، کد بازیابی ارسال شد",
+      "password_reset": "رمز عبور با موفقیت بازنشانی شد"
+    },
+    "logged_out": "با موفقیت خارج شدید"
   },
   "buyer": {
     "profile_not_found": "پروفایل یافت نشد",
@@ -65,7 +71,8 @@
     "request_cancelled": "درخواست لغو شد",
     "invalid_supplier": "تامین‌کننده معتبر نیست",
     "request_status_updated": "درخواست با وضعیت '{{action}}' به‌روزرسانی شد",
-    "delivery_range_updated": "بازه تحویل با موفقیت به‌روزرسانی شد"
+    "delivery_range_updated": "بازه تحویل با موفقیت به‌روزرسانی شد",
+    "invalid_date_range": "بازه تاریخ نامعتبر است"
   },
   "container": {
     "not_found": "کانتینر یافت نشد",
@@ -81,7 +88,8 @@
     "completed_success": "درخواست و کانتینرها به عنوان تکمیل‌شده علامت‌گذاری شدند",
     "metadata_saved": "متادیتای ادمین با موفقیت ذخیره شد",
     "transferred": "کانتینر منتقل شد",
-    "supplier_changed": "تامین‌کننده کانتینر تغییر یافت"
+    "supplier_changed": "تامین‌کننده کانتینر تغییر یافت",
+    "not_found_or_unauthorized": "کانتینر یافت نشد یا دسترسی به آن ندارید"
   },
   "ticket": {
     "message_required": "متن تیکت الزامی است",
@@ -115,7 +123,9 @@
     "inspection_started": "بازرسی کنترل کیفیت شروع شد",
     "cleared": "کانتینر تایید و آزاد شد",
     "held": "کانتینر متوقف شد",
-    "report_submitted": "گزارش کنترل کیفیت خارجی ثبت شد"
+    "report_submitted": "گزارش کنترل کیفیت خارجی ثبت شد",
+    "admin_metadata_updated": "اطلاعات ادمین کانتینر با موفقیت به‌روزرسانی شد",
+    "unheld": "توقف کانتینر با موفقیت لغو شد"
   },
   "dashboard": {
     "load_failed": "خطا در بارگذاری داشبورد",
@@ -142,6 +152,7 @@
     "fetch_qc_containers": "خطا در بارگذاری کانتینرهای کنترل کیفیت",
     "fetch_container": "خطا در دریافت کانتینر",
     "fetch_tracking": "خطا در دریافت تاریخچه رهگیری",
-    "fetch_external_qc": "خطا در دریافت گزارش کنترل کیفیت خارجی"
+    "fetch_external_qc": "خطا در دریافت گزارش کنترل کیفیت خارجی",
+    "no_file": "هیچ فایلی ارسال نشده است"
   }
 }

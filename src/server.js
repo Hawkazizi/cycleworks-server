@@ -81,8 +81,9 @@ app.use(
   }),
 );
 
-// ✅ Serve uploads folder statically
-app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+// ✅ Serve uploads folder statically — protected: only valid tokens may read files
+import { requireUploadToken, uploadsRoot } from "./common/middleware/uploadsAuth.js";
+app.use("/uploads", requireUploadToken, express.static(uploadsRoot));
 // ✅ i18n middleware (MUST be before routes)
 app.use(i18nMiddleware);
 

@@ -1,0 +1,36 @@
+=== Buyer Requests ===
+"id","buyer_name","buyer_mobile","status","import_country","entry_border","exit_border","container_amount","transport_type","product_type","egg_type","reviewed_by_key","reviewed_at","created_at","updated_at"
+1,"مشتری (Customer)","09120000011","pending","Qatar","Bushehr Port","Doha",3,"truck","eggs","standard","ADMIN-KEY-IR-001","2026-09-11T14:40:58.033Z","2026-09-11T14:40:58.033Z","2026-09-11T14:40:58.033Z"
+2,"مشتری (Customer)","09120000011","accepted","Qatar","Bushehr Port","Doha",4,"truck","eggs","standard","ADMIN-KEY-IR-001","2026-09-11T14:40:58.033Z","2026-09-11T14:40:58.033Z","2026-09-11T14:40:58.033Z"
+3,"مشتری (Customer)","09120000011","accepted","Oman","Bandar Abbas","Sohar",2,"truck","eggs","standard","ADMIN-KEY-IR-001","2026-09-11T14:40:58.033Z","2026-09-11T14:40:58.033Z","2026-09-11T14:40:58.033Z"
+4,"مشتری (Customer)","09120000011","accepted","Bahrain","Bushehr Port","Manama",1,"truck","eggs","standard","ADMIN-KEY-IR-001","2026-09-11T14:40:58.033Z","2026-09-11T14:40:58.033Z","2026-09-11T14:40:58.033Z"
+5,"مشتری (Customer)","09120000011","completed","Oman","Bandar Abbas","Sohar",1,"truck","eggs","standard","ADMIN-KEY-IR-001","2026-09-11T14:40:58.033Z","2026-09-11T14:40:58.033Z","2026-09-11T14:40:58.033Z"
+6,"مشتری (Customer)","09120000011","rejected","Qatar","Bushehr Port","Doha",2,"truck","eggs","standard","ADMIN-KEY-IR-001","2026-09-11T14:40:58.033Z","2026-09-11T14:40:58.033Z","2026-09-11T14:40:58.033Z"
+7,"مشتری (Customer)","09120000011","pending","Kuwait","KHORRAMSHAHAR","SHUWAIKH",2,"truck","eggs","standard","ADMIN-KEY-IR-001","2026-09-11T14:40:58.033Z","2026-09-11T14:40:58.033Z","2026-09-11T14:40:58.033Z"
+
+
+=== User Applications ===
+"id","user_name","user_mobile","reason","status","reviewed_at","created_at"
+1,"تامین‌کننده در انتظار تایید","09120000016","درخواست همکاری به عنوان تامین‌کننده تخم‌مرغ","pending",,"2026-09-11T14:40:58.012Z"
+2,"شاهین (Supplier)","09120000015","به‌روزرسانی مدارک تامین‌کننده","approved","2026-09-11T14:40:58.012Z","2026-09-11T14:40:58.012Z"
+3,"IR Test Supplier","09350000001","test","pending_verification",,"2026-09-11T18:08:33.715Z"
+
+
+=== Users ===
+"id","name","mobile","email","status","created_at"
+10,"کارشناس (Admin)","09120000010","admin@example.com","active","2026-09-11T14:40:58.002Z"
+11,"مشتری (Customer)","09120000011","buyer@example.com","active","2026-09-11T14:40:58.002Z"
+12,"مدیر (Manager)","09120000012","manager@example.com","active","2026-09-11T14:40:58.002Z"
+13,"بازرس کیفیت داخلی","09120000013","qc.internal@example.com","active","2026-09-11T14:40:58.002Z"
+14,"بازرس کیفیت خارجی","09120000014","qc.external@example.com","active","2026-09-11T14:40:58.002Z"
+15,"شاهین (Supplier)","09120000015","supplier@example.com","active","2026-09-11T14:40:58.002Z"
+16,"تامین‌کننده در انتظار تایید","09120000016","supplier.pending@example.com","pending","2026-09-11T14:40:58.002Z"
+17,"IR Test Supplier","09350000001","ir-test@example.com","pending_verification","2026-09-11T18:08:33.714Z"
+
+
+=== Completed Containers ===
+"id","plan_id","container_no","status","farmer_status","is_completed","completed_at","in_progress","is_rejected","created_at","updated_at","plan_date","tracking_code","transport_info","metadata","metadata_status","metadata_review_note","metadata_reviewed_at","admin_metadata","admin_metadata_status","admin_metadata_review_note","admin_metadata_reviewed_at","supplier_name","supplier_mobile","import_country","product_type","container_amount","reviewed_by","metadata_reviewed_by","admin_metadata_reviewed_by"
+2,1,2,"completed","completed",true,"2026-09-11T14:40:58.035Z",false,false,"2026-09-11T14:40:58.035Z","2026-09-11T14:40:58.035Z","2026-09-11","TRK-QA-1002","{""plate"":""45د678-90"",""driver"":""رضا محمدی""}","{}","submitted",,,"{}","submitted",,,"شاهین (Supplier)","09120000015","Qatar","eggs",4,,,
+5,2,1,"completed","completed",true,"2026-09-11T14:40:58.035Z",false,false,"2026-09-11T14:40:58.035Z","2026-09-11T14:40:58.035Z","2026-09-11","TRK-OM-2001","{}","{}","submitted",,,"{}","submitted",,,"شاهین (Supplier)","09120000015","Oman","eggs",2,,,
+6,2,2,"completed","completed",true,"2026-09-11T14:40:58.035Z",false,false,"2026-09-11T14:40:58.035Z","2026-09-11T14:40:58.035Z","2026-09-11","TRK-OM-2002","{}","{}","submitted",,,"{}","submitted",,,"شاهین (Supplier)","09120000015","Oman","eggs",2,,,
+8,4,1,"completed","completed",true,"2026-09-11T14:40:58.035Z",false,false,"2026-09-11T14:40:58.035Z","2026-09-11T14:40:58.035Z","2026-09-11","TRK-OM-4001","{}","{}","submitted",,,"{}","submitted",,,"شاهین (Supplier)","09120000015","Oman","eggs",1,,,

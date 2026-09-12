@@ -75,13 +75,6 @@ router.post(
 );
 
 router.post(
-  "/containers/:id/start-qc",
-  authenticate,
-  authorize("qc_internal", "qc_external"),
-  qcController.startQcInspection,
-);
-
-router.post(
   "/containers/:id/clear",
   authenticate,
   authorize("qc_internal", "qc_external"),

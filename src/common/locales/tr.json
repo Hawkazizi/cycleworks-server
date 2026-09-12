@@ -33,7 +33,8 @@
     "inspection_data_required": "Denetim verileri gereklidir",
     "hold_reason_required": "Durdurma nedeni gereklidir",
     "quantity_required": "Gerçek miktar gereklidir",
-    "invalid_qc_status": "Geçersiz kalite kontrol durumu"
+    "invalid_qc_status": "Geçersiz kalite kontrol durumu",
+    "password_required": "Şifre gereklidir"
   },
   "common": {
     "success": "İşlem başarıyla tamamlandı",
@@ -53,7 +54,12 @@
     "password_changed": "Şifre değiştirildi",
     "profile_not_found": "Profil bulunamadı",
     "profile_updated": "Profil başarıyla güncellendi",
-    "profile_deleted": "Profil başarıyla silindi"
+    "profile_deleted": "Profil başarıyla silindi",
+    "forgot_password": {
+      "code_sent": "Hesap varsa sıfırlama kodu gönderildi",
+      "password_reset": "Şifre başarıyla sıfırlandı"
+    },
+    "logged_out": "Başarıyla çıkış yapıldı"
   },
   "buyer": {
     "profile_not_found": "Profil bulunamadı",
@@ -65,7 +71,8 @@
     "request_cancelled": "İstek iptal edildi",
     "invalid_supplier": "Geçersiz tedarikçi",
     "request_status_updated": "İstek '{{action}}' durumuyla güncellendi",
-    "delivery_range_updated": "Teslimat aralığı başarıyla güncellendi"
+    "delivery_range_updated": "Teslimat aralığı başarıyla güncellendi",
+    "invalid_date_range": "Geçersiz tarih aralığı"
   },
   "container": {
     "not_found": "Konteyner bulunamadı",
@@ -81,7 +88,8 @@
     "completed_success": "İstek ve konteynerler tamamlandı olarak işaretlendi",
     "metadata_saved": "Yönetici metaverisi başarıyla kaydedildi",
     "transferred": "Konteyner aktarıldı",
-    "supplier_changed": "Konteyner tedarikçisi değiştirildi"
+    "supplier_changed": "Konteyner tedarikçisi değiştirildi",
+    "not_found_or_unauthorized": "Konteyner bulunamadı veya erişiminiz yok"
   },
   "ticket": {
     "message_required": "Destek talebi mesajı gereklidir",
@@ -115,7 +123,9 @@
     "inspection_started": "Kalite kontrol denetimi başlatıldı",
     "cleared": "Konteyner onaylandı ve serbest bırakıldı",
     "held": "Konteyner durduruldu",
-    "report_submitted": "Harici kalite kontrol raporu gönderildi"
+    "report_submitted": "Harici kalite kontrol raporu gönderildi",
+    "admin_metadata_updated": "Yönetici meta verileri başarıyla güncellendi",
+    "unheld": "Konteyner beklemesi başarıyla kaldırıldı"
   },
   "dashboard": {
     "load_failed": "Panel yüklenemedi",
@@ -142,6 +152,7 @@
     "fetch_qc_containers": "Kalite kontrol konteynerleri yüklenemedi",
     "fetch_container": "Konteyner alınamadı",
     "fetch_tracking": "Takip geçmişi alınamadı",
-    "fetch_external_qc": "Harici kalite kontrol raporu alınamadı"
+    "fetch_external_qc": "Harici kalite kontrol raporu alınamadı",
+    "no_file": "Hiçbir dosya gönderilmedi"
   }
 }

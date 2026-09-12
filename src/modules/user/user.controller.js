@@ -288,7 +288,12 @@ export async function updateProfile(req, res) {
   try {
     const updated = await userService.updateProfileById(req.user.id, req.body);
     res.json({ profile: updated });
-  } catch {
+  } catch (err) {
+    if (err.statusCode) {
+      return res
+        .status(err.statusCode)
+        .json({ error: err.message });
+    }
     res.status(500).json({ error: req.t("common.server_error") });
   }
 }

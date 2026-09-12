@@ -407,7 +407,9 @@ export async function updateProfileById(userId, data) {
       .whereRaw("LOWER(email) = ?", [cleanEmail])
       .first();
     if (exists && exists.id !== userId) {
-      throw new Error("این ایمیل قبلاً استفاده شده است");
+      const err = new Error("این ایمیل قبلاً استفاده شده است");
+      err.statusCode = 400;
+      throw err;
     }
     update.email = cleanEmail;
   }
@@ -417,7 +419,9 @@ export async function updateProfileById(userId, data) {
       .where({ mobile: data.mobile.trim() })
       .first();
     if (exists && exists.id !== userId) {
-      throw new Error("این شماره موبایل قبلاً استفاده شده است");
+      const err = new Error("این شماره موبایل قبلاً استفاده شده است");
+      err.statusCode = 400;
+      throw err;
     }
     update.mobile = data.mobile.trim();
   }
@@ -426,8 +430,11 @@ export async function updateProfileById(userId, data) {
     update.password_hash = await bcrypt.hash(data.password, 10);
   }
 
-  if (Object.keys(update).length === 0)
-    throw new Error("No valid fields to update");
+  if (Object.keys(update).length === 0) {
+    const err = new Error("No valid fields to update");
+    err.statusCode = 400;
+    throw err;
+  }
 
   await db("users")
     .where({ id: userId })

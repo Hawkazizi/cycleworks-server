@@ -33,7 +33,8 @@
     "inspection_data_required": "Inspection data is required",
     "hold_reason_required": "Hold reason is required",
     "quantity_required": "Actual quantity is required",
-    "invalid_qc_status": "Invalid QC status"
+    "invalid_qc_status": "Invalid QC status",
+    "password_required": "Password is required"
   },
   "common": {
     "success": "Operation completed successfully",
@@ -53,7 +54,12 @@
     "password_changed": "Password changed",
     "profile_not_found": "Profile not found",
     "profile_updated": "Profile updated successfully",
-    "profile_deleted": "Profile deleted successfully"
+    "profile_deleted": "Profile deleted successfully",
+    "forgot_password": {
+      "code_sent": "If the account exists, a reset code has been sent",
+      "password_reset": "Password has been reset successfully"
+    },
+    "logged_out": "Logged out successfully"
   },
   "buyer": {
     "profile_not_found": "Profile not found",
@@ -65,7 +71,8 @@
     "request_cancelled": "Request cancelled",
     "invalid_supplier": "Invalid supplier",
     "request_status_updated": "Request updated with status '{{action}}'",
-    "delivery_range_updated": "Delivery range updated successfully"
+    "delivery_range_updated": "Delivery range updated successfully",
+    "invalid_date_range": "Invalid date range"
   },
   "container": {
     "not_found": "Container not found",
@@ -81,7 +88,8 @@
     "completed_success": "Request and containers marked as completed",
     "metadata_saved": "Admin metadata saved successfully",
     "transferred": "Container transferred",
-    "supplier_changed": "Container supplier changed"
+    "supplier_changed": "Container supplier changed",
+    "not_found_or_unauthorized": "Container not found or you do not have access to it"
   },
   "ticket": {
     "message_required": "Ticket message is required",
@@ -115,7 +123,9 @@
     "inspection_started": "QC inspection started",
     "cleared": "Container approved and cleared",
     "held": "Container held",
-    "report_submitted": "External QC report submitted"
+    "report_submitted": "External QC report submitted",
+    "admin_metadata_updated": "Admin metadata updated successfully",
+    "unheld": "Container hold released successfully"
   },
   "dashboard": {
     "load_failed": "Failed to load dashboard",
@@ -142,6 +152,7 @@
     "fetch_qc_containers": "Failed to load QC containers",
     "fetch_container": "Failed to fetch container",
     "fetch_tracking": "Failed to fetch tracking history",
-    "fetch_external_qc": "Failed to fetch external QC report"
+    "fetch_external_qc": "Failed to fetch external QC report",
+    "no_file": "No file was provided"
   }
 }
