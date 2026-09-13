@@ -25,14 +25,34 @@ const BASE_URL = process.env.BASE_URL || "http://localhost:5000";
    📦 CUSTOMER REQUEST MANAGEMENT (ADMIN / MANAGER)
 ======================================================================= */
 /** 📋 Get all customer requests (with supplier + plans + assigned suppliers + creator) */
-export async function getCustomerRequests() {
-  const rows = await db("buyer_requests as br")
+export async function getCustomerRequests({ supplier_id } = {}) {
+  const base = db("buyer_requests as br")
     // 🔹 Join customer (assigned customer)
     .leftJoin("users as customer", "br.buyer_id", "customer.id")
     // 🔹 Join creator (operator)
     .leftJoin("users as creator", "br.creator_id", "creator.id")
     // 🔹 Join preferred supplier
-    .leftJoin("users as supplier", "br.preferred_supplier_id", "supplier.id")
+    .leftJoin("users as supplier", "br.preferred_supplier_id", "supplier.id");
+
+  if (supplier_id) {
+    // Requests involving this supplier: preferred, assigned, or via containers
+    base.where(function () {
+      this.where("br.preferred_supplier_id", supplier_id).orWhereIn(
+        "br.id",
+        db("buyer_request_suppliers")
+          .select("buyer_request_id")
+          .where("supplier_id", supplier_id),
+      ).orWhereIn(
+        "br.id",
+        db("farmer_plan_containers as c")
+          .join("farmer_plans as fp", "fp.id", "c.plan_id")
+          .select("fp.request_id")
+          .where("c.supplier_id", supplier_id),
+      );
+    });
+  }
+
+  const rows = await base
     .select(
       "br.id",
       "br.status",

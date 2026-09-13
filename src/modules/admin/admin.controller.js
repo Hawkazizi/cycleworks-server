@@ -277,6 +277,7 @@ export async function getUserById(req, res) {
       return res.status(404).json({ error: req.t("common.not_found") });
 
     // ✅ Customer requests where this supplier is involved
+    // (preferred supplier, assigned via buyer_request_suppliers, or via containers)
     const customerRequests = await db("buyer_requests as br")
       .leftJoin("users as b", "br.buyer_id", "b.id")
       .select(
@@ -287,30 +288,31 @@ export async function getUserById(req, res) {
         "b.email as buyer_email",
         "b.mobile as buyer_mobile",
       )
-      .where("br.preferred_supplier_id", id)
-      .orWhereIn(
-        "br.id",
-        db("buyer_request_suppliers")
-          .select("buyer_request_id")
-          .where("supplier_id", id),
-      )
+      .where(function () {
+        this.where("br.preferred_supplier_id", id).orWhereIn(
+          "br.id",
+          db("buyer_request_suppliers")
+            .select("buyer_request_id")
+            .where("supplier_id", id),
+        );
+      })
       .orderBy("br.created_at", "desc");
 
-    // ✅ Containers handled by this supplier
-    const containers = await db("farmer_plan_containers as c")
-      .leftJoin("farmer_plans as p", "c.plan_id", "p.id")
-      .leftJoin("buyer_requests as br", "p.request_id", "br.id")
-      .select(
-        "c.id",
-        "c.container_no",
-        "c.status",
-        "c.created_at",
-        "br.id as buyer_request_id",
-      )
-      .whereIn(
-        "p.request_id",
-        customerRequests.map((r) => r.id),
-      );
+    // ✅ Containers handled by this supplier (empty-safe: skip query when no requests)
+    const requestIds = customerRequests.map((r) => r.id);
+    const containers = requestIds.length
+      ? await db("farmer_plan_containers as c")
+          .leftJoin("farmer_plans as p", "c.plan_id", "p.id")
+          .leftJoin("buyer_requests as br", "p.request_id", "br.id")
+          .select(
+            "c.id",
+            "c.container_no",
+            "c.status",
+            "c.created_at",
+            "br.id as buyer_request_id",
+          )
+          .whereIn("p.request_id", requestIds)
+      : [];
 
     // ✅ Simple stats
     const stats = {
@@ -333,8 +335,22 @@ export async function getUserById(req, res) {
   }
 }
 
-export const getUserProfilePicture = async (req, res) => {
+// Containers handled by a user (used by the suppliers list fallback)
+export const getUserContainersCount = async (req, res) => {
   try {
+    const { id } = req.params;
+    const row = await db("farmer_plan_containers")
+      .where({ supplier_id: id })
+      .count("* as count")
+      .first();
+    res.json({ count: Number(row?.count || 0) });
+  } catch (err) {
+    console.error("getUserContainersCount error:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+export const getUserProfilePicture = async (req, res) => {  try {
     const { id } = req.params;
     const user = await db("users")
       .select("profile_picture")
@@ -602,7 +618,10 @@ export const getRoles = async (req, res) => {
 /* -------------------- Customer Requests (new flow) -------------------- */
 export async function getCustomerRequests(req, res) {
   try {
-    const requests = await adminCustomerService.getCustomerRequests();
+    const { supplier_id } = req.query || {};
+    const requests = await adminCustomerService.getCustomerRequests({
+      supplier_id: supplier_id ? Number(supplier_id) || supplier_id : undefined,
+    });
     res.json(requests);
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -47,7 +47,7 @@ export async function chat(req, res) {
       return res.status(400).json({ error: "Invalid messages" });
     }
 
-    const reply = await chatWithAssistant({ panel, messages });
+    const reply = await chatWithAssistant({ panel, messages, user: req.user });
     res.json({ reply });
   } catch (err) {
     if (err.status) {

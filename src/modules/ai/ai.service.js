@@ -1,4 +1,5 @@
 import { PANEL_SCOPE_PROMPTS } from "./ai.prompts.js";
+import { buildRoleContext } from "./ai.context.js";
 
 /**
  * ✅ AI Assistant service — server-side proxy to DeepSeek via OpenRouter.
@@ -41,7 +42,7 @@ function sanitizeReply(text) {
     .trim();
 }
 
-export async function chatWithAssistant({ panel, messages }) {
+export async function chatWithAssistant({ panel, messages, user }) {
   const apiKey = process.env.AI_OPENROUTER_KEY;
   if (!apiKey) {
     const err = new Error("AI assistant is not configured");
@@ -49,11 +50,24 @@ export async function chatWithAssistant({ panel, messages }) {
     throw err;
   }
 
+  // ✅ Role-aware live data: same scope the caller's role can access in the API.
+  // Never fails the chat — falls back to static knowledge when unavailable.
+  let liveData = "";
+  try {
+    liveData = await buildRoleContext(panel, user);
+  } catch (err) {
+    console.error("AI live-data error:", err?.message || err);
+  }
+
   const systemPrompt = `${PANEL_SCOPE_PROMPTS[panel]}
+
+LIVE DATA SNAPSHOT (fetched just now for this logged-in user — prefer it over guessing):
+${liveData || "(live data unavailable — answer from general knowledge and point to the right page)"}
 
 Always reply in the SAME language the user writes in (Persian, English, or Turkish).
 Structure every answer: open with a one-line direct answer, then use short bullet points or numbered steps. Keep it concise, practical, and friendly.
 IMPORTANT: plain text only — NEVER use Markdown symbols. No asterisks (*) for bold/italic, no hashes (#) for headings, no ampersands (&). Use simple dashes (-) or numbers for lists and write key terms plainly.
+Use the snapshot numbers above when the user asks about their data. If something is NOT in the snapshot, say so briefly and point the user to the right page or role instead of guessing.
 If a request is outside your panel's scope, say so briefly and point the user to the right page or role instead.`;
 
   // ✅ Keep only the last N turns to bound cost/latency

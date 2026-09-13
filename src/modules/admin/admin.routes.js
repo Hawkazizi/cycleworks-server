@@ -70,6 +70,12 @@ router.get(
   adminController.listUsers,
 );
 router.get(
+  "/users/:id/containers/count",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.getUserContainersCount,
+);
+router.get(
   "/users/:id",
   authenticate,
   authorize("admin", "manager", "buyer", "user"),
