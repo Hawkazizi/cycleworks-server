@@ -386,7 +386,7 @@ router.delete(
 router.post(
   "/supplier-files/:fileId/review",
   authenticate,
-  authorize("admin"),
+  authorize("admin", "manager"),
   adminController.reviewSupplierFile,
 );
 
