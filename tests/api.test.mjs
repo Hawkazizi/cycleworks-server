@@ -17,7 +17,10 @@ import jwt from "jsonwebtoken";
 import pg from "pg";
 
 const BASE = process.env.API_BASE || "http://localhost:5000";
-const JWT_SECRET = process.env.JWT_SECRET || "secret";
+// NOTE: server refuses JWT secrets < 32 chars (see src/common/config/jwt.js) —
+// the default below is a LOCAL-DEV-ONLY secret, never use it in production.
+const JWT_SECRET =
+  process.env.JWT_SECRET || "local-dev-only-secret-0123456789ABCDEF";
 
 const ADMIN_ID = 10; // karshenas  (role: admin — کارشناس)
 const MANAGER_ID = 12; // modir     (role: manager — مدیر)

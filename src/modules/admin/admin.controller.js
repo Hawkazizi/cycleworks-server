@@ -997,10 +997,17 @@ export async function assignSuppliers(req, res) {
 
     await db.transaction(async (trx) => {
       for (const row of inserts) {
+        // NOTE: no 2-col unique exists (uniques are triple + (request,container));
+        // container-less rows use NULL container_id which never conflicts,
+        // so delete-then-insert keeps re-assign idempotent instead of 500/duplicates.
         await trx("buyer_request_suppliers")
-          .insert(row)
-          .onConflict(["buyer_request_id", "supplier_id"])
-          .merge({ assigned_at: new Date(), assigned_by: reviewerId });
+          .where({
+            buyer_request_id: row.buyer_request_id,
+            supplier_id: row.supplier_id,
+          })
+          .whereNull("container_id")
+          .del();
+        await trx("buyer_request_suppliers").insert(row);
       }
     });
 
