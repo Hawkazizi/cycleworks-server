@@ -286,6 +286,40 @@ export async function reviewContainerMetadata(
   return { message: `Metadata ${status}`, container: updated };
 }
 
+/**
+ * Review ADMIN-level container metadata (approve/reject + note).
+ * Mirrors reviewContainerMetadata but targets the admin_metadata_* columns.
+ * Called by PATCH /api/admin/containers/:id/admin-metadata-review.
+ */
+export async function reviewContainerAdminMetadata(
+  containerId,
+  status,
+  note,
+  reviewerId,
+) {
+  if (!["approved", "rejected"].includes(status))
+    throw new Error("Invalid status");
+
+  const container = await db("farmer_plan_containers")
+    .where({ id: containerId })
+    .first();
+
+  if (!container) throw new Error("Container not found");
+
+  const [updated] = await db("farmer_plan_containers")
+    .where({ id: containerId })
+    .update({
+      admin_metadata_status: status,
+      admin_metadata_review_note: note || null,
+      admin_metadata_reviewed_by: reviewerId,
+      admin_metadata_reviewed_at: db.fn.now(),
+      updated_at: db.fn.now(),
+    })
+    .returning("*");
+
+  return { message: `Admin metadata ${status}`, container: updated };
+}
+
 /* =======================================================================
    🧠 ADMIN METADATA UPDATE (Admin / Manager)
 ======================================================================= */

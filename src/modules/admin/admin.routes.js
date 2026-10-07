@@ -318,6 +318,12 @@ router.patch(
   authorize("admin", "manager"),
   adminController.updateContainerAdminMetadataController,
 );
+router.patch(
+  "/containers/:id/admin-metadata-review",
+  authenticate,
+  authorize("admin", "manager"),
+  adminController.reviewContainerAdminMetadataController,
+);
 
 // 🔸 Container tracking operations
 router.get(

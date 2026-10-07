@@ -1320,6 +1320,27 @@ export async function reviewContainerMetadataController(req, res) {
   }
 }
 
+export async function reviewContainerAdminMetadataController(req, res) {
+  try {
+    const { id } = req.params;
+    // Client sends `review_note` (supplier review sends `note`) — accept both.
+    const { status, note, review_note } = req.body;
+    const reviewerId = req.user.licenseId;
+
+    const result =
+      await adminSupplierPlansService.reviewContainerAdminMetadata(
+        id,
+        status,
+        note ?? review_note,
+        reviewerId,
+      );
+    res.json(result);
+  } catch (err) {
+    console.error("reviewContainerAdminMetadata error:", err);
+    res.status(400).json({ message: err.message });
+  }
+}
+
 export async function updateContainerAdminMetadataController(req, res) {
   try {
     const { id } = req.params;
